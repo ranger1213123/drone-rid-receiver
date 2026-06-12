@@ -12,17 +12,18 @@ import tempfile
 import struct
 import math
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from rid_parser import (
+from core.parser import (
     parse_rid_pack, parse_basic_id, parse_location,
     BasicIDMessage, LocationMessage, ParsedRID, UA_TYPE_NAMES,
     MSG_BASIC_ID, MSG_LOCATION, ID_TYPE_SERIAL, UA_TYPE_HELICOPTER,
 )
-from powerline import PowerLineManager, PowerLineSegment
-from db import Database
-from alert import AlertSystem, MockSMSBackend
-from trajectory import TrajectoryRecorder
+from core.powerline import PowerLineManager, PowerLineSegment
+from storage.database import Database
+from core.alert import AlertSystem
+from core.trajectory import TrajectoryRecorder
+from core.pipeline import RIDPipeline
 
 
 class TestRIDParser(unittest.TestCase):
@@ -205,6 +206,11 @@ class TestDatabase(unittest.TestCase):
 
     def test_trajectory_recording(self):
         """测试轨迹记录"""
+        self.db.upsert_drone("DRONE-1", 30.0, 120.0, 100.0)
+        self.db.load_power_lines([{
+            "name": "线1", "lat1": 30.0, "lon1": 120.0, "alt1": 100.0,
+            "lat2": 30.01, "lon2": 120.01, "alt2": 100.0,
+        }])
         self.db.add_trajectory_point("DRONE-1", 30.0, 120.0, 100.0, 50.0, 1)
         self.db.add_trajectory_point("DRONE-1", 30.001, 120.001, 95.0, 45.0, 1)
 
@@ -214,12 +220,15 @@ class TestDatabase(unittest.TestCase):
 
     def test_alert_recording(self):
         """测试告警记录"""
-        self.db.add_alert("DRONE-1", "warning", 150.0, 1,
-                          "测试告警", sms_pilot=True, sms_staff=False)
+        self.db.upsert_drone("DRONE-1", 30.0, 120.0, 100.0)
+        self.db.load_power_lines([{
+            "name": "线1", "lat1": 30.0, "lon1": 120.0, "alt1": 100.0,
+            "lat2": 30.01, "lon2": 120.01, "alt2": 100.0,
+        }])
+        self.db.add_alert("DRONE-1", "warning", 150.0, 1, "测试告警")
         alerts = self.db.get_last_alert("DRONE-1", "warning")
         self.assertIsNotNone(alerts)
         self.assertEqual(alerts["level"], "warning")
-        self.assertEqual(alerts["sms_sent_pilot"], 1)
 
 
 class TestAlertSystem(unittest.TestCase):
@@ -229,23 +238,26 @@ class TestAlertSystem(unittest.TestCase):
         self.tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmpfile.close()
         self.db = Database(self.tmpfile.name)
-        self.sms = MockSMSBackend()
         self.thresholds = {"warning": 200, "severe": 100, "critical": 50}
-        self.contacts = [
-            {"name": "测试人员", "phone": "+861001"},
-        ]
-        self.pilot_phones = {"DRONE-T1": "+8610020"}
         self.alert = AlertSystem(
             db=self.db,
-            sms_backend=self.sms,
             thresholds=self.thresholds,
-            alert_contacts=self.contacts,
-            pilot_phones=self.pilot_phones,
         )
 
     def tearDown(self):
         self.db.close()
         os.unlink(self.tmpfile.name)
+
+    def _seed_alert_db(self):
+        """预填充父表数据以满足外键约束"""
+        self.db.upsert_drone("DRONE-T1", 30.0, 120.0, 200.0)
+        self.db.load_power_lines([{
+            "name": "高压线A", "lat1": 30.0, "lon1": 120.0, "alt1": 100.0,
+            "lat2": 30.01, "lon2": 120.01, "alt2": 100.0,
+        }, {
+            "name": "高压线B", "lat1": 30.01, "lon1": 120.01, "alt1": 80.0,
+            "lat2": 30.02, "lon2": 120.02, "alt2": 80.0,
+        }])
 
     def test_get_level_warning(self):
         """测试告警级别判断 - warning"""
@@ -271,6 +283,7 @@ class TestAlertSystem(unittest.TestCase):
 
     def test_process_warning(self):
         """测试处理 warning 级别告警"""
+        self._seed_alert_db()
         level = self.alert.process(
             "DRONE-T1", 150.0, "高压线A", 1,
             drone_alt=200.0, drone_lat=30.0, drone_lon=120.0
@@ -278,8 +291,9 @@ class TestAlertSystem(unittest.TestCase):
         self.assertEqual(level, "warning")
         self.assertEqual(self.alert._drone_level.get("DRONE-T1"), "warning")
 
-    def test_process_critical_notifies_staff(self):
-        """测试 critical 级别通知预设人员"""
+    def test_process_critical(self):
+        """测试 critical 级别告警"""
+        self._seed_alert_db()
         level = self.alert.process(
             "DRONE-T1", 30.0, "高压线B", 2,
             drone_alt=80.0, drone_lat=30.0, drone_lon=120.0
@@ -288,6 +302,7 @@ class TestAlertSystem(unittest.TestCase):
 
     def test_dedup_same_level(self):
         """测试同级别去重"""
+        self._seed_alert_db()
         # 第一次触发
         level1 = self.alert.process(
             "DRONE-T1", 150.0, "线A", 1, 200.0, 30.0, 120.0
@@ -318,8 +333,17 @@ class TestTrajectoryRecorder(unittest.TestCase):
         self.db.close()
         os.unlink(self.tmpfile.name)
 
+    def _seed_traj_db(self):
+        """预填充父表数据以满足外键约束"""
+        self.db.upsert_drone("DRONE-1", 30.0, 120.0, 100.0)
+        self.db.load_power_lines([{
+            "name": "线1", "lat1": 30.0, "lon1": 120.0, "alt1": 100.0,
+            "lat2": 30.01, "lon2": 120.01, "alt2": 100.0,
+        }])
+
     def test_record_and_retrieve(self):
         """测试记录和检索轨迹"""
+        self._seed_traj_db()
         recorded = self.recorder.record("DRONE-1", 30.0, 120.0, 100.0, 50.0, 1)
         self.assertTrue(recorded)
 
@@ -329,6 +353,7 @@ class TestTrajectoryRecorder(unittest.TestCase):
 
     def test_dedup_interval(self):
         """测试去重间隔"""
+        self._seed_traj_db()
         ok1 = self.recorder.record("DRONE-1", 30.0, 120.0, 100.0, 50.0, 1)
         self.assertTrue(ok1)
 
@@ -339,6 +364,87 @@ class TestTrajectoryRecorder(unittest.TestCase):
         # 应该只有 1 条记录
         traj = self.db.get_trajectory("DRONE-1")
         self.assertEqual(len(traj), 1)
+
+
+class TestRIDPipeline(unittest.TestCase):
+    """数据处理管道测试"""
+
+    def setUp(self):
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmpfile.close()
+        self.db = Database(self.tmpfile.name)
+        self.pl_manager = PowerLineManager()
+        self.pl_manager.lines = [
+            PowerLineSegment("测试线", 30.0, 120.0, 100.0,
+                             30.01, 120.01, 100.0, line_id=1),
+        ]
+        self.db.load_power_lines([{
+            "name": "测试线", "lat1": 30.0, "lon1": 120.0, "alt1": 100.0,
+            "lat2": 30.01, "lon2": 120.01, "alt2": 100.0,
+        }])
+        thresholds = {"warning": 200, "severe": 100, "critical": 50}
+        self.alert = AlertSystem(
+            db=self.db,
+            thresholds=thresholds,
+        )
+        self.trajectory = TrajectoryRecorder(
+            db=self.db, min_interval=0.1, max_points_per_drone=100,
+        )
+        self.pipeline = RIDPipeline(
+            db=self.db, pl_manager=self.pl_manager,
+            alert_system=self.alert, trajectory_recorder=self.trajectory,
+            thresholds=thresholds,
+        )
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.tmpfile.name)
+
+    def _make_parsed(self, drone_id="DRONE-1", lat=30.005, lon=120.005, alt=150.0):
+        return ParsedRID(
+            basic_id=BasicIDMessage(id_type=1, ua_type=2, uas_id=drone_id),
+            location=LocationMessage(latitude=lat, longitude=lon, altitude_geodetic=alt),
+        )
+
+    def test_process_valid_drone(self):
+        result = self.pipeline.process(self._make_parsed(alt=160.0))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.drone_id, "DRONE-1")
+        self.assertEqual(result.status, "severe")  # |160-100|=60 -> severe
+
+    def test_process_critical(self):
+        result = self.pipeline.process(self._make_parsed(alt=101.0))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.status, "critical")  # |101-100|=1 -> critical
+
+    def test_process_active(self):
+        result = self.pipeline.process(self._make_parsed(alt=350.0))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.status, "active")  # |350-100|=250 -> active
+
+    def test_process_no_location(self):
+        parsed = ParsedRID(basic_id=BasicIDMessage(uas_id="X"))
+        result = self.pipeline.process(parsed)
+        self.assertIsNone(result)
+
+    def test_process_no_power_lines(self):
+        self.pl_manager.lines = []
+        result = self.pipeline.process(self._make_parsed())
+        self.assertIsNone(result)
+
+    def test_process_trajectory_recorded(self):
+        self.pipeline.process(self._make_parsed(alt=120.0))
+        points = self.db.get_trajectory("DRONE-1")
+        self.assertEqual(len(points), 1)
+        self.assertAlmostEqual(points[0]["distance_to_line"], 20.0)
+
+    def test_process_trajectory_stopped(self):
+        # First, get within warning range to start tracking
+        self.pipeline.process(self._make_parsed(alt=120.0))
+        # Then go far away
+        result = self.pipeline.process(self._make_parsed(alt=500.0))
+        self.assertEqual(result.status, "active")
+        self.assertNotIn("DRONE-1", self.trajectory._last_record_time)
 
 
 if __name__ == "__main__":

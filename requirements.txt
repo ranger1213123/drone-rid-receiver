@@ -1,14 +1,18 @@
-# 无人机 RID 接收系统 - Web GUI 版
-# 纯 Python, 浏览器访问, 无需 tkinter
-
-pyyaml>=6.0
-flask>=3.0
-
-# BLE 扫描 (可选 - 需要蓝牙硬件 + Windows/Linux)
+# 无人机 RID 接收系统 - 依赖锁定文件
+# 生成: pip freeze > requirements.txt (安装所有可选依赖后执行)
+# 安装: pip install -r requirements.txt
+#
+# 核心依赖
+pyyaml==6.0.2
+python-dotenv==1.1.1
+flask>=3.0.0
+#
+# 可选: BLE 扫描 (需要蓝牙硬件)
 # bleak>=0.21.0
-
-# WiFi 扫描 (可选 - 需要 Npcap/monitor mode)
+#
+# 可选: WiFi Beacon 扫描 (Windows 需 Npcap, Linux 需 monitor mode)
 # scapy>=2.5.0
-
-# 短信 (可选)
-# twilio>=9.0.0
+#
+# 开发依赖
+pytest>=8.0
+pyinstaller>=6.0

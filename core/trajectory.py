@@ -9,7 +9,10 @@ import time
 from datetime import datetime
 from typing import Dict
 
-from db import Database
+from logging_config import get_logger
+from storage.database import Database
+
+logger = get_logger(__name__)
 
 
 class TrajectoryRecorder:
@@ -67,10 +70,8 @@ class TrajectoryRecorder:
         if count >= self.max_points * 1.2:
             self._prune(drone_id)
 
-        # 第一次开始记录时输出日志
         if count <= 2:
-            ts = datetime.now().strftime("%H:%M:%S")
-            print(f"[轨迹] {ts} {drone_id} 进入监控区域 (距离={distance:.1f}m)")
+            logger.info("%s 进入监控区域 (距离=%.1fm)", drone_id, distance)
 
         return True
 
@@ -89,9 +90,9 @@ class TrajectoryRecorder:
             """, (drone_id, drone_id, self.max_points))
             self.db.conn.commit()
             self._point_counts[drone_id] = self.max_points
-            print(f"[轨迹] {drone_id} 轨迹已裁剪 (保留 {self.max_points} 点)")
+            logger.info("%s 轨迹已裁剪 (保留 %d 点)", drone_id, self.max_points)
         except Exception as e:
-            print(f"[轨迹] 裁剪失败: {e}")
+            logger.error("%s 轨迹裁剪失败: %s", drone_id, e)
 
     def get_trajectory_summary(self, drone_id: str) -> str:
         """获取轨迹摘要信息"""

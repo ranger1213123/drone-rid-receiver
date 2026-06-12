@@ -12,7 +12,7 @@ GUI 主窗口 - 无人机 RID 接收与电力线防碰撞监控系统
 │ [停止] │                                            │
 │        │  告警日志 (Text)                            │
 │ 电力线 │  ┌──────────────────────────────────────┐  │
-│ [管理] │  │ [11:30:02] ⚠ DRONE-001 距高压线A... │  │
+│ [管理] │  │ [11:30:02] [W] DRONE-001 距高压线A... │  │
 │ [导入] │  └──────────────────────────────────────┘  │
 │ [导出] │                                            │
 │        │  轨迹查看 (下级窗口)                         │
@@ -34,14 +34,15 @@ from typing import Dict, Optional
 
 # 添加项目路径
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from db import Database
-from powerline import PowerLineManager
-from alert import AlertSystem, MockSMSBackend
-from trajectory import TrajectoryRecorder
-from rid_parser import UA_TYPE_NAMES
-from gui.powerline_dialog import PowerLineDialog
+from storage.database import Database
+from core.powerline import PowerLineManager
+from core.alert import AlertSystem
+from core.trajectory import TrajectoryRecorder
+from core.pipeline import RIDPipeline
+from display.gui.powerline import PowerLineDialog
 
 
 # ─────────────────── Catppuccin Mocha 主题 ───────────────────
@@ -103,10 +104,7 @@ class MainWindow(tk.Tk):
 
         self.alert_system = AlertSystem(
             db=self.db,
-            sms_backend=MockSMSBackend(),
             thresholds=thresholds,
-            alert_contacts=config.get("alert_contacts", []),
-            pilot_phones=config.get("pilot_phones", {}) or {},
         )
 
         traj_cfg = config.get("trajectory", {})
@@ -116,11 +114,19 @@ class MainWindow(tk.Tk):
             max_points_per_drone=traj_cfg.get("max_points_per_drone", 1000),
         )
 
+        self.pipeline = RIDPipeline(
+            db=self.db,
+            pl_manager=self.pl_manager,
+            alert_system=self.alert_system,
+            trajectory_recorder=self.trajectory_recorder,
+            thresholds=thresholds,
+        )
+
         # 运行状态
         self.is_running = False
         self.receiver_thread = None
         self.receiver = None
-        self.current_mode = "mock"
+        self.current_mode = "ble"
 
         # ─── 构建 UI ───
         self._build_ui()
@@ -166,7 +172,7 @@ class MainWindow(tk.Tk):
 
         # 标题
         title = tk.Label(
-            header, text="🛸 无人机 RID 接收与电力线防碰撞监控系统",
+            header, text="无人机 RID 接收与电力线防碰撞监控系统",
             font=("Microsoft YaHei", 13, "bold"),
             bg=THEME["bg2"], fg=THEME["fg"]
         )
@@ -179,17 +185,17 @@ class MainWindow(tk.Tk):
         tk.Label(mode_frame, text="模式:", bg=THEME["bg2"], fg=THEME["fg2"],
                  font=("Microsoft YaHei", 9)).pack(side=tk.LEFT)
 
-        self.mode_var = tk.StringVar(value="mock")
+        self.mode_var = tk.StringVar(value="ble")
         mode_combo = ttk.Combobox(
             mode_frame, textvariable=self.mode_var,
-            values=["mock", "ble", "wifi"], state="readonly",
+            values=["ble", "wifi"], state="readonly",
             width=8, font=("Microsoft YaHei", 9)
         )
         mode_combo.pack(side=tk.LEFT, padx=5)
 
         # 状态指示灯
         self.status_indicator = tk.Label(
-            header, text="● 已停止", font=("Microsoft YaHei", 10, "bold"),
+            header, text="已停止", font=("Microsoft YaHei", 10, "bold"),
             bg=THEME["bg2"], fg=THEME["fg3"]
         )
         self.status_indicator.pack(side=tk.RIGHT, padx=15)
@@ -208,7 +214,7 @@ class MainWindow(tk.Tk):
                  ).pack(pady=(15, 10))
 
         self.btn_start = tk.Button(
-            panel, text="▶  开始扫描", command=self._start_scanning,
+            panel, text="开始扫描", command=self._start_scanning,
             bg=THEME["green"], fg=THEME["bg"],
             font=("Microsoft YaHei", 10, "bold"),
             relief=tk.FLAT, padx=16, pady=8, activebackground=THEME["teal"]
@@ -216,7 +222,7 @@ class MainWindow(tk.Tk):
         self.btn_start.pack(fill=tk.X, **pad)
 
         self.btn_stop = tk.Button(
-            panel, text="■  停止扫描", command=self._stop_scanning,
+            panel, text="停止扫描", command=self._stop_scanning,
             bg=THEME["surface1"], fg=THEME["fg"],
             font=("Microsoft YaHei", 10),
             relief=tk.FLAT, padx=16, pady=8,
@@ -231,9 +237,9 @@ class MainWindow(tk.Tk):
 
         self._threshold_labels = {}
         for key, color, label in [
-            ("warning", THEME["yellow"], "⚠ 警告"),
-            ("severe", THEME["peach"], "▲ 严重"),
-            ("critical", THEME["red"], "■ 危险"),
+            ("warning", THEME["yellow"], "[W] 警告"),
+            ("severe", THEME["peach"], "[S] 严重"),
+            ("critical", THEME["red"], "[X] 危险"),
         ]:
             val = self.thresholds.get(key, "?")
             lbl = tk.Label(
@@ -250,21 +256,21 @@ class MainWindow(tk.Tk):
                  ).pack(pady=(20, 10))
 
         tk.Button(
-            panel, text="📝 管理电力线", command=self._open_powerline_dialog,
+            panel, text="管理电力线", command=self._open_powerline_dialog,
             bg=THEME["blue"], fg=THEME["bg"],
             font=("Microsoft YaHei", 10, "bold"),
             relief=tk.FLAT, padx=12, pady=7
         ).pack(fill=tk.X, **pad)
 
         tk.Button(
-            panel, text="📂 导入 YAML", command=self._import_powerlines,
+            panel, text="导入 YAML", command=self._import_powerlines,
             bg=THEME["surface0"], fg=THEME["fg"],
             font=("Microsoft YaHei", 9),
             relief=tk.FLAT, padx=12, pady=6
         ).pack(fill=tk.X, **pad)
 
         tk.Button(
-            panel, text="📤 导出 YAML", command=self._export_powerlines,
+            panel, text="导出 YAML", command=self._export_powerlines,
             bg=THEME["surface0"], fg=THEME["fg"],
             font=("Microsoft YaHei", 9),
             relief=tk.FLAT, padx=12, pady=6
@@ -276,7 +282,7 @@ class MainWindow(tk.Tk):
                  ).pack(pady=(20, 10))
 
         tk.Button(
-            panel, text="📊 查看轨迹", command=self._view_trajectory,
+            panel, text="查看轨迹", command=self._view_trajectory,
             bg=THEME["mauve"], fg=THEME["bg"],
             font=("Microsoft YaHei", 10),
             relief=tk.FLAT, padx=12, pady=7
@@ -407,7 +413,7 @@ class MainWindow(tk.Tk):
         self.btn_start.config(state=tk.DISABLED)
         self.btn_stop.config(state=tk.NORMAL)
         self.status_indicator.config(
-            text=f"● 运行中 ({mode.upper()})", fg=THEME["green"]
+            text=f"运行中 ({mode.upper()})", fg=THEME["green"]
         )
 
         self._log_alert("[系统] 扫描已启动", "info")
@@ -424,28 +430,22 @@ class MainWindow(tk.Tk):
         self.btn_start.config(state=tk.NORMAL)
         self.btn_stop.config(state=tk.DISABLED)
         self.status_indicator.config(
-            text="● 已停止", fg=THEME["fg3"]
+            text="已停止", fg=THEME["fg3"]
         )
         self._log_alert("[系统] 扫描已停止", "info")
 
     def _run_receiver(self, mode: str):
         """在后台线程中运行接收器"""
-        from rid_receiver import MockRIDReceiver, BLE_RIDReceiver
+        from receiver.ble import BLE_RIDReceiver
 
-        if mode == "mock":
-            self.receiver = MockRIDReceiver(
-                callback=self._on_rid_data,
-                interval=1.0,
-                num_drones=3,
-            )
-        elif mode == "ble":
+        if mode == "ble":
             self.receiver = BLE_RIDReceiver(
                 callback=self._on_rid_data,
                 scan_duration=5.0,
             )
         elif mode == "wifi":
             try:
-                from wifi_receiver import create_wifi_receiver
+                from receiver.wifi import create_wifi_receiver
                 self.receiver = create_wifi_receiver(
                     callback=self._on_rid_data,
                 )
@@ -482,57 +482,17 @@ class MainWindow(tk.Tk):
         if not self.is_running:
             return
 
-        drone_id = parsed.drone_id
-        if not drone_id or not parsed.location:
+        result = self.pipeline.process(parsed)
+        if result is None:
             return
 
-        loc = parsed.location
-        ua_type = UA_TYPE_NAMES.get(
-            parsed.basic_id.ua_type if parsed.basic_id else 0, "未知"
-        )
-
-        # 更新数据库
-        self.db.upsert_drone(
-            drone_id=drone_id, lat=loc.latitude, lon=loc.longitude,
-            alt=loc.altitude_geodetic, speed=loc.speed_horizontal
-        )
-
-        # 计算距离
-        nearest_line, distance = self.pl_manager.find_nearest_line(
-            loc.latitude, loc.longitude, loc.altitude_geodetic
-        )
-
-        if nearest_line:
-            status = "active"
-            if distance <= self.thresholds.get("critical", 50):
-                status = "critical"
-            elif distance <= self.thresholds.get("severe", 100):
-                status = "severe"
-            elif distance <= self.thresholds.get("warning", 200):
-                status = "warning"
-
-            self.db.update_drone_distance(drone_id, distance, nearest_line.line_id, status)
-
-            # 告警
-            if distance <= self.thresholds.get("warning", 200):
-                level = self.alert_system.process(
-                    drone_id, distance, nearest_line.name,
-                    nearest_line.line_id, loc.altitude_geodetic,
-                    loc.latitude, loc.longitude
-                )
-                if level:
-                    self.after(0, lambda l=level, did=drone_id, d=distance, n=nearest_line.name:
-                               self._log_alert(
-                                   f"{'🔴' if l=='critical' else '🚨' if l=='severe' else '⚠️'} "
-                                   f"[{l}] {did} 距离 {n} {d:.0f}m", l
-                               ))
-
-                self.trajectory_recorder.record(
-                    drone_id, loc.latitude, loc.longitude,
-                    loc.altitude_geodetic, distance, nearest_line.line_id
-                )
-            else:
-                self.trajectory_recorder.stop_tracking(drone_id)
+        if result.alert_level:
+            tag = {"critical": "[X]", "severe": "[S]", "warning": "[W]"}.get(result.alert_level, "!")
+            self.after(0, lambda l=result.alert_level, did=result.drone_id,
+                       d=result.distance, n=result.nearest_line.name:
+                       self._log_alert(
+                           f"{tag} [{l}] {did} 距离 {n} {d:.0f}m", l
+                       ))
 
     def _log_alert(self, message: str, level: str = "info"):
         """向告警日志添加条目"""
@@ -575,10 +535,10 @@ class MainWindow(tk.Tk):
                 status = drone.get("status", "active")
                 alert_level = alert_drones.get(did, "")
                 if alert_level:
-                    display_status = f"{'🔴' if alert_level=='critical' else '🚨' if alert_level=='severe' else '⚠️'} {alert_level}"
+                    display_status = f"{'[X]' if alert_level=='critical' else '[S]' if alert_level=='severe' else '[W]'} {alert_level}"
                     tag = alert_level
                 else:
-                    display_status = "● 正常"
+                    display_status = "正常"
                     tag = status
 
                 dist = drone.get("min_distance")

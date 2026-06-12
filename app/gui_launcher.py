@@ -3,18 +3,23 @@
 无人机 RID 接收与电力线防碰撞系统 — GUI 版
 
 用法:
-  python src/main_gui.py
-  python src/main_gui.py --config config/config.yaml
+  python app/gui_launcher.py
+  python app/gui_launcher.py --config config/config.yaml
 """
 
 import os
 import sys
 from pathlib import Path
 
-# ── 路径设置 ──
-# 确保 src/ 在 sys.path 中，无论从哪里启动
+# 添加项目根目录到路径
 SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
+from core.config import load_config as load_yaml_config
 
 
 def get_base_path():
@@ -23,7 +28,7 @@ def get_base_path():
         # PyInstaller 打包：资源在临时解压目录
         return Path(sys._MEIPASS)
     else:
-        # 源码运行：项目根目录 = src/ 的父目录
+        # 源码运行：项目根目录 = app/ 的父目录
         return SCRIPT_DIR.parent
 
 
@@ -80,18 +85,15 @@ def check_deps():
         )
 
     if missing:
-        print("=" * 60)
-        print("ERROR: Missing dependencies:")
+        logger.error("缺少必要依赖:")
         for m in missing:
-            print(f"  - {m}")
-        print("=" * 60)
+            logger.error("  - %s", m)
         _safe_exit()
 
 
 def main():
     check_deps()
 
-    import yaml
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -104,16 +106,16 @@ def main():
     config_path = find_config(args.config)
 
     if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_path}")
-        print(f"Working directory: {os.getcwd()}")
-        print(f"Project root: {PROJECT_ROOT}")
-        print(f"  (PyInstaller frozen: {getattr(sys, 'frozen', False)})")
+        logger.error("配置文件未找到: %s", config_path)
+        logger.error("工作目录: %s", os.getcwd())
+        logger.error("项目根目录: %s", PROJECT_ROOT)
+        logger.error("  (PyInstaller frozen: %s)", getattr(sys, 'frozen', False))
         if getattr(sys, 'frozen', False):
-            print(f"  MEIPASS: {sys._MEIPASS}")
-            print(f"  EXE dir: {Path(sys.executable).parent}")
+            logger.error("  MEIPASS: %s", sys._MEIPASS)
+            logger.error("  EXE dir: %s", Path(sys.executable).parent)
         _safe_exit()
 
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config = load_yaml_config(str(config_path))
 
     # 补充绝对路径（config 中的相对路径相对于项目根）
     if not os.path.isabs(config.get("database", {}).get("path", "")):
@@ -124,15 +126,13 @@ def main():
         pl_file = config.get("power_lines_file", "config/power_lines.yaml")
         config["power_lines_file"] = str(PROJECT_ROOT / pl_file)
 
-    from gui.main_window import MainWindow
+    from display.gui.window import MainWindow
 
     try:
         app = MainWindow(config)
         app.mainloop()
     except Exception as e:
-        print(f"FATAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception("致命错误: %s", e)
         _safe_exit()
 
 
