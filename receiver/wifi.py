@@ -2,7 +2,7 @@
 WiFi RID 接收器 - 扫描 WiFi Beacon 中的 Open Drone ID 广播
 
 Open Drone ID WiFi 格式 (ASTM F3411 / ASD-STAN 4709-002):
-1. WiFi Beacon (完整帧): Vendor Specific IE, OUI 0xFA0B0C, 包含 ODID Message Pack
+1. WiFi Beacon (完整帧): Vendor Specific IE, OUI 0xFA0B0C, 包含 ODID Message Packo
 2. WiFi Nanobeacon: 简化的单帧广播, 用于低功耗场景
 
 平台要求:
