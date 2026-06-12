@@ -1,0 +1,72 @@
+# 无人机 RID 接收系统配置
+
+# BLE 扫描配置
+ble:
+  scan_duration: 5           # 每次扫描持续时间 (秒)
+  scan_interval: 1           # 扫描间隔 (秒)
+  device_filter: null        # MAC 地址过滤列表 (null = 不过滤)
+
+# 电力线配置文件路径
+power_lines_file: config/power_lines.yaml
+
+# 距离告警阈值 (米)
+thresholds:
+  warning: 200    # ≤200m: 记录轨迹 + 给飞手发警告短信
+  severe: 100     # ≤100m: 给飞手发严重警告短信
+  critical: 50    # ≤50m:  给飞手发驱离短信 + 给预设人员发短信
+
+# 短信配置
+sms:
+  # 后端选择: "twilio" | "aliyun" | "mock"
+  backend: mock
+  
+  # 飞手短信模板 (需在前端显示或通过 RID 获取飞手号码)
+  # 实际场景中，飞手号码可通过 RID Operator ID 消息获取或预先绑定
+  
+  # Twilio 配置
+  twilio:
+    account_sid: ""
+    auth_token: ""
+    from_number: ""
+    
+  # 阿里云短信配置
+  aliyun:
+    access_key_id: ""
+    access_key_secret: ""
+    sign_name: ""
+    template_code_warning: ""    # 警告模板
+    template_code_severe: ""     # 严重警告模板
+    template_code_critical: ""   # 驱离模板
+    
+  # 模拟模式 - 打印到控制台
+  mock:
+    enabled: true
+
+# 预设告警接收人员（低于50m时通知）
+alert_contacts:
+  - name: "值班主管"
+    phone: "+8613800000001"
+  - name: "安全负责人"
+    phone: "+8613800000002"
+
+# 飞手号码映射 (drone_id -> phone)
+# RID 协议本身不包含飞手电话号码，需通过外部系统维护此映射
+pilot_phones:
+  # "drone_serial_123": "+8613912345678"
+
+# 过时无人机清理 (秒) - 超过此时间未更新的无人机将被标记为离线
+stale_timeout: 120
+
+# 轨迹记录配置
+trajectory:
+  min_interval: 2.0          # 同一无人机轨迹点最小记录间隔 (秒)
+  max_points_per_drone: 1000 # 每个无人机最大轨迹点数
+
+# 显示配置
+display:
+  update_interval: 1.0       # 显示刷新间隔 (秒)
+  max_drones_display: 50     # 最多显示无人机数
+
+# 数据库
+database:
+  path: data/drone_rid.db

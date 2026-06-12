@@ -1,0 +1,14 @@
+# 无人机 RID 接收系统 - Web GUI 版
+# 纯 Python, 浏览器访问, 无需 tkinter
+
+pyyaml>=6.0
+flask>=3.0
+
+# BLE 扫描 (可选 - 需要蓝牙硬件 + Windows/Linux)
+# bleak>=0.21.0
+
+# WiFi 扫描 (可选 - 需要 Npcap/monitor mode)
+# scapy>=2.5.0
+
+# 短信 (可选)
+# twilio>=9.0.0

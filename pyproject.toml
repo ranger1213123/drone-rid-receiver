@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "drone-rid-receiver"
+version = "2.0.0"
+description = "无人机 RID 接收与电力线防碰撞监控系统"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Drone RID Team"}
+]
+keywords = ["drone", "remote-id", "rid", "astm-f3411", "uas", "power-line", "collision-avoidance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Aerospace",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Communications :: Ham Radio",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+ble = ["bleak>=0.21.0"]
+wifi = ["scapy>=2.5.0"]
+sms-twilio = ["twilio>=9.0.0"]
+full = [
+    "bleak>=0.21.0",
+    "scapy>=2.5.0",
+    "twilio>=9.0.0",
+]
+dev = [
+    "pytest>=8.0",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+drone-rid-gui = "src.main_gui:main"
+drone-rid-cli = "src.main:main"
+
+[project.gui-scripts]
+drone-rid = "src.main_gui:main"
+
+[tool.setuptools]
+packages = ["src", "src.gui"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
