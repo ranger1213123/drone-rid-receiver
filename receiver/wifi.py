@@ -15,13 +15,14 @@ import struct
 from typing import Optional, Callable
 
 from logging_config import get_logger
-from core.parser import parse_rid_pack, ParsedRID
+from core.parser import parse_rid_pack, ParsedRID, get_active_protocol
 from receiver.ble import RIDReceiver
 
 logger = get_logger(__name__)
 
 
-# ODID WiFi Vendor OUI (little-endian 3 bytes)
+# ODID WiFi Vendor OUI (ASTM: 0xFA0B0C, GB: 0xFA0BBC)
+# NOTE: 旧常量保留向后兼容，新代码应使用 get_active_protocol().wifi_oui
 ODID_OUI = bytes([0x0C, 0x0B, 0xFA])
 
 
@@ -61,7 +62,9 @@ def find_odid_in_beacon(frame_data: bytes) -> Optional[bytes]:
 
         if tag == 221 and length >= 3:  # Vendor Specific IE
             oui = frame_data[offset + 2:offset + 5]
-            if oui == ODID_OUI:
+            proto_oui = get_active_protocol().wifi_oui
+            # 同时检查 ASTM 和 GB 的 OUI
+            if oui == ODID_OUI or oui == proto_oui:
                 odid_data = frame_data[offset + 5:offset + 2 + length]
                 return odid_data  # 返回 ODID Message Pack 原始数据
 

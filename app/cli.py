@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_config import get_logger
 from core.config import load_config
 from storage.database import Database
-from core.parser import ParsedRID
+from core.parser import ParsedRID, configure_protocol
 from receiver.ble import BLE_RIDReceiver
 from receiver.wifi import create_wifi_receiver
 from core.powerline import PowerLineManager
@@ -47,6 +47,7 @@ class RIDController:
 
     def __init__(self, config: dict):
         self.config = config
+        configure_protocol(config)
 
         # 初始化数据库
         db_path = config.get("database", {}).get("path", "data/drone_rid.db")
@@ -72,13 +73,22 @@ class RIDController:
         ]
         self.db.load_power_lines(pl_dicts)
 
-        # 初始化告警系统
+        # 初始化告警系统 (含防抖)
         thresholds = config.get("thresholds", {
             "warning": 200, "severe": 100, "critical": 50
         })
+        af_cfg = config.get("anti_flapping", {})
+        anti_flapping = None
+        if af_cfg.get("enabled", False):
+            from core.anti_flapping import AntiFlappingEngine
+            anti_flapping = AntiFlappingEngine(
+                debounce_in=af_cfg.get("debounce_in", 3),
+                debounce_out=af_cfg.get("debounce_out", 10),
+            )
         self.alert = AlertSystem(
             db=self.db,
             thresholds=thresholds,
+            anti_flapping=anti_flapping,
         )
 
         # 初始化轨迹记录器
@@ -89,6 +99,22 @@ class RIDController:
             max_points_per_drone=traj_config.get("max_points_per_drone", 1000),
         )
 
+        # 初始化原始报文存档
+        raw_archive = None
+        if config.get("raw_archive", {}).get("enabled", True):
+            from core.raw_archive import RawArchiveManager
+            arc_cfg = config.get("raw_archive", {})
+            raw_archive = RawArchiveManager(
+                db=self.db,
+                retention_days=arc_cfg.get("retention_days", 30),
+                cleanup_interval=arc_cfg.get("cleanup_interval", 86400),
+            )
+            raw_archive.start()
+
+        # 初始化飞手推送
+        from core.pilot_notify import create_pilot_notifier
+        pilot_notifier = create_pilot_notifier(config)
+
         # 初始化数据处理管道
         self.pipeline = RIDPipeline(
             db=self.db,
@@ -96,6 +122,8 @@ class RIDController:
             alert_system=self.alert,
             trajectory_recorder=self.trajectory_recorder,
             thresholds=thresholds,
+            raw_archive=raw_archive,
+            pilot_notifier=pilot_notifier,
         )
 
         # 初始化显示
@@ -193,6 +221,8 @@ class RIDController:
                 pass
 
             # 清理
+            if self.pipeline.raw_archive:
+                self.pipeline.raw_archive.stop()
             self.db.close()
             logger.info("系统已安全停止")
 

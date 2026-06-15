@@ -19,7 +19,7 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # 当前数据库 schema 版本
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 # SQLITE_BUSY 重试配置
 MAX_RETRIES = 3
@@ -83,12 +83,79 @@ class Database:
     def _check_schema_version(self):
         version = self._execute("PRAGMA user_version").fetchone()[0]
         if version == 0:
-            self._execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
-            self._commit()
-            logger.info("数据库 schema 初始化至 v%d", CURRENT_SCHEMA_VERSION)
+            self._migrate_v0_to_v2()
+        elif version == 1:
+            self._migrate_v1_to_v2()
         elif version != CURRENT_SCHEMA_VERSION:
             logger.warning("数据库 schema 版本不匹配: 当前 v%d, 期望 v%d",
                            version, CURRENT_SCHEMA_VERSION)
+
+    def _migrate_v0_to_v2(self):
+        logger.info("数据库 schema 初始化至 v%d", CURRENT_SCHEMA_VERSION)
+        self._executescript("""
+            CREATE TABLE IF NOT EXISTS raw_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                drone_id TEXT NOT NULL DEFAULT '',
+                timestamp TEXT NOT NULL,
+                protocol TEXT NOT NULL DEFAULT '',
+                msg_type TEXT NOT NULL DEFAULT '',
+                raw_data TEXT NOT NULL,
+                mac TEXT NOT NULL DEFAULT '',
+                rssi REAL DEFAULT 0,
+                prev_hash TEXT NOT NULL DEFAULT '',
+                current_hash TEXT NOT NULL,
+                verified INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_raw_drone_time
+                ON raw_messages(drone_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                table_name TEXT NOT NULL,
+                record_id INTEGER,
+                operator TEXT NOT NULL DEFAULT 'system',
+                details TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp);
+        """)
+        self._execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+        self._commit()
+
+    def _migrate_v1_to_v2(self):
+        logger.info("数据库 schema 迁移 v1 → v2")
+        self._executescript("""
+            CREATE TABLE IF NOT EXISTS raw_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                drone_id TEXT NOT NULL DEFAULT '',
+                timestamp TEXT NOT NULL,
+                protocol TEXT NOT NULL DEFAULT '',
+                msg_type TEXT NOT NULL DEFAULT '',
+                raw_data TEXT NOT NULL,
+                mac TEXT NOT NULL DEFAULT '',
+                rssi REAL DEFAULT 0,
+                prev_hash TEXT NOT NULL DEFAULT '',
+                current_hash TEXT NOT NULL,
+                verified INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_raw_drone_time
+                ON raw_messages(drone_id, timestamp);
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                table_name TEXT NOT NULL,
+                record_id INTEGER,
+                operator TEXT NOT NULL DEFAULT 'system',
+                details TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp);
+        """)
+        self._execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+        self._commit()
+        logger.info("数据库 schema 迁移完成 v2")
 
     def _init_tables(self):
         """创建数据库表"""
@@ -279,6 +346,84 @@ class Database:
             ORDER BY timestamp DESC LIMIT 1
         """, (drone_id, level)).fetchone()
         return dict(row) if row else None
+
+    # ──────────────────── 原始报文存档 ────────────────────
+
+    def insert_raw_message(self, drone_id: str, timestamp: str,
+                           protocol: str, msg_type: str, raw_data: str,
+                           mac: str, rssi: float,
+                           prev_hash: str, current_hash: str) -> int:
+        cur = self._execute("""
+            INSERT INTO raw_messages (drone_id, timestamp, protocol, msg_type,
+                raw_data, mac, rssi, prev_hash, current_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (drone_id, timestamp, protocol, msg_type, raw_data, mac, rssi,
+              prev_hash, current_hash))
+        self._commit()
+        self._add_audit_log_internal("INSERT", "raw_messages", cur.lastrowid)
+        return cur.lastrowid
+
+    def get_raw_message_chain(self, drone_id: str) -> List[Dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self._execute("""
+            SELECT * FROM raw_messages
+            WHERE drone_id = ?
+            ORDER BY timestamp ASC
+        """, (drone_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_raw_messages(self, drone_id: str, limit: int = 100) -> List[Dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self._execute("""
+            SELECT * FROM raw_messages
+            WHERE drone_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (drone_id, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_all_drones_with_raw_data(self) -> List[str]:
+        rows = self._execute("""
+            SELECT DISTINCT drone_id FROM raw_messages
+        """).fetchall()
+        return [r[0] for r in rows]
+
+    def delete_raw_messages_before(self, cutoff: str):
+        self._execute("""
+            DELETE FROM raw_messages WHERE timestamp < ?
+        """, (cutoff,))
+        self._commit()
+        self._add_audit_log_internal("DELETE", "raw_messages", None,
+                                     f"cleanup before {cutoff}")
+
+    # ──────────────────── 审计日志 ────────────────────
+
+    def _add_audit_log_internal(self, operation: str, table_name: str,
+                                record_id: int = None, details: str = ""):
+        now = datetime.now(timezone.utc).isoformat()
+        self._execute("""
+            INSERT INTO audit_log (timestamp, operation, table_name, record_id, details)
+            VALUES (?, ?, ?, ?, ?)
+        """, (now, operation, table_name, record_id, details or ""))
+
+    def add_audit_log(self, operation: str, table_name: str,
+                      record_id: int = None, operator: str = "system",
+                      details: str = "") -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._execute("""
+            INSERT INTO audit_log (timestamp, operation, table_name, record_id,
+                operator, details)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (now, operation, table_name, record_id, operator, details))
+        self._commit()
+        return cur.lastrowid
+
+    def get_audit_logs(self, limit: int = 200) -> List[Dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self._execute("""
+            SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
 
     def close(self):
         self.conn.close()

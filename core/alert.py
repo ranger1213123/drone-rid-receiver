@@ -1,5 +1,5 @@
 """
-告警系统 - 阈值判断、去重、数据库记录
+告警系统 - 阈值判断、去重、防抖、数据库记录
 
 告警级别:
   warning  (≤200m): 开始记录轨迹
@@ -7,14 +7,18 @@
   critical (≤50m):  危险
 
 去重: 同一无人机同一级别在冷却期内不重复记录
+防抖: 防止无人机在边界反复进出导致的重复告警
 """
 
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 
 from logging_config import get_logger
 from storage.database import Database
+
+if TYPE_CHECKING:
+    from core.anti_flapping import AntiFlappingEngine
 
 logger = get_logger(__name__)
 
@@ -36,12 +40,15 @@ class AlertSystem:
     }
 
     def __init__(self, db: Database,
-                 thresholds: Dict[str, float]):
+                 thresholds: Dict[str, float],
+                 anti_flapping: "AntiFlappingEngine" = None):
         """
         thresholds: {"warning": 200, "severe": 100, "critical": 50}
+        anti_flapping: 告警防抖引擎 (None = 不启用)
         """
         self.db = db
         self.thresholds = thresholds
+        self.anti_flapping = anti_flapping
 
         self._last_alert: Dict[tuple, float] = {}
         self._drone_level: Dict[str, str] = {}
@@ -65,9 +72,23 @@ class AlertSystem:
         """
         处理一次距离更新
 
-        返回: 触发的告警级别 (若被去重则返回 None)
+        返回: 触发的告警级别 (若被去重/防抖抑制则返回 None)
         """
         level = self.get_level(distance)
+
+        # 防抖检查
+        if self.anti_flapping:
+            is_inside = level is not None
+            should_fire = self.anti_flapping.evaluate(drone_id, is_inside)
+            if not should_fire:
+                # 防抖抑制中 — 但仍更新 _drone_level 以反映实时状态
+                if is_inside:
+                    self._drone_level[drone_id] = level
+                elif drone_id in self._drone_level:
+                    if not self.anti_flapping.is_inside(drone_id):
+                        del self._drone_level[drone_id]
+                return None
+
         if level is None:
             if drone_id in self._drone_level:
                 logger.info("%s 已离开告警区域 (距离=%.1fm)", drone_id, distance)
@@ -80,11 +101,13 @@ class AlertSystem:
         old_level = self._drone_level.get(drone_id)
         self._drone_level[drone_id] = level
 
+        action = self._get_action(level)
         message = (
             f"[{level}] {drone_id} 接近电力线 {line_name}\n"
             f"距离: {distance:.1f}m\n"
             f"位置: {drone_lat:.5f}, {drone_lon:.5f}, 高度: {drone_alt:.1f}m\n"
-            f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"处置建议: {action}"
         )
 
         self.db.add_alert(
@@ -114,6 +137,15 @@ class AlertSystem:
 
         self._last_alert[key] = now
         return True
+
+    @staticmethod
+    def _get_action(level: str) -> str:
+        """根据告警级别返回处置建议"""
+        if level == "critical":
+            return "立即降落或返航，远离电力线"
+        elif level == "severe":
+            return "立即调整航向，远离电力线"
+        return "注意飞行路径，保持与电力线的安全距离"
 
     def get_status_summary(self) -> str:
         """获取当前告警状态摘要字符串"""

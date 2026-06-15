@@ -8,12 +8,15 @@ from abc import ABC, abstractmethod
 from typing import Optional, Callable, List, Set
 
 from logging_config import get_logger
-from core.parser import parse_rid_pack, ParsedRID, ODID_SERVICE_UUID
+from core.parser import parse_rid_pack, ParsedRID, get_active_protocol
 
 logger = get_logger(__name__)
 
-# Open Drone ID 128-bit Service UUID (16-bit 0xFFFA 转换为标准 BLE 128-bit)
-ODID_UUID_128 = f"0000{ODID_SERVICE_UUID:04x}-0000-1000-8000-00805f9b34fb"
+
+def _get_odid_uuid_128() -> str:
+    """获取当前协议的 128-bit BLE UUID"""
+    uuid16 = get_active_protocol().ble_service_uuid
+    return f"0000{uuid16:04x}-0000-1000-8000-00805f9b34fb"
 
 
 class RIDReceiver(ABC):
@@ -62,12 +65,13 @@ class BLE_RIDReceiver(RIDReceiver):
         # 在 service_data 中查找 ODID Service UUID (128-bit)
         odid_data = None
         service_data = getattr(advertisement_data, 'service_data', None) or {}
-        odid_data = service_data.get(ODID_UUID_128)
+        odid_data = service_data.get(_get_odid_uuid_128())
 
         # 如果 128-bit 没找到，遍历所有 key 按 16-bit 后缀匹配
         if odid_data is None:
+            proto_uuid = get_active_protocol().ble_service_uuid
             for uuid_key, data in service_data.items():
-                if str(uuid_key).lower().endswith(f'{ODID_SERVICE_UUID:04x}'):
+                if str(uuid_key).lower().endswith(f'{proto_uuid:04x}'):
                     odid_data = data
                     break
 
@@ -99,7 +103,9 @@ class BLE_RIDReceiver(RIDReceiver):
         self._scan_count = 0
         self._last_status_time = time.time()
 
-        logger.info("BLE 扫描启动 (Open Drone ID Service UUID: 0x%04X)", ODID_SERVICE_UUID)
+        proto = get_active_protocol()
+        logger.info("BLE 扫描启动 (协议: %s, UUID: 0x%04X)",
+                    proto.name, proto.ble_service_uuid)
         logger.info("持续扫描模式，每 %ds 重建扫描器以防止 Windows BLE 栈卡死", self.scan_window)
 
         retries = 0

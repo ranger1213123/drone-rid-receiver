@@ -18,6 +18,7 @@ from core.parser import (
     parse_rid_pack, parse_basic_id, parse_location,
     BasicIDMessage, LocationMessage, ParsedRID, UA_TYPE_NAMES,
     MSG_BASIC_ID, MSG_LOCATION, ID_TYPE_SERIAL, UA_TYPE_HELICOPTER,
+    set_active_protocol,
 )
 from core.powerline import PowerLineManager, PowerLineSegment
 from storage.database import Database
@@ -28,6 +29,12 @@ from core.pipeline import RIDPipeline
 
 class TestRIDParser(unittest.TestCase):
     """RID 消息解析器测试"""
+
+    def setUp(self):
+        set_active_protocol("astm_f3411")
+
+    def tearDown(self):
+        set_active_protocol("gb46750")
 
     def test_parse_basic_id(self):
         """测试 Basic ID 消息解析"""
@@ -445,6 +452,279 @@ class TestRIDPipeline(unittest.TestCase):
         result = self.pipeline.process(self._make_parsed(alt=500.0))
         self.assertEqual(result.status, "active")
         self.assertNotIn("DRONE-1", self.trajectory._last_record_time)
+
+
+class TestAntiFlapping(unittest.TestCase):
+    """告警防抖引擎测试"""
+
+    def setUp(self):
+        from core.anti_flapping import AntiFlappingEngine
+        self.af = AntiFlappingEngine(debounce_in=0.1, debounce_out=0.2)
+
+    def test_entering_after_debounce_fires(self):
+        self.assertFalse(self.af.evaluate("D1", True))
+        import time
+        time.sleep(0.15)
+        self.assertTrue(self.af.evaluate("D1", True))
+
+    def test_exit_during_entering_resets(self):
+        self.af.evaluate("D1", True)  # ENTERING
+        self.af.evaluate("D1", False)  # back to OUTSIDE
+        self.assertEqual(self.af._drones["D1"]["state"].name, "OUTSIDE")
+
+    def test_leaving_reentry_restores_inside(self):
+        import time
+        self.af.evaluate("D1", True)  # ENTERING
+        time.sleep(0.15)
+        self.af.evaluate("D1", True)  # INSIDE
+        self.af.evaluate("D1", False)  # LEAVING
+        self.assertEqual(self.af._drones["D1"]["state"].name, "LEAVING")
+        self.af.evaluate("D1", True)  # re-enter
+        self.assertEqual(self.af._drones["D1"]["state"].name, "INSIDE")
+
+    def test_outside_no_fire(self):
+        self.assertFalse(self.af.evaluate("D1", False))
+        self.assertFalse(self.af.evaluate("D1", False))
+
+    def test_clear_drone(self):
+        self.af.evaluate("D1", True)
+        self.af.clear("D1")
+        self.assertNotIn("D1", self.af._drones)
+
+
+class TestRawArchive(unittest.TestCase):
+    """原始报文存档 + 哈希链测试"""
+
+    def setUp(self):
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmpfile.close()
+        self.db = Database(self.tmpfile.name)
+        from core.raw_archive import RawArchiveManager, compute_hash
+        self.archive = RawArchiveManager(self.db, retention_days=30)
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.tmpfile.name)
+
+    def test_archive_creates_hash_chain(self):
+        self.archive.archive("D1", b"raw1", "gb46750", "pack", "AA:BB:CC", -50)
+        self.archive.archive("D1", b"raw2", "gb46750", "pack", "AA:BB:CC", -45)
+        ok, count, break_id = self.archive.verify_chain("D1")
+        self.assertTrue(ok)
+        self.assertEqual(count, 2)
+        self.assertIsNone(break_id)
+
+    def test_tamper_detection(self):
+        self.archive.archive("D1", b"raw1", "gb46750", "pack")
+        # Simulate tamper by modifying raw_data in DB
+        rows = self.db.get_raw_message_chain("D1")
+        self.db._execute(
+            "UPDATE raw_messages SET raw_data = ? WHERE id = ?",
+            ("aabbccddeeff", rows[0]["id"]),
+        )
+        self.db._commit()
+        ok, count, break_id = self.archive.verify_chain("D1")
+        self.assertFalse(ok)
+
+    def test_hash_compute_deterministic(self):
+        from core.raw_archive import compute_hash
+        h1 = compute_hash("0" * 64, b"test", "2025-01-01T00:00:00")
+        h2 = compute_hash("0" * 64, b"test", "2025-01-01T00:00:00")
+        self.assertEqual(h1, h2)
+
+    def test_hash_different_data_different_hash(self):
+        from core.raw_archive import compute_hash
+        h1 = compute_hash("0" * 64, b"data1", "2025-01-01T00:00:00")
+        h2 = compute_hash("0" * 64, b"data2", "2025-01-01T00:00:00")
+        self.assertNotEqual(h1, h2)
+
+
+class TestSMSGateway(unittest.TestCase):
+    """SMS 短信网关测试"""
+
+    def test_simulated_sends(self):
+        from core.sms_gateway import SimulatedSMSGateway
+        gw = SimulatedSMSGateway(rate_limit_per_hour=5)
+        self.assertTrue(gw.send(["+86-123"], "test message"))
+
+    def test_rate_limiting(self):
+        from core.sms_gateway import SimulatedSMSGateway
+        gw = SimulatedSMSGateway(rate_limit_per_hour=2)
+        self.assertTrue(gw.send(["+86-456"], "msg1"))
+        self.assertTrue(gw.send(["+86-456"], "msg2"))
+        self.assertFalse(gw.send(["+86-456"], "msg3"))
+
+    def test_multiple_phones(self):
+        from core.sms_gateway import SimulatedSMSGateway
+        gw = SimulatedSMSGateway(rate_limit_per_hour=10)
+        self.assertTrue(gw.send(["+86-111", "+86-222"], "test"))
+
+    def test_alibaba_graceful_fallback(self):
+        from core.sms_gateway import AlibabaSMSGateway
+        gw = AlibabaSMSGateway("key", "secret", "sign", "template")
+        # Should not crash even without real credentials
+        result = gw.send(["+86-123"], "test")
+        self.assertIsInstance(result, bool)
+
+
+class TestAirspace(unittest.TestCase):
+    """空域数据源测试"""
+
+    def test_point_in_polygon_inside(self):
+        from core.airspace import _point_in_polygon
+        square = [(0, 0), (0, 10), (10, 10), (10, 0)]
+        self.assertTrue(_point_in_polygon(5, 5, square))
+
+    def test_point_in_polygon_outside(self):
+        from core.airspace import _point_in_polygon
+        square = [(0, 0), (0, 10), (10, 10), (10, 0)]
+        self.assertFalse(_point_in_polygon(15, 15, square))
+
+    def test_point_in_polygon_edge(self):
+        from core.airspace import _point_in_polygon
+        triangle = [(0, 0), (10, 0), (5, 10)]
+        # Point near center
+        self.assertTrue(_point_in_polygon(5, 5, triangle))
+        # Point outside
+        self.assertFalse(_point_in_polygon(0, 10, triangle))
+
+    def test_composite_source_merges(self):
+        from core.airspace import AirspaceZone, AirspaceSource, CompositeAirspaceSource
+
+        class MockSource(AirspaceSource):
+            @property
+            def source_name(self):
+                return "mock"
+            def fetch(self):
+                return [AirspaceZone("z1", "Zone1", "no_fly", [(0,0),(1,1)], 0, 100, "mock")]
+
+        comp = CompositeAirspaceSource([MockSource(), MockSource()])
+        zones = comp.fetch()
+        self.assertEqual(len(zones), 2)
+
+    def test_check_violation(self):
+        from core.airspace import AirspaceZone, check_airspace_violation
+        zones = [
+            AirspaceZone("z1", "Zone1", "no_fly",
+                        [(0, 0), (0, 10), (10, 10), (10, 0)],
+                        0, 200, "test"),
+        ]
+        hit = check_airspace_violation(5, 5, 100, zones)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit.zone_id, "z1")
+
+    def test_check_violation_altitude_out_of_range(self):
+        from core.airspace import AirspaceZone, check_airspace_violation
+        zones = [
+            AirspaceZone("z1", "Zone1", "no_fly",
+                        [(0, 0), (0, 10), (10, 10), (10, 0)],
+                        0, 200, "test"),
+        ]
+        hit = check_airspace_violation(5, 5, 500, zones)
+        self.assertIsNone(hit)
+
+
+class TestPilotNotify(unittest.TestCase):
+    """飞手推送测试"""
+
+    def setUp(self):
+        self.log_path = os.path.join(tempfile.gettempdir(), "test_pilot_notify.log")
+
+    def tearDown(self):
+        if os.path.exists(self.log_path):
+            os.unlink(self.log_path)
+
+    def test_console_notifier_logs_to_file(self):
+        from core.pilot_notify import ConsolePilotNotifier
+        notifier = ConsolePilotNotifier(log_path=self.log_path)
+        self.assertTrue(notifier.notify("DRONE-1", "critical", "立即返航"))
+        self.assertTrue(os.path.exists(self.log_path))
+        with open(self.log_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("DRONE-1", content)
+        self.assertIn("CRITICAL", content)
+
+    def test_uom_graceful_without_credentials(self):
+        from core.pilot_notify import UOMFlightServiceNotifier
+        notifier = UOMFlightServiceNotifier("", "")
+        result = notifier.notify("DRONE-1", "warning", "test")
+        self.assertIsInstance(result, bool)
+        self.assertFalse(result)  # 空凭据应该返回 False
+
+    def test_uom_sign_generation(self):
+        from core.pilot_notify import _generate_sign
+        sign = _generate_sign("test_key", "20250101000000", '{"test":1}')
+        self.assertEqual(len(sign), 32)
+
+
+class TestDatabaseMigration(unittest.TestCase):
+    """数据库 Schema v2 迁移测试"""
+
+    def setUp(self):
+        self.tmpfile = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self.tmpfile.close()
+        self.db = Database(self.tmpfile.name)
+
+    def tearDown(self):
+        self.db.close()
+        os.unlink(self.tmpfile.name)
+
+    def test_v2_tables_exist(self):
+        """raw_messages 和 audit_log 表在 v2 schema 中应存在"""
+        cur = self.db._execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_messages'"
+        )
+        self.assertIsNotNone(cur.fetchone())
+        cur = self.db._execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='audit_log'"
+        )
+        self.assertIsNotNone(cur.fetchone())
+
+    def test_schema_version_is_2(self):
+        version = self.db._execute("PRAGMA user_version").fetchone()[0]
+        self.assertEqual(version, 2)
+
+    def test_raw_message_insert_and_retrieve(self):
+        self.db.insert_raw_message(
+            drone_id="D1", timestamp="2025-01-01T00:00:00",
+            protocol="gb46750", msg_type="pack",
+            raw_data="abcdef", mac="AA:BB", rssi=-50,
+            prev_hash="0" * 64, current_hash="a" * 64,
+        )
+        msgs = self.db.get_raw_messages("D1", limit=10)
+        self.assertEqual(len(msgs), 1)
+        self.assertEqual(msgs[0]["drone_id"], "D1")
+
+    def test_audit_log_written(self):
+        self.db.add_audit_log("INSERT", "drones", 1, "test", "test detail")
+        logs = self.db.get_audit_logs(limit=1)
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]["operation"], "INSERT")
+
+    def test_v1_to_v2_migration(self):
+        """从 v1 数据库迁移测试"""
+        # Create a v1 DB manually
+        tmp2 = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        tmp2.close()
+        import sqlite3
+        conn = sqlite3.connect(tmp2.name)
+        conn.execute("PRAGMA user_version = 1")
+        conn.execute("CREATE TABLE IF NOT EXISTS drones (id TEXT PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        # Now open with Database (should migrate)
+        db2 = Database(tmp2.name)
+        try:
+            version = db2._execute("PRAGMA user_version").fetchone()[0]
+            self.assertEqual(version, 2)
+            # v2 tables should exist
+            cur = db2._execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_messages'"
+            )
+            self.assertIsNotNone(cur.fetchone())
+        finally:
+            db2.close()
+            os.unlink(tmp2.name)
 
 
 if __name__ == "__main__":
