@@ -19,7 +19,7 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # 当前数据库 schema 版本
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 # SQLITE_BUSY 重试配置
 MAX_RETRIES = 3
@@ -82,13 +82,13 @@ class Database:
 
     def _check_schema_version(self):
         version = self._execute("PRAGMA user_version").fetchone()[0]
-        if version == 0:
-            self._migrate_v0_to_v2()
-        elif version == 1:
-            self._migrate_v1_to_v2()
-        elif version != CURRENT_SCHEMA_VERSION:
-            logger.warning("数据库 schema 版本不匹配: 当前 v%d, 期望 v%d",
-                           version, CURRENT_SCHEMA_VERSION)
+        if version < 2:
+            if version == 0:
+                self._migrate_v0_to_v2()
+            elif version == 1:
+                self._migrate_v1_to_v2()
+        if version < 3:
+            self._migrate_v2_to_v3()
 
     def _migrate_v0_to_v2(self):
         logger.info("数据库 schema 初始化至 v%d", CURRENT_SCHEMA_VERSION)
@@ -157,6 +157,33 @@ class Database:
         self._commit()
         logger.info("数据库 schema 迁移完成 v2")
 
+    def _migrate_v2_to_v3(self):
+        """v3: 增加无人机型号、起飞位置、操作员位置字段"""
+        logger.info("数据库 schema 迁移 v2 → v3")
+        try:
+            self._execute("ALTER TABLE drones ADD COLUMN ua_type INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # 列已存在
+        try:
+            self._execute("ALTER TABLE drones ADD COLUMN takeoff_lat REAL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._execute("ALTER TABLE drones ADD COLUMN takeoff_lon REAL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._execute("ALTER TABLE drones ADD COLUMN operator_lat REAL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._execute("ALTER TABLE drones ADD COLUMN operator_lon REAL")
+        except sqlite3.OperationalError:
+            pass
+        self._execute(f"PRAGMA user_version = 3")
+        self._commit()
+        logger.info("数据库 schema 迁移完成 v3")
+
     def _init_tables(self):
         """创建数据库表"""
         self._executescript("""
@@ -215,7 +242,10 @@ class Database:
     # ──────────────────── 无人机操作 ────────────────────
 
     def upsert_drone(self, drone_id: str, lat: float, lon: float,
-                     alt: float, speed: float = 0, heading: float = 0):
+                     alt: float, speed: float = 0, heading: float = 0,
+                     ua_type: int = 0, takeoff_lat: float = None,
+                     takeoff_lon: float = None, operator_lat: float = None,
+                     operator_lon: float = None):
         """插入或更新无人机状态"""
         now = datetime.now(timezone.utc).isoformat()
         cur = self._execute(
@@ -225,15 +255,28 @@ class Database:
             self._execute("""
                 UPDATE drones
                 SET last_seen = ?, last_lat = ?, last_lon = ?, last_alt = ?,
-                    last_speed = ?, last_heading = ?
+                    last_speed = ?, last_heading = ?, ua_type = ?
                 WHERE id = ?
-            """, (now, lat, lon, alt, speed, heading, drone_id))
+            """, (now, lat, lon, alt, speed, heading, ua_type, drone_id))
+            # 起飞位仅在首次获取时写入
+            if takeoff_lat is not None and takeoff_lon is not None:
+                self._execute("""
+                    UPDATE drones SET takeoff_lat = ?, takeoff_lon = ?
+                    WHERE id = ? AND takeoff_lat IS NULL
+                """, (takeoff_lat, takeoff_lon, drone_id))
+            if operator_lat is not None and operator_lon is not None:
+                self._execute("""
+                    UPDATE drones SET operator_lat = ?, operator_lon = ?
+                    WHERE id = ? AND operator_lat IS NULL
+                """, (operator_lat, operator_lon, drone_id))
         else:
             self._execute("""
                 INSERT INTO drones (id, first_seen, last_seen,
-                    last_lat, last_lon, last_alt, last_speed, last_heading, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')
-            """, (drone_id, now, now, lat, lon, alt, speed, heading))
+                    last_lat, last_lon, last_alt, last_speed, last_heading,
+                    ua_type, takeoff_lat, takeoff_lon, operator_lat, operator_lon, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            """, (drone_id, now, now, lat, lon, alt, speed, heading,
+                  ua_type, takeoff_lat, takeoff_lon, operator_lat, operator_lon))
         self._commit()
 
     def update_drone_distance(self, drone_id: str, distance: float,
@@ -273,15 +316,16 @@ class Database:
     # ──────────────────── 电力线操作 ────────────────────
 
     def load_power_lines(self, lines: List[Dict]):
-        """从配置加载电力线（先解除外键引用再清空插入）"""
+        """从配置加载电力线（先解除外键引用再清空插入，ID 对齐）"""
         self._execute("UPDATE alerts SET line_id = NULL")
         self._execute("UPDATE trajectories SET line_id = NULL")
         self._execute("DELETE FROM power_lines")
-        for line in lines:
+        self._execute("DELETE FROM sqlite_sequence WHERE name='power_lines'")
+        for i, line in enumerate(lines, 1):
             self._execute("""
-                INSERT INTO power_lines (name, lat1, lon1, alt1, lat2, lon2, alt2)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (line["name"], line["lat1"], line["lon1"], line["alt1"],
+                INSERT INTO power_lines (id, name, lat1, lon1, alt1, lat2, lon2, alt2)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (i, line["name"], line["lat1"], line["lon1"], line["alt1"],
                   line["lat2"], line["lon2"], line["alt2"]))
         self._commit()
 

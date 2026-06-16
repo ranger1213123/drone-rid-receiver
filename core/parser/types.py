@@ -66,6 +66,61 @@ UA_TYPE_NAMES = {
     UA_TYPE_OTHER: "其他",
 }
 
+# SN 前缀 → 推测产品型号
+# RID 协议不广播产品型号，仅通过 SN 前缀推断。
+# DJI SN 前几位编码型号，大疆不同产品线前缀规则不同，下表为常见前缀。
+# 来源: 公开社区整理 + 实际抓包观察。持续更新。
+SN_PREFIX_MODEL = {
+    # DJI Consumer
+    "1581F": "DJI Mini 4 Pro",
+    "3FMFK": "DJI Mini 4K",
+    "6FFFL": "DJI Mini 3",
+    "6KRFL": "DJI Mini 3 Pro",
+    "3W7KK": "DJI Mini 2",
+    "1W7FL": "DJI Mini 2 SE",
+    "3YNFK": "DJI Mini SE",
+    # DJI Mavic
+    "1SFOJ": "DJI Mavic 3",
+    "1SFOK": "DJI Mavic 3 Classic",
+    "3SFOJ": "DJI Mavic 3 Pro",
+    "3QNFK": "DJI Mavic 3E",
+    "3TNFK": "DJI Mavic 3T",
+    "1TBLG": "DJI Air 3S",
+    "3TBLG": "DJI Air 3",
+    "3W6KL": "DJI Air 2S",
+    # DJI Enterprise
+    "3W6KK": "DJI Matrice 30",
+    "3W6KL": "DJI Matrice 30T",
+    "3W9KJ": "DJI Matrice 350 RTK",
+    "1TBLE": "DJI Avata 2",
+    "3W7KL": "DJI Avata",
+    # DJI Agras
+    "3YNFM": "DJI Agras T40",
+    "3YNFL": "DJI Agras T30",
+    # 其它常见品牌
+    "AUTEL": "Autel EVO",
+    "PARRO": "Parrot ANAFI",
+    "SKYD": "Skydio",
+}
+
+_ID_TYPE_NAMES = {
+    ID_TYPE_NONE: "无",
+    ID_TYPE_SERIAL: "机身序列号 (SN)",
+    ID_TYPE_CAA: "CAA 注册号",
+    ID_TYPE_UTM: "UTM 分配 ID",
+    ID_TYPE_SESSION: "会话 ID",
+}
+
+
+def lookup_model_by_sn(uas_id: str) -> str:
+    """通过 SN 前缀推测产品型号，未匹配返回空字符串"""
+    if not uas_id:
+        return ""
+    for prefix, model in SN_PREFIX_MODEL.items():
+        if uas_id.upper().startswith(prefix.upper()):
+            return model
+    return ""
+
 LOC_STATUS_TIMESTAMP_VALID = 0x10
 
 
@@ -123,6 +178,19 @@ class SystemMessage:
     # GB 46750 独有字段
     coordinate_system: int = 0   # 0=WGS-84, 1=CGCS2000
     timestamp_unix: int = 0      # Unix 时间戳 (从 2019-01-01 起算)
+    op_pos_type: int = 0         # 0=起飞位, 1=动态位, 2=固定位
+
+    @property
+    def is_takeoff_position(self) -> bool:
+        """op_pos_type == 0 表示该位置是起飞点 (GB 46750)"""
+        return self.op_pos_type == 0
+
+    @property
+    def has_operator_position(self) -> bool:
+        return self.operator_lat != 0.0 or self.operator_lon != 0.0
+
+
+_OP_POS_TYPE_NAMES = {0: "起飞位", 1: "动态位", 2: "固定位"}
 
 
 @dataclass
@@ -152,8 +220,47 @@ class ParsedRID:
         return None
 
     @property
+    def drone_category(self) -> str:
+        """飞行器大类 (直升机/多旋翼 / 固定翼 / ...)"""
+        if self.basic_id:
+            return UA_TYPE_NAMES.get(self.basic_id.ua_type, "未知")
+        return "未知"
+
+    @property
+    def drone_model(self) -> str:
+        """推测产品型号 (通过 SN 前缀查字典). 无匹配则返回 "" """
+        if self.basic_id:
+            return lookup_model_by_sn(self.basic_id.uas_id)
+        return ""
+
+    @property
+    def id_type_name(self) -> str:
+        """ID 类型中文名"""
+        if self.basic_id:
+            return _ID_TYPE_NAMES.get(self.basic_id.id_type, "未知")
+        return ""
+
+    @property
     def has_location(self) -> bool:
         return self.location is not None
+
+    @property
+    def has_takeoff_position(self) -> bool:
+        if self.system and self.system.is_takeoff_position:
+            return True
+        return False
+
+    @property
+    def takeoff_lat(self) -> Optional[float]:
+        if self.system and self.system.is_takeoff_position:
+            return self.system.operator_lat
+        return None
+
+    @property
+    def takeoff_lon(self) -> Optional[float]:
+        if self.system and self.system.is_takeoff_position:
+            return self.system.operator_lon
+        return None
 
 
 # ── 共享解码器 (两协议线格式相同) ──

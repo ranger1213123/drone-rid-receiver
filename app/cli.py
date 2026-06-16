@@ -115,6 +115,13 @@ class RIDController:
         from core.pilot_notify import create_pilot_notifier
         pilot_notifier = create_pilot_notifier(config)
 
+        # 初始化北斗 + 数据回传 (含设备自身定位)
+        from core.beidou import create_beidou
+        from core.backhaul import BackhaulManager
+        self._beidou = create_beidou(config)
+        device_name = config.get('backhaul', {}).get('device_name', 'NW-F1')
+        self.backhaul = BackhaulManager(config, self._beidou, device_name=device_name)
+
         # 初始化数据处理管道
         self.pipeline = RIDPipeline(
             db=self.db,
@@ -124,6 +131,7 @@ class RIDController:
             thresholds=thresholds,
             raw_archive=raw_archive,
             pilot_notifier=pilot_notifier,
+            backhaul=self.backhaul,
         )
 
         # 初始化显示
@@ -193,6 +201,9 @@ class RIDController:
         """主循环"""
         self._running = True
 
+        # 启动数据回传 (含设备心跳+定位)
+        self.backhaul.start()
+
         # 启动显示刷新任务
         self._display_task = asyncio.create_task(self._display_loop())
         cleanup_task = asyncio.create_task(self._stale_drone_cleanup())
@@ -221,6 +232,7 @@ class RIDController:
                 pass
 
             # 清理
+            self.backhaul.stop()
             if self.pipeline.raw_archive:
                 self.pipeline.raw_archive.stop()
             self.db.close()
@@ -238,9 +250,9 @@ def main():
     )
     parser.add_argument(
         "--mode", "-m",
-        choices=["ble", "wifi"],
-        default="ble",
-        help="接收模式: ble (真实BLE) / wifi (WiFi Beacon)"
+        choices=["ble", "wifi", "simulated"],
+        default="simulated",
+        help="接收模式: simulated (模拟演示) / ble (真实BLE) / wifi (WiFi Beacon)"
     )
     parser.add_argument(
         "--scan-duration",
@@ -265,7 +277,15 @@ def main():
     controller = RIDController(config)
 
     # 创建接收器
-    if args.mode == "wifi":
+    if args.mode == "simulated":
+        from receiver.simulated import create_simulated_receiver
+        receiver = create_simulated_receiver(
+            callback=controller.on_rid_received,
+            pl_manager=controller.pl_manager,
+            drone_count=6,
+            update_interval=1.0,
+        )
+    elif args.mode == "wifi":
         receiver = create_wifi_receiver(
             callback=controller.on_rid_received,
             interface=args.wifi_interface,

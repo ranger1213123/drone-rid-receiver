@@ -62,6 +62,16 @@ class BackhaulManager:
         self._http_health_url = http_cfg.get('health_url', '')
         self._http_headers = http_cfg.get('headers', {'Content-Type': 'application/json'})
         self._retry_interval = http_cfg.get('retry_interval', 30)
+        self._heartbeat_url = http_cfg.get('heartbeat_url', '')
+        self._heartbeat_interval = http_cfg.get('heartbeat_interval', 30)
+
+        # ── 设备自身位置 ──
+        pos_cfg = config.get('position', {})
+        self._position_source = pos_cfg.get('source', 'beidou')
+        self._fallback_lat = pos_cfg.get('manual_lat', 0)
+        self._fallback_lon = pos_cfg.get('manual_lon', 0)
+        self._fallback_alt = pos_cfg.get('manual_alt', 0)
+        self._device_location = config.get('backhaul', {}).get('device_location', '')
 
         # ── 消息队列 ──
         queue_cfg = config.get('backhaul', {}).get('queue', {})
@@ -100,8 +110,7 @@ class BackhaulManager:
         self._thread.start()
         self._health_thread = threading.Thread(target=self._health_loop, daemon=True)
         self._health_thread.start()
-        logger.info("数据回传管理器已启动 | 主通道: %s | 应急: 北斗短报文",
-                     self._http_endpoint, self._beidou.card_id)
+        logger.info(f"数据回传管理器已启动 | 主通道: {self._http_endpoint} | 应急: 北斗短报文")
 
     def stop(self):
         self._running = False
@@ -173,6 +182,33 @@ class BackhaulManager:
     def set_alert_callback(self, cb: Callable):
         self._alert_callback = cb
 
+    def _get_device_position(self) -> tuple:
+        """获取设备自身位置 (优先北斗/GPS, 回落配置文件)"""
+        if self._position_source == 'beidou' and self._beidou:
+            pos = self._beidou.get_position()
+            if pos and pos.has_fix:
+                return pos.latitude, pos.longitude, pos.altitude
+        return self._fallback_lat, self._fallback_lon, self._fallback_alt
+
+    def send_heartbeat(self) -> bool:
+        """发送设备心跳 (含自身定位) 到中心服务器"""
+        url = self._heartbeat_url or self._http_endpoint.replace('/api/report', '/api/heartbeat')
+        dev_lat, dev_lon, dev_alt = self._get_device_position()
+        payload = {
+            'device': self._device_name,
+            'device_lat': dev_lat,
+            'device_lon': dev_lon,
+            'device_alt': dev_alt,
+            'location': self._device_location,
+            'active_channel': self._active_channel,
+            'timestamp': datetime.now().isoformat(),
+        }
+        try:
+            resp = requests.post(url, json=payload, timeout=self._http_timeout)
+            return resp.status_code < 500
+        except Exception:
+            return False
+
     # ── 数据上报 API ──
 
     def report_drone(self, drone_id: str, lat: float, lon: float, alt: float,
@@ -191,7 +227,9 @@ class BackhaulManager:
 
     def report_alert(self, drone_id: str, level: str, distance: float,
                      line_name: str, lat: float, lon: float,
-                     alt: float) -> str:
+                     alt: float, drone_model: str = "",
+                     takeoff_lat: float = None,
+                     takeoff_lon: float = None) -> str:
         """上报告警事件
 
         Returns: 'http' | 'beidou' | 'queued' | 'dropped'
@@ -204,6 +242,8 @@ class BackhaulManager:
             'distance': distance,
             'nearest_line': line_name,
             'latitude': lat, 'longitude': lon, 'altitude': alt,
+            'drone_model': drone_model,
+            'takeoff_lat': takeoff_lat, 'takeoff_lon': takeoff_lon,
             'timestamp': datetime.now().isoformat(),
         }
         sent = self._send_http(payload)
@@ -212,11 +252,20 @@ class BackhaulManager:
 
         # 4G/有线不通 → SMS (专责人员)
         if self._sms_enabled and self._sms_alert_phones:
-            sms_msg = (
-                f"[{level}] 无人机告警: {drone_id} "
-                f"距 {line_name} {distance:.0f}m "
-                f"({lat:.5f}, {lon:.5f})"
-            )
+            # 组装短信: SN + 机型 + 高度 + 距离 + 位置 + 起飞点
+            model_part = f"机型:{drone_model} " if drone_model else ""
+            alt_part = f"高度:{alt:.0f}m " if alt else ""
+            sms_parts = [
+                f"[{level.upper()}]无人机告警",
+                f"SN:{drone_id}",
+                f"{model_part}",
+                f"距 {line_name} {distance:.0f}m",
+                f"{alt_part}",
+                f"位置:({lat:.5f},{lon:.5f})",
+            ]
+            if takeoff_lat is not None and takeoff_lon is not None:
+                sms_parts.append(f"起飞:({takeoff_lat:.5f},{takeoff_lon:.5f})")
+            sms_msg = " ".join(sms_parts)
             if self._sms.send(self._sms_alert_phones, sms_msg):
                 logger.info("SMS 告警已发送")
 
@@ -320,10 +369,11 @@ class BackhaulManager:
                 self._flush_queue()
 
     def _health_loop(self):
-        """健康检测循环"""
+        """健康检测循环 (通道检测 + 设备心跳)"""
         check_interval = self._config.get('backhaul', {}).get('health_check_interval', 15)
+        last_heartbeat = 0
         while self._running:
-            time.sleep(check_interval)
+            time.sleep(min(check_interval, self._heartbeat_interval))
             was_offline = self._primary_status == ChannelStatus.OFFLINE
             self._check_primary()
             if was_offline and self._primary_status == ChannelStatus.ONLINE:
@@ -335,3 +385,9 @@ class BackhaulManager:
                 sig = self._beidou.check_signal()
                 self._beidou.signal_strength = sig
                 self._beidou_status = ChannelStatus.ONLINE if sig > 0 else ChannelStatus.OFFLINE
+
+            # 设备心跳 (含自身定位)
+            now = time.time()
+            if now - last_heartbeat >= self._heartbeat_interval:
+                self.send_heartbeat()
+                last_heartbeat = now

@@ -197,7 +197,7 @@ tr:last-child td{border-bottom:none}
       <span id="commQueue" style="display:none;font-size:10px;color:var(--yellow);margin-left:4px"></span>
     </div>
     <div class="status"><span class="dot" id="dot"></span><span id="statusText">已停止</span></div>
-    <select id="modeSelect"><option value="ble">BLE</option><option value="wifi">WiFi</option></select>
+    <select id="modeSelect"><option value="simulated">模拟</option><option value="ble">BLE</option><option value="wifi">WiFi</option></select>
     <button class="btn btn-primary" onclick="startScan()" id="btnStart">开始</button>
     <button class="btn btn-danger" onclick="stopScan()" id="btnStop" disabled>停止</button>
     <button class="btn btn-ghost" onclick="openPowerLines()">电力线</button>
@@ -218,7 +218,7 @@ tr:last-child td{border-bottom:none}
     <div class="panel-header">无人机列表</div>
     <div class="panel-body">
       <table>
-        <thead><tr><th>ID</th><th>类型</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>状态</th><th>更新</th></tr></thead>
+        <thead><tr><th>ID</th><th>SN / ID</th><th>飞行器类型</th><th>推测型号</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>起飞位</th><th>状态</th><th>更新</th></tr></thead>
         <tbody id="droneTable"></tbody>
       </table>
       <div class="empty" id="emptyMsg" style="display:none">等待 RID 广播信号...</div>
@@ -311,12 +311,13 @@ function updateUI(){
         let dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
         let time=(dr.last_seen||'').substring(11,19);
         return `<tr>
-          <td class="mono">${dr.id||'?'}</td><td>多旋翼</td>
+          <td class="mono" title="${dr.id||''}">${((dr.id||'').length>12?(dr.id||'').substring(0,12)+'...':(dr.id||'?'))}</td><td>${dr.category_name||'未知'}</td><td style="color:var(--blue)">${dr.product_model||'-'}</td>
           <td class="mono">${(dr.last_lat||0).toFixed(5)}</td>
           <td class="mono">${(dr.last_lon||0).toFixed(5)}</td>
           <td>${(dr.last_alt||0).toFixed(0)}m</td>
           <td class="mono">${dist}</td>
           <td>${dr.line_name||'-'}</td>
+          <td class="mono" style="font-size:10px">${dr.takeoff_lat!=null?dr.takeoff_lat.toFixed(4)+','+dr.takeoff_lon.toFixed(4):'-'}</td>
           <td><span class="tag ${tagClass[s]||'tag-active'}">${tagText[s]||s}</span></td>
           <td class="mono">${time}</td>
         </tr>`;
@@ -824,9 +825,12 @@ def api_status():
     for d in drones:
         d['line_name'] = ''
     
-    # Add power line names to drones
+    # Add power line names, model names to drones
     if controller:
         for d in drones:
+            from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
+            d['category_name'] = UA_TYPE_NAMES.get(d.get('ua_type', 0), '未知')
+            d['product_model'] = lookup_model_by_sn(d['id']) or ''
             line_id = d.get('nearest_line_id')
             if line_id:
                 for l in controller.pl_manager.lines:
@@ -1158,7 +1162,15 @@ class WebController:
 
         from receiver.ble import BLE_RIDReceiver
 
-        if self.mode == 'wifi':
+        if self.mode == 'simulated':
+            from receiver.simulated import create_simulated_receiver
+            self._receiver = create_simulated_receiver(
+                callback=lambda p: self._on_rid(p),
+                pl_manager=self.pl_manager,
+                drone_count=6,
+                update_interval=1.0,
+            )
+        elif self.mode == 'wifi':
             from receiver.wifi import create_wifi_receiver
             self._receiver = create_wifi_receiver(
                 callback=lambda p: self._on_rid(p),
@@ -1216,7 +1228,7 @@ def main():
     
     global controller
     controller = WebController()
-    controller.switch_mode('ble')
+    controller.switch_mode('simulated')
 
     logger.info("Drone RID Receiver Web GUI 启动")
     logger.info("浏览器打开: http://%s:%s", args.host, args.port)

@@ -35,6 +35,15 @@ display:
 database:
   path: data/drone_rid.db
 
+# ── 设备自身定位 (杆塔安装位置) ──
+# 来源: beidou (北斗/GPS 模块 NMEA 实时定位) | manual (配置文件硬编码)
+position:
+  source: beidou                # beidou | manual
+  # manual 模式下的固定坐标 (WGS-84)
+  manual_lat: 30.0
+  manual_lon: 120.0
+  manual_alt: 50.0
+
 # ── 北斗短报文应急通信 ──
 beidou:
   mode: simulated              # simulated | real (需串口硬件)
@@ -49,6 +58,8 @@ backhaul:
   http:
     endpoint: http://localhost:8080/api/report   # 中心服务器上报地址
     health_url: ""                               # 健康检测 URL (为空则用 endpoint)
+    heartbeat_url: http://localhost:8080/api/heartbeat  # 设备心跳地址
+    heartbeat_interval: 30                       # 心跳间隔 (秒)
     timeout: 10                                  # HTTP 超时 (秒)
     retry_interval: 30                           # 重试间隔 (秒)
     headers:
@@ -66,6 +77,7 @@ backhaul:
   # 健康检测
   health_check_interval: 15   # 通道检测间隔 (秒)
   device_name: NW-F1          # 本设备名称 (用于报文标识)
+  device_location: "杭州市富阳区-杆塔#12"  # 设备安装位置描述
 
   # SMS 短信通知 (专责人员)
   sms:

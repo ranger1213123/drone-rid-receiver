@@ -169,6 +169,7 @@ def parse_system_gb(data: bytes) -> SystemMessage:
         operator_alt_geo=op_alt,
         coordinate_system=coord_sys,
         timestamp_unix=ts_unix,
+        op_pos_type=op_pos_type,
     )
 
 

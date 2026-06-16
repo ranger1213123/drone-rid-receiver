@@ -88,6 +88,13 @@ class RIDPipeline:
 
         loc = parsed.location
 
+        # 提取机型 + 起飞位
+        ua_type = parsed.basic_id.ua_type if parsed.basic_id else 0
+        takeoff_lat = parsed.takeoff_lat
+        takeoff_lon = parsed.takeoff_lon
+        op_lat = parsed.system.operator_lat if parsed.system else None
+        op_lon = parsed.system.operator_lon if parsed.system else None
+
         # 1. 更新数据库
         self.db.upsert_drone(
             drone_id=drone_id,
@@ -95,6 +102,12 @@ class RIDPipeline:
             lon=loc.longitude,
             alt=loc.altitude_geodetic,
             speed=loc.speed_horizontal,
+            heading=getattr(loc, 'track_angle', 0) or 0,
+            ua_type=ua_type,
+            takeoff_lat=takeoff_lat,
+            takeoff_lon=takeoff_lon,
+            operator_lat=op_lat if op_lat != 0 else None,
+            operator_lon=op_lon if op_lon != 0 else None,
         )
 
         # 2. 计算最近电力线距离
@@ -155,6 +168,8 @@ class RIDPipeline:
             )
 
         # 6. 数据回传 (4G/有线 → SMS → 北斗应急降级)
+        drone_category = parsed.drone_category
+        drone_model = parsed.drone_model
         if self.backhaul:
             self.backhaul.report_drone(
                 drone_id=drone_id,
@@ -166,6 +181,9 @@ class RIDPipeline:
                     drone_id=drone_id, level=alert_level, distance=distance,
                     line_name=nearest_line.name,
                     lat=loc.latitude, lon=loc.longitude, alt=loc.altitude_geodetic,
+                    drone_model=drone_model,
+                    takeoff_lat=takeoff_lat,
+                    takeoff_lon=takeoff_lon,
                 )
 
         return PipelineResult(
