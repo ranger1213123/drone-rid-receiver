@@ -21,7 +21,7 @@ from .types import (
 )
 
 BLE_SERVICE_UUID = 0xFFFA
-WIFI_OUI = bytes([0x0C, 0x0B, 0xFA])
+WIFI_OUI = bytes([0xFA, 0x0B, 0x0C])  # FA-0B-0C on wire
 APP_CODE = 0
 
 VALID_MSG_TYPES = {0x0, 0x1, 0x2, 0x3, 0x4, 0x5}
@@ -130,17 +130,26 @@ def _parse_astm_pack(data: bytes, mac_address: str = "", rssi: int = 0) -> Parse
       Byte 0-5:  MAC address
       Byte 6:    Message Counter
       Byte 7+:   Messages concatenated
+
+    WiFi Beacon IE:
+      Byte 0+:   Messages concatenated (无前缀)
     """
     result = ParsedRID(raw_data=data, mac_address=mac_address, rssi=rssi)
 
     if len(data) < 2:
         return result
 
-    # WiFi Nanobeacon 检测: 6-byte MAC + counter(0-7)
-    if len(data) >= 8 and data[6] <= 7:
+    # WiFi Nanobeacon 检测: 验证 MAC 有效性 + counter(0-7)
+    # 避免误裁 WiFi Beacon IE 数据
+    from .gb46750 import _looks_like_mac
+    if len(data) >= 10 and _looks_like_mac(data[0:6]) and data[6] <= 7:
         offset = 7
-    else:
+    # BLE: [Counter(1-7)][Version][Messages]
+    elif len(data) >= 2 and 1 <= data[0] <= 7:
         offset = 2
+    # WiFi Beacon IE: [Messages] 直接
+    else:
+        offset = 0
 
     while offset < len(data) - 1:
         header = data[offset]

@@ -6,6 +6,9 @@
 pyyaml==6.0.2
 python-dotenv==1.1.1
 flask>=3.0.0
+sqlalchemy>=2.0
+pyjwt>=2.8
+gunicorn>=21.0
 #
 # 可选: BLE 扫描 (需要蓝牙硬件)
 # bleak>=0.21.0
@@ -19,6 +22,9 @@ pyinstaller>=6.0
 
 # 可选: 数据回传 (HTTP 上报)
 requests>=2.28.0
+
+# 可选: PostgreSQL driver (生产环境)
+# psycopg2-binary>=2.9
 
 # 可选: 阿里云短信 (专责人员告警通知)
 # alibabacloud_dysmsapi20170525>=3.0.0

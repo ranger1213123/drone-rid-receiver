@@ -26,7 +26,7 @@ from .types import (
 )
 
 BLE_SERVICE_UUID = 0xFFFF
-WIFI_OUI = bytes([0xBC, 0xFB, 0xFA])  # 0xFA0BBC in network byte order
+WIFI_OUI = bytes([0xFA, 0x0B, 0xBC])  # FA-0B-BC on wire
 APP_CODE = 0x0D
 
 # GB 46750: 0x02 (Auth) 和 0x05 (Operator ID) 为预留
@@ -189,17 +189,27 @@ _MSG_LENGTHS = {
 }
 
 
+def _looks_like_mac(b: bytes) -> bool:
+    """检查 6 字节是否像有效 MAC (非全零/全FF, unicast)"""
+    if len(b) < 6:
+        return False
+    if b == b'\x00\x00\x00\x00\x00\x00' or b == b'\xff\xff\xff\xff\xff\xff':
+        return False
+    # bit 0 of byte 0 = multicast flag, must be 0 for unicast device
+    if b[0] & 0x01:
+        return False
+    return True
+
+
 def _parse_gb46750_pack(data: bytes, mac_address: str = "",
                         rssi: int = 0) -> ParsedRID:
     """GB 46750-2025 消息包解析
 
     支持多种输入格式 (根据接收器剥离程度):
-      1. 原始 BLE Service Data: [AppCode 0x0D][Counter][0x0F|Msg...]
-      2. 已剥离 AD 头:      [Counter][0x0F|Msg...]
-      3. 纯 0x0F 打包:      [0x0F][MsgLen][Count][Msgs...][CRC16]
-      4. 简单拼接 (兼容):   [Msg1][Msg2]...
-
-    WiFi Nanobeacon 外层 (MAC+Ctr) 先剥离。
+      1. BLE Service Data: [AppCode 0x0D][Counter][0x0F|Msg...]
+      2. WiFi Nanobeacon:  [MAC(6)][Counter(0-7)][0x0F|Msg...]
+      3. WiFi Beacon IE:   [0x0F|Msg...]
+      4. 简单拼接 (兼容):  [Msg1][Msg2]...
     """
     result = ParsedRID(raw_data=data, mac_address=mac_address, rssi=rssi)
 
@@ -209,18 +219,20 @@ def _parse_gb46750_pack(data: bytes, mac_address: str = "",
     actual = data
 
     # 1. WiFi Nanobeacon 外层剥离 (MAC 6 + counter 1)
-    if len(actual) >= 8 and actual[6] <= 7:
+    #    验证前 6 字节像有效 MAC，避免误裁 WiFi Beacon IE 数据
+    if len(actual) >= 10 and _looks_like_mac(actual[0:6]) and actual[6] <= 7:
         actual = actual[7:]
 
-    # 2. BLE AppCode 剥离 (0x0D + counter)
-    if len(actual) >= 2 and actual[0] == APP_CODE:
-        actual = actual[2:]
+    # 2. BLE AppCode / WiFi Vendor Type 剥离 (0x0D)
+    #    BLE: [0x0D][Counter(0-7)][Message Pack]
+    #    WiFi Beacon IE: [0x0D][Message Pack] (无 counter)
+    if len(actual) >= 3 and actual[0] == APP_CODE:
+        if actual[1] <= 7:
+            actual = actual[2:]  # BLE: 有 counter
+        else:
+            actual = actual[1:]  # WiFi: 无 counter, 仅剥离 vendor type
 
-    # 3. BLE counter + version 剥离 (ASTM 风格，兼容)
-    if len(actual) >= 2 and actual[0] <= 7 and actual[0] > 0:
-        actual = actual[2:]
-
-    # 4. 消息包解析
+    # 3. 消息包解析
     if len(actual) >= 4 and actual[0] == 0x0F:
         _parse_0x0f_pack(actual, result)
     else:

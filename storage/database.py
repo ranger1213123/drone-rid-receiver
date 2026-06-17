@@ -8,10 +8,11 @@
 - Schema 版本号 (PRAGMA user_version) 用于未来迁移
 """
 
+import json
 import sqlite3
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Tuple
 
 from logging_config import get_logger
@@ -19,7 +20,7 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # 当前数据库 schema 版本
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # SQLITE_BUSY 重试配置
 MAX_RETRIES = 3
@@ -89,6 +90,8 @@ class Database:
                 self._migrate_v1_to_v2()
         if version < 3:
             self._migrate_v2_to_v3()
+        if version < 4:
+            self._migrate_v3_to_v4()
 
     def _migrate_v0_to_v2(self):
         logger.info("数据库 schema 初始化至 v%d", CURRENT_SCHEMA_VERSION)
@@ -120,7 +123,7 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp);
         """)
-        self._execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+        self._execute("PRAGMA user_version = 2")
         self._commit()
 
     def _migrate_v1_to_v2(self):
@@ -153,7 +156,7 @@ class Database:
             );
             CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(timestamp);
         """)
-        self._execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
+        self._execute("PRAGMA user_version = 2")
         self._commit()
         logger.info("数据库 schema 迁移完成 v2")
 
@@ -180,9 +183,32 @@ class Database:
             self._execute("ALTER TABLE drones ADD COLUMN operator_lon REAL")
         except sqlite3.OperationalError:
             pass
-        self._execute(f"PRAGMA user_version = 3")
+        self._execute("PRAGMA user_version = 3")
         self._commit()
         logger.info("数据库 schema 迁移完成 v3")
+
+    def _migrate_v3_to_v4(self):
+        """v4: 持久化消息出队表 (Outbox Pattern)"""
+        logger.info("数据库 schema 迁移 v3 → v4")
+        self._executescript("""
+            CREATE TABLE IF NOT EXISTS outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                target_path TEXT NOT NULL,
+                priority INTEGER DEFAULT 0,
+                retry_count INTEGER DEFAULT 0,
+                max_retries INTEGER DEFAULT 10,
+                next_retry_at TEXT,
+                last_error TEXT,
+                status TEXT DEFAULT 'pending'
+            );
+            CREATE INDEX IF NOT EXISTS idx_outbox_drain
+                ON outbox(status, priority DESC, next_retry_at);
+        """)
+        self._execute("PRAGMA user_version = 4")
+        self._commit()
+        logger.info("数据库 schema 迁移完成 v4")
 
     def _init_tables(self):
         """创建数据库表"""
@@ -468,6 +494,76 @@ class Database:
             SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT ?
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+    # ──────────────────── 出队表 (Outbox Pattern) ────────────────────
+
+    def insert_outbox(self, payload: dict, target_path: str,
+                      priority: int = 0) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._execute("""
+            INSERT INTO outbox (created_at, payload, target_path, priority, status)
+            VALUES (?, ?, ?, ?, 'pending')
+        """, (now, json.dumps(payload), target_path, priority))
+        self._commit()
+        self._add_audit_log_internal("INSERT", "outbox", cur.lastrowid)
+        return cur.lastrowid
+
+    def get_pending_outbox(self, limit: int = 50) -> List[Dict]:
+        self.conn.row_factory = sqlite3.Row
+        now = datetime.now(timezone.utc).isoformat()
+        rows = self._execute("""
+            SELECT * FROM outbox
+            WHERE status = 'pending'
+              AND (next_retry_at IS NULL OR next_retry_at <= ?)
+            ORDER BY priority DESC, created_at ASC
+            LIMIT ?
+        """, (now, limit)).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_outbox_sent(self, msg_id: int):
+        self._execute("UPDATE outbox SET status = 'sent' WHERE id = ?", (msg_id,))
+        self._commit()
+
+    def mark_outbox_failed(self, msg_id: int, error: str):
+        cur = self._execute(
+            "SELECT retry_count, max_retries FROM outbox WHERE id = ?", (msg_id,)
+        )
+        row = cur.fetchone()
+        if not row:
+            return
+        retry_count = row[0] + 1
+        max_retries = row[1] or 10
+        if retry_count >= max_retries:
+            self.mark_outbox_dead(msg_id)
+            return
+        delay = min(2 ** (retry_count - 1) * 5, 600)
+        next_retry = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+        self._execute("""
+            UPDATE outbox
+            SET retry_count = ?, next_retry_at = ?, last_error = ?, status = 'pending'
+            WHERE id = ?
+        """, (retry_count, next_retry, error, msg_id))
+        self._commit()
+
+    def mark_outbox_dead(self, msg_id: int):
+        self._execute(
+            "UPDATE outbox SET status = 'dead' WHERE id = ?", (msg_id,)
+        )
+        self._commit()
+
+    def drain_outbox_on_start(self):
+        """重启时将 pending 消息重置为立即可重试"""
+        self._execute("""
+            UPDATE outbox SET next_retry_at = NULL
+            WHERE status = 'pending'
+        """)
+        self._commit()
+
+    def outbox_pending_count(self) -> int:
+        row = self._execute(
+            "SELECT COUNT(*) FROM outbox WHERE status = 'pending'"
+        ).fetchone()
+        return row[0] if row else 0
 
     def close(self):
         self.conn.close()

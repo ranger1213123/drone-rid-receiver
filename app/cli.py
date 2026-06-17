@@ -29,15 +29,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from logging_config import get_logger
 from core.config import load_config
-from storage.database import Database
-from core.parser import ParsedRID, configure_protocol
+from core.parser import ParsedRID
 from receiver.ble import BLE_RIDReceiver
 from receiver.wifi import create_wifi_receiver
-from core.powerline import PowerLineManager
-from core.alert import AlertSystem
-from core.trajectory import TrajectoryRecorder
-from core.pipeline import RIDPipeline
-from display.terminal import Display, SimpleDisplay
+from display.terminal import LogDisplay, SimpleDisplay
 
 logger = get_logger(__name__)
 
@@ -47,97 +42,27 @@ class RIDController:
 
     def __init__(self, config: dict):
         self.config = config
-        configure_protocol(config)
 
-        # 初始化数据库
-        db_path = config.get("database", {}).get("path", "data/drone_rid.db")
-        if not os.path.isabs(db_path):
-            db_path = os.path.join(os.path.dirname(__file__), "..", db_path)
-        self.db = Database(db_path)
+        # 使用共享工厂初始化所有核心组件
+        from core.bootstrap import bootstrap_core
+        base_dir = os.path.dirname(os.path.abspath(
+            config.get('_config_path') or __file__))
+        core = bootstrap_core(config=config, base_dir=base_dir)
 
-        # 加载电力线
-        self.pl_manager = PowerLineManager()
-        pl_file = config.get("power_lines_file", "config/power_lines.yaml")
-        if not os.path.isabs(pl_file):
-            pl_file = os.path.join(os.path.dirname(__file__), "..", pl_file)
-        count = self.pl_manager.load_from_yaml(pl_file)
-        logger.info("已加载 %d 条电力线段", count)
-        # 同步到数据库
-        pl_dicts = [
-            {
-                "name": l.name, "lat1": l.lat1, "lon1": l.lon1, "alt1": l.alt1,
-                "lat2": l.lat2, "lon2": l.lon2, "alt2": l.alt2,
-                "id": l.line_id,
-            }
-            for l in self.pl_manager.lines
-        ]
-        self.db.load_power_lines(pl_dicts)
+        self.db = core['db']
+        self.pl_manager = core['pl_manager']
+        self.alert = core['alert_system']
+        self.trajectory_recorder = core['trajectory_recorder']
+        self.pipeline = core['pipeline']
+        self.backhaul = core['backhaul']
+        thresholds = core['thresholds']
 
-        # 初始化告警系统 (含防抖)
-        thresholds = config.get("thresholds", {
-            "warning": 200, "severe": 100, "critical": 50
-        })
-        af_cfg = config.get("anti_flapping", {})
-        anti_flapping = None
-        if af_cfg.get("enabled", False):
-            from core.anti_flapping import AntiFlappingEngine
-            anti_flapping = AntiFlappingEngine(
-                debounce_in=af_cfg.get("debounce_in", 3),
-                debounce_out=af_cfg.get("debounce_out", 10),
-            )
-        self.alert = AlertSystem(
-            db=self.db,
-            thresholds=thresholds,
-            anti_flapping=anti_flapping,
-        )
-
-        # 初始化轨迹记录器
-        traj_config = config.get("trajectory", {})
-        self.trajectory_recorder = TrajectoryRecorder(
-            db=self.db,
-            min_interval=traj_config.get("min_interval", 2.0),
-            max_points_per_drone=traj_config.get("max_points_per_drone", 1000),
-        )
-
-        # 初始化原始报文存档
-        raw_archive = None
-        if config.get("raw_archive", {}).get("enabled", True):
-            from core.raw_archive import RawArchiveManager
-            arc_cfg = config.get("raw_archive", {})
-            raw_archive = RawArchiveManager(
-                db=self.db,
-                retention_days=arc_cfg.get("retention_days", 30),
-                cleanup_interval=arc_cfg.get("cleanup_interval", 86400),
-            )
-            raw_archive.start()
-
-        # 初始化飞手推送
-        from core.pilot_notify import create_pilot_notifier
-        pilot_notifier = create_pilot_notifier(config)
-
-        # 初始化北斗 + 数据回传 (含设备自身定位)
-        from core.beidou import create_beidou
-        from core.backhaul import BackhaulManager
-        self._beidou = create_beidou(config)
-        device_name = config.get('backhaul', {}).get('device_name', 'NW-F1')
-        self.backhaul = BackhaulManager(config, self._beidou, device_name=device_name)
-
-        # 初始化数据处理管道
-        self.pipeline = RIDPipeline(
-            db=self.db,
-            pl_manager=self.pl_manager,
-            alert_system=self.alert,
-            trajectory_recorder=self.trajectory_recorder,
-            thresholds=thresholds,
-            raw_archive=raw_archive,
-            pilot_notifier=pilot_notifier,
-            backhaul=self.backhaul,
-        )
-
-        # 初始化显示
+        # 初始化显示 (TTY → 事件日志行, 管道 → 纯文本)
         display_config = config.get("display", {})
-        self.display = Display(thresholds=thresholds) if sys.stdout.isatty() \
-            else SimpleDisplay(thresholds=thresholds)
+        if sys.stdout.isatty():
+            self.display = LogDisplay(thresholds=thresholds)
+        else:
+            self.display = SimpleDisplay(thresholds=thresholds)
 
         self.display_interval = display_config.get("update_interval", 1.0)
 

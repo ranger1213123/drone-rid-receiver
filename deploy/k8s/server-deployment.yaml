@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: center-server
+  namespace: drone-rid
+  labels:
+    app: center-server
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: center-server
+  template:
+    metadata:
+      labels:
+        app: center-server
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: server
+          image: drone-rid-center:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+              name: http
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://drone_rid:$(DB_PASSWORD)@postgres:5432/drone_rid_center"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: DB_PASSWORD
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: JWT_SECRET_KEY
+            - name: DEVICE_SECRETS
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: DEVICE_SECRETS
+            - name: JWT_EXPIRE_SECONDS
+              value: "86400"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: center-server-hpa
+  namespace: drone-rid
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: center-server
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -31,9 +31,23 @@ display:
   update_interval: 1.0       # 显示刷新间隔 (秒)
   max_drones_display: 50     # 最多显示无人机数
 
-# 数据库
+# 数据库 (杆塔端 SQLite)
 database:
   path: data/drone_rid.db
+
+# 中心服务器数据库 (支持 SQLite 或 PostgreSQL)
+center_db:
+  driver: sqlite                                  # sqlite | postgresql
+  sqlite_path: data/center.db                     # SQLite 模式下的文件路径
+  # PostgreSQL 模式 (driver: postgresql 时启用):
+  host: localhost
+  port: 5432
+  database: drone_rid_center
+  user: drone_rid
+  password: ${DB_PASSWORD}                        # 环境变量注入
+  pool_size: 10
+  pool_overflow: 20
+  pool_timeout: 30
 
 # ── 设备自身定位 (杆塔安装位置) ──
 # 来源: beidou (北斗/GPS 模块 NMEA 实时定位) | manual (配置文件硬编码)
@@ -78,6 +92,13 @@ backhaul:
   health_check_interval: 15   # 通道检测间隔 (秒)
   device_name: NW-F1          # 本设备名称 (用于报文标识)
   device_location: "杭州市富阳区-杆塔#12"  # 设备安装位置描述
+
+  # JWT 认证 (设备接入中心服务器)
+  auth:
+    enabled: false
+    token_url: http://localhost:8080/api/auth/token   # Token 签发端点
+    device_secret: ${DEVICE_SECRET}                     # 设备密钥 (环境变量注入)
+    expire_seconds: 86400                               # Token 有效期 (秒)
 
   # SMS 短信通知 (专责人员)
   sms:

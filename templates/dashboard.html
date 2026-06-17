@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drone RID Monitor</title>
+<style>
+/* ── Design Tokens ── */
+:root{
+  --bg:#f0f2f5; --surface:#fff; --border:#e0e3e8;
+  --text:#1a1d23; --muted:#6b7280;
+  --blue:#2563eb; --blue-bg:#eff6ff;
+  --green:#16a34a; --green-bg:#f0fdf4;
+  --yellow:#ca8a04; --yellow-bg:#fefce8;
+  --orange:#ea580c; --orange-bg:#fff7ed;
+  --red:#dc2626; --red-bg:#fef2f2;
+  --radius-sm:6px; --radius:10px; --radius-lg:14px;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.04);
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 12px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04);
+  --shadow-lg:0 8px 24px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.04);
+  --transition:200ms ease;
+}
+
+/* ── Reset ── */
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--text); min-height:100vh;
+  font-size:13px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+
+/* ── SVG Icon base ── */
+.icon{display:inline-block;vertical-align:middle;flex-shrink:0}
+.icon-sm{width:14px;height:14px}
+.icon-md{width:20px;height:20px}
+.icon-lg{width:32px;height:32px}
+
+/* ── Top Bar ── */
+.topbar{
+  background:var(--surface); border-bottom:1px solid var(--border);
+  box-shadow:var(--shadow-sm); display:flex; align-items:center;
+  justify-content:space-between; padding:0 24px; height:52px;
+  position:sticky; top:0; z-index:50; backdrop-filter:blur(8px);
+}
+.topbar .brand{font-size:16px;font-weight:700;color:var(--text);letter-spacing:-0.3px}
+.topbar .brand span{color:var(--muted);font-weight:400;font-size:11px;margin-left:8px}
+.topbar .actions{display:flex;align-items:center;gap:8px}
+.topbar .status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+
+/* Comms pills */
+.comms-status{display:flex;align-items:center;gap:10px;padding-right:12px;border-right:1px solid var(--border);margin-right:4px}
+.comm-item{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted)}
+.comm-dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background var(--transition)}
+.comm-dot.online{background:var(--green);box-shadow:0 0 6px rgba(22,163,74,.4)}
+.comm-dot.degraded{background:var(--orange)}
+
+/* Buttons */
+select{
+  background:var(--bg);color:var(--text);border:1px solid var(--border);
+  padding:6px 12px;border-radius:var(--radius-sm);font-size:12px;cursor:pointer;outline:none;
+  transition:border-color var(--transition);
+}
+select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.btn{
+  padding:6px 14px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;
+  cursor:pointer;border:1px solid transparent;transition:all var(--transition);
+  white-space:nowrap;
+}
+.btn-primary{background:var(--green);color:#fff;border-color:var(--green)}
+.btn-primary:hover{background:#15803d;box-shadow:0 2px 8px rgba(22,163,74,.25)}
+.btn-primary:disabled{opacity:.45;cursor:default;box-shadow:none}
+.btn-danger{background:var(--red);color:#fff}
+.btn-danger:hover{background:#b91c1c;box-shadow:0 2px 8px rgba(220,38,38,.25)}
+.btn-danger:disabled{opacity:.45;cursor:default;box-shadow:none}
+.btn-ghost{background:transparent;color:var(--text);border-color:var(--border)}
+.btn-ghost:hover{background:var(--bg);border-color:#c0c4cc}
+
+/* ── Stats Row ── */
+.stats{
+  display:grid; grid-template-columns:repeat(4,1fr);
+  gap:14px; padding:20px 24px;
+}
+.card{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); padding:16px 20px;
+  box-shadow:var(--shadow); transition:box-shadow var(--transition),transform var(--transition);
+  position:relative; overflow:hidden;
+}
+.card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.card .icon-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.card .label{font-size:11px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:0.5px}
+.card .value{font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.card .unit{font-size:12px;font-weight:400;color:var(--muted);margin-left:4px}
+/* Accent borders */
+.card::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 2px 2px 0}
+.card.info::before{background:var(--blue)}
+.card.warning::before{background:var(--yellow)}
+.card.severe::before{background:var(--orange)}
+.card.critical::before{background:var(--red)}
+/* Value colors */
+.val-info{color:var(--blue)}
+.val-warning{color:var(--yellow)}
+.val-severe{color:var(--orange)}
+.val-critical{color:var(--red)}
+
+/* Gradient backgrounds */
+.card.info{background:linear-gradient(135deg,#fff 60%,var(--blue-bg))}
+.card.warning{background:linear-gradient(135deg,#fff 60%,var(--yellow-bg))}
+.card.severe{background:linear-gradient(135deg,#fff 60%,var(--orange-bg))}
+.card.critical{background:linear-gradient(135deg,#fff 60%,var(--red-bg))}
+
+/* ── Content Grid ── */
+.content{
+  padding:0 24px 20px; display:grid;
+  grid-template-columns:1fr 340px; gap:14px;
+  height:calc(100vh - 240px); min-height:400px;
+}
+
+/* ── Panel ── */
+.panel{
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius); display:flex; flex-direction:column;
+  overflow:hidden; box-shadow:var(--shadow);
+}
+.panel-header{
+  padding:12px 16px; font-size:12px; font-weight:600; color:var(--text);
+  border-bottom:1px solid var(--border); display:flex; align-items:center; gap:8px;
+  background:var(--surface);
+}
+.panel-header .count-pill{
+  font-size:10px; font-weight:600; padding:1px 8px; border-radius:10px;
+  background:var(--bg); color:var(--muted);
+}
+.panel-body{flex:1;overflow-y:auto}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:800px}
+thead{position:sticky;top:0;z-index:2}
+th{
+  background:#f9fafb; color:var(--muted); font-size:10px; font-weight:600;
+  text-align:left; padding:9px 12px; border-bottom:2px solid var(--border);
+  text-transform:uppercase; letter-spacing:0.3px;
+}
+td{padding:8px 12px;font-size:12px;border-bottom:1px solid #f3f4f6;white-space:nowrap}
+tr{transition:background .12s}
+tr:hover td{background:#f9fafb}
+
+/* Alert pulse animation */
+@keyframes alertPulse{
+  0%{background:#fff}
+  40%{background:#fef2f2}
+  100%{background:#fff}
+}
+tr.row-critical{animation:alertPulse 1.2s ease}
+tr.row-severe{animation:alertPulse .8s ease}
+
+.tag{font-size:10px;font-weight:600;padding:3px 8px;border-radius:4px;letter-spacing:0.3px}
+.tag-active{color:var(--green);background:var(--green-bg)}
+.tag-warning{color:var(--yellow);background:var(--yellow-bg)}
+.tag-severe{color:var(--orange);background:var(--orange-bg)}
+.tag-critical{color:var(--red);background:var(--red-bg)}
+.tag-gone{color:var(--muted);background:#f3f4f6}
+.mono{font-family:"JetBrains Mono","SF Mono",Consolas,monospace;font-variant-numeric:tabular-nums;font-size:11px}
+
+/* ── Toolbar ── */
+.toolbar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);background:#fafbfc}
+.toolbar input{
+  flex:1; padding:6px 12px; background:var(--surface); color:var(--text);
+  border:1px solid var(--border); border-radius:var(--radius-sm); font-size:12px; outline:none;
+  transition:border-color var(--transition); min-width:140px;
+}
+.toolbar input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.08)}
+.toolbar .filter-badge{font-size:10px;padding:2px 8px;border-radius:10px;background:var(--blue-bg);color:var(--blue);white-space:nowrap}
+.toolbar select{font-size:11px}
+
+/* ── Side Log ── */
+.log-item{
+  padding:10px 16px; font-size:12px; border-bottom:1px solid #f3f4f6;
+  line-height:1.5; transition:background .15s;
+}
+.log-item:first-child{animation:alertPulse 1s ease}
+.log-item .ts{color:var(--muted);font-size:10px;margin-right:8px;font-family:monospace}
+.log-critical{border-left:3px solid var(--red);background:var(--red-bg)}
+.log-severe{border-left:3px solid var(--orange);background:var(--orange-bg)}
+.log-warning{border-left:3px solid var(--yellow);background:var(--yellow-bg)}
+.log-info{border-left:3px solid var(--border)}
+
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
+.empty-state svg{margin-bottom:12px;opacity:.3}
+.empty-state .msg{font-size:13px;margin-top:4px}
+
+/* ── Footer ── */
+.footer{
+  position:fixed;bottom:0;left:0;right:0;height:30px;
+  background:var(--surface);border-top:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;font-size:11px;color:var(--muted);z-index:40;
+}
+.footer .hint{padding:2px 10px;border-radius:3px;font-size:10px;font-weight:600}
+.footer .hint.live{background:var(--green-bg);color:var(--green)}
+.footer .hint.stop{background:var(--red-bg);color:var(--red)}
+
+/* ── Status dot pulse ── */
+@keyframes dotPulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.4)}
+  50%{box-shadow:0 0 0 6px rgba(22,163,74,0)}
+}
+.status-dot{width:9px;height:9px;border-radius:50%;background:var(--red);transition:background var(--transition)}
+.status-dot.live{background:var(--green);animation:dotPulse 2s infinite}
+
+/* ── Modal ── */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:100;justify-content:center;align-items:center;backdrop-filter:blur(3px)}
+.modal.active{display:flex}
+.modal-box{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:24px;width:640px;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-lg);
+}
+.modal-box h3{font-size:14px;font-weight:600;margin:16px 0 8px;color:var(--text)}
+.modal-box h3:first-child{margin-top:0}
+.modal-box label{font-size:11px;color:var(--muted);display:block;margin-top:8px}
+.modal-box input{
+  width:100%;padding:7px 10px;margin-top:3px;background:var(--bg);border:1px solid var(--border);
+  color:var(--text);border-radius:var(--radius-sm);font-size:12px;outline:none;
+}
+.modal-box input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.08)}
+.modal-box .row{display:flex;gap:8px}
+.modal-box .row input{flex:1}
+.pl-item{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--bg);border-radius:var(--radius-sm);margin-bottom:4px;font-size:12px}
+.pl-item .del{color:var(--red);cursor:pointer;font-weight:700;padding:2px 8px;border-radius:4px;transition:background .15s}
+.pl-item .del:hover{background:var(--red-bg)}
+.modal-actions{display:flex;gap:8px;margin-top:14px}
+
+/* Number count-up */
+@keyframes countIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.card .value{animation:countIn .3s ease}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .stats{grid-template-columns:repeat(2,1fr);gap:10px;padding:12px 16px}
+  .content{grid-template-columns:1fr;height:auto;padding:0 12px 16px}
+  .content .panel:last-child{max-height:260px}
+  .topbar{padding:0 12px;height:44px;flex-wrap:wrap;height:auto;padding:8px 12px;gap:8px}
+  .topbar .actions{flex-wrap:wrap;gap:6px}
+  .comms-status{border-right:none;padding-right:0;margin-right:0}
+  .card{padding:12px 14px}
+  .card .value{font-size:24px}
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .btn{padding:5px 10px;font-size:11px}
+  .modal-box{width:calc(100vw - 24px);margin:12px;padding:16px}
+}
+
+@media(max-width:480px){
+  .stats{grid-template-columns:1fr 1fr;gap:8px;padding:8px 10px}
+  .card .value{font-size:20px}
+  .card .label{font-size:10px}
+  .topbar .brand{font-size:13px}
+  .toolbar{flex-wrap:wrap}
+  .btn{padding:4px 8px;font-size:10px}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <!-- drone SVG icon -->
+    <svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-4px;margin-right:6px;color:var(--blue)">
+      <path d="M12 2L8 6h3v4.5L7 12l-3-1.5V13l3 2v3l5 3 5-3v-3l3-2v-2.5l-3 1.5-4-1.5V6h3l-4-4z"/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    </svg>
+    Drone RID Monitor <span>v2.6</span>
+  </div>
+  <div class="actions">
+    <div class="comms-status" title="数据回传通道">
+      <!-- 4G icon -->
+      <div class="comm-item">
+        <svg class="icon icon-sm" viewBox="0 0 16 16" fill="none"><rect x="1" y="9" width="3" height="6" rx="0.5" stroke="currentColor" stroke-width="1.2"/><rect x="5.5" y="6" width="3" height="9" rx="0.5" stroke="currentColor" stroke-width="1.2"/><rect x="10" y="3" width="3" height="12" rx="0.5" stroke="currentColor" stroke-width="1.2"/></svg>
+        <span class="comm-dot" id="comm4gDot"></span>
+        <span>4G</span>
+      </div>
+      <!-- Beidou/satellite icon -->
+      <div class="comm-item">
+        <svg class="icon icon-sm" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><ellipse cx="8" cy="8" rx="7" ry="2.5" stroke="currentColor" stroke-width="0.8" stroke-dasharray="1,1" transform="rotate(-30,8,8)"/><line x1="8" y1="1" x2="8" y2="5" stroke="currentColor" stroke-width="1"/></svg>
+        <span class="comm-dot" id="commBdDot"></span>
+        <span>北斗</span>
+      </div>
+      <span style="font-size:10px;color:var(--muted)" id="commLabel">--</span>
+      <span id="commQueue" style="display:none;font-size:10px;color:var(--orange);margin-left:2px"></span>
+    </div>
+    <div class="status">
+      <span class="status-dot" id="dot"></span>
+      <span id="statusText">已停止</span>
+    </div>
+    <select id="modeSelect"><option value="simulated">模拟</option><option value="ble">BLE</option><option value="wifi">WiFi</option></select>
+    <button class="btn btn-primary" onclick="startScan()" id="btnStart">开始</button>
+    <button class="btn btn-danger" onclick="stopScan()" id="btnStop" disabled>停止</button>
+    <button class="btn btn-ghost" onclick="openPowerLines()">电力线</button>
+    <button class="btn btn-ghost" onclick="showTraj()">轨迹</button>
+    <button class="btn btn-ghost" onclick="window.location='/map'">地图</button>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="card info">
+    <div class="icon-row">
+      <svg class="icon icon-lg" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="10" r="8" stroke="var(--blue)" stroke-width="2.5"/><path d="M16 18v8M10 28h12" stroke="var(--blue)" stroke-width="2.5" stroke-linecap="round"/></svg>
+      <div class="label">活跃无人机</div>
+    </div>
+    <div class="value val-info" id="statDrones">0</div>
+  </div>
+  <div class="card warning">
+    <div class="icon-row">
+      <svg class="icon icon-lg" viewBox="0 0 32 32" fill="none"><path d="M16 4L30 28H2L16 4z" stroke="var(--yellow)" stroke-width="2.5" stroke-linejoin="round"/><line x1="16" y1="14" x2="16" y2="20" stroke="var(--yellow)" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="24" r="1.5" fill="var(--yellow)"/></svg>
+      <div class="label">警告 ≤ 200m</div>
+    </div>
+    <div class="value val-warning" id="statWarn">0</div>
+  </div>
+  <div class="card severe">
+    <div class="icon-row">
+      <svg class="icon icon-lg" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="13" stroke="var(--orange)" stroke-width="2.5"/><line x1="16" y1="8" x2="16" y2="18" stroke="var(--orange)" stroke-width="2.5" stroke-linecap="round"/><circle cx="16" cy="23" r="1.5" fill="var(--orange)"/></svg>
+      <div class="label">严重 ≤ 100m</div>
+    </div>
+    <div class="value val-severe" id="statSev">0</div>
+  </div>
+  <div class="card critical">
+    <div class="icon-row">
+      <svg class="icon icon-lg" viewBox="0 0 32 32" fill="none"><polygon points="16,3 30,27 2,27" stroke="var(--red)" stroke-width="2.5" stroke-linejoin="round"/><text x="16" y="22" text-anchor="middle" font-size="14" font-weight="700" fill="var(--red)">!</text></svg>
+      <div class="label">危险 ≤ 50m</div>
+    </div>
+    <div class="value val-critical" id="statCrit">0</div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="panel">
+    <div class="panel-header">
+      <svg class="icon icon-sm" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="3" r="2"/><path d="M8 5v3M4 12l4-4 4 4"/></svg>
+      无人机列表
+      <span class="count-pill" id="droneCountPill">0</span>
+    </div>
+    <div class="toolbar">
+      <svg class="icon icon-sm" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--muted)"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="15" y2="15"/></svg>
+      <input id="droneSearch" placeholder="搜索 ID / 型号..." oninput="updateUITable()" autocomplete="off">
+      <select id="statusFilter" onchange="updateUITable()">
+        <option value="">全部状态</option>
+        <option value="critical">危险</option>
+        <option value="severe">严重</option>
+        <option value="warning">警告</option>
+        <option value="active">正常</option>
+        <option value="gone">离线</option>
+      </select>
+      <span class="filter-badge" id="filterBadge" style="display:none"></span>
+    </div>
+    <div class="panel-body">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>飞行器类型</th><th>推测型号</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>起飞位</th><th>状态</th><th>更新</th></tr></thead>
+          <tbody id="droneTable"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="emptyMsg" style="display:none">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0112 0v2"/></svg>
+        <div class="msg">等待 RID 广播信号...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <svg class="icon icon-sm" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 2h12v12H2z"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="9" y2="10"/></svg>
+      告警日志
+    </div>
+    <div class="panel-body" id="logPanel">
+      <div class="empty-state">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+        <div class="msg">暂无告警</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span id="footerLeft">--</span>
+  <span id="footerHint" class="hint stop">已停止</span>
+</div>
+
+<!-- ── Power Line Modal ── -->
+<div class="modal" id="plModal">
+  <div class="modal-box">
+    <h3>
+      <svg class="icon icon-sm" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><polyline points="1,15 8,2 15,15"/></svg>
+      电力线管理
+    </h3>
+    <div id="plList" style="max-height:280px;overflow-y:auto;margin-bottom:8px"></div>
+    <h3>新增线段</h3>
+    <label>名称</label><input id="plName" placeholder="例如: 高压线A-北段">
+    <label>端点 1 (纬度, 经度, 海拔m)</label>
+    <div class="row"><input id="plLat1" placeholder="纬度" step="any"><input id="plLon1" placeholder="经度" step="any"><input id="plAlt1" placeholder="海拔" step="any"></div>
+    <label>端点 2 (纬度, 经度, 海拔m)</label>
+    <div class="row"><input id="plLat2" placeholder="纬度" step="any"><input id="plLon2" placeholder="经度" step="any"><input id="plAlt2" placeholder="海拔" step="any"></div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="addPowerLine()">添加</button>
+      <button class="btn btn-ghost" onclick="closeModal('plModal')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let pollTimer;
+let lastDrones = [];
+let prevAlertLevels = {};
+
+// Request notification permission
+function requestNotify(){
+  if(window.Notification && Notification.permission==='default') Notification.requestPermission();
+}
+document.addEventListener('click', requestNotify, {once:true});
+
+function notifyAlert(droneId, level, distance, lineName){
+  if(!window.Notification || Notification.permission!=='granted') return;
+  let labels = {critical:'危险', severe:'严重', warning:'警告'};
+  let label = labels[level] || level;
+  new Notification(`[${label}] ${droneId}`, {
+    body: `距离 ${lineName} ${distance.toFixed(0)}m`,
+    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🚁</text></svg>',
+    tag: droneId,
+  });
+}
+
+function animateValue(el, target){
+  let current = parseInt(el.textContent) || 0;
+  if(current === target) return;
+  let step = Math.max(1, Math.abs(target - current) / 10);
+  let dir = target > current ? 1 : -1;
+  function tick(){
+    current += step * dir;
+    if(dir > 0 ? current >= target : current <= target){
+      el.textContent = target;
+      return;
+    }
+    el.textContent = Math.round(current);
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function updateUI(){
+  fetch('/api/status').then(r=>r.json()).then(d=>{
+    let running=d.running;
+    let dot=document.getElementById('dot');
+    dot.className='status-dot'+(running?' live':'');
+    document.getElementById('statusText').textContent=running?'运行中':'已停止';
+    document.getElementById('btnStart').disabled=running;
+    document.getElementById('btnStop').disabled=!running;
+
+    let hint=document.getElementById('footerHint');
+    hint.textContent=running?'正在监听 '+(d.mode||'').toUpperCase():'已停止';
+    hint.className='hint '+(running?'live':'stop');
+
+    // Comms channel status
+    let bh=d.backhaul;
+    let c4g=document.getElementById('comm4gDot');
+    let cbd=document.getElementById('commBdDot');
+    let clbl=document.getElementById('commLabel');
+    let cq=document.getElementById('commQueue');
+    if(bh){
+      c4g.className='comm-dot '+(bh.primary_online?'online':'');
+      cbd.className='comm-dot '+(bh.beidou_online?'online':'');
+      if(bh.channel==='4g_wired'){clbl.textContent='4G/有线';
+      }else if(bh.channel==='beidou_emergency'){clbl.textContent='北斗应急';
+      }else{clbl.textContent='通信中断';}
+      if(bh.queue_size>0){cq.style.display='';cq.textContent='积压'+bh.queue_size;
+      }else{cq.style.display='none';}
+    }
+
+    // Stats with animated counters
+    let warn=0,sev=0,crit=0;
+    d.drones.forEach(dr=>{let s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});
+    animateValue(document.getElementById('statDrones'), d.drones.length);
+    animateValue(document.getElementById('statWarn'), warn);
+    animateValue(document.getElementById('statSev'), sev);
+    animateValue(document.getElementById('statCrit'), crit);
+    document.getElementById('droneCountPill').textContent = d.drones.length;
+
+    // Store and check alert transitions
+    d.drones.forEach(dr=>{
+      let prev = prevAlertLevels[dr.id];
+      let cur = dr.status || 'active';
+      if(cur !== prev){
+        if(cur === 'critical' || cur === 'severe'){
+          notifyAlert(dr.id, cur, dr.min_distance||0, dr.line_name||'?');
+        }
+        prevAlertLevels[dr.id] = cur;
+      }
+    });
+
+    lastDrones = d.drones;
+    updateUITable();
+
+    // Log
+    let log=document.getElementById('logPanel');
+    if(d.logs.length===0){
+      log.innerHTML='<div class="empty-state"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg><div class="msg">暂无告警</div></div>';
+    }else{
+      log.innerHTML=d.logs.map(l=>{
+        return `<div class="log-item log-${l.level}"><span class="ts">${l.time}</span>${l.msg}</div>`;
+      }).join('');
+      log.scrollTop=log.scrollHeight;
+    }
+
+    document.getElementById('footerLeft').textContent='更新 '+d.now;
+  });
+}
+
+function updateUITable(){
+  let searchTerm = (document.getElementById('droneSearch').value||'').toLowerCase();
+  let statusFilter = document.getElementById('statusFilter').value;
+  let drones = lastDrones;
+  if(searchTerm){
+    drones = drones.filter(dr => {
+      let id = (dr.id||'').toLowerCase();
+      let model = (dr.product_model||'').toLowerCase();
+      let cat = (dr.category_name||'').toLowerCase();
+      return id.includes(searchTerm) || model.includes(searchTerm) || cat.includes(searchTerm);
+    });
+  }
+  if(statusFilter){
+    drones = drones.filter(dr => (dr.status||'active') === statusFilter);
+  }
+
+  let table=document.getElementById('droneTable');
+  let empty=document.getElementById('emptyMsg');
+  let badge=document.getElementById('filterBadge');
+  let total = lastDrones.length;
+  if(drones.length !== total){
+    badge.style.display=''; badge.textContent=`显示 ${drones.length}/${total}`;
+  }else{
+    badge.style.display='none';
+  }
+
+  if(drones.length===0){
+    table.innerHTML='';
+    empty.style.display='block';
+  }else{
+    empty.style.display='none';
+    let tagClass={'active':'tag-active','warning':'tag-warning','severe':'tag-severe','critical':'tag-critical','gone':'tag-gone'};
+    let tagText={'active':'正常','warning':'警告','severe':'严重','critical':'危险','gone':'离线'};
+    table.innerHTML=drones.map(dr=>{
+      let s=dr.status||'active';
+      let rowClass = (s==='critical')?'row-critical':(s==='severe')?'row-severe':'';
+      let dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
+      let time=(dr.last_seen||'').substring(11,19);
+      return `<tr class="${rowClass}">
+        <td class="mono" title="${dr.id||''}">${((dr.id||'').length>12?(dr.id||'').substring(0,12)+'...':(dr.id||'?'))}</td><td>${dr.category_name||'未知'}</td><td style="color:var(--blue);font-weight:500">${dr.product_model||'-'}</td>
+        <td class="mono">${(dr.last_lat||0).toFixed(5)}</td>
+        <td class="mono">${(dr.last_lon||0).toFixed(5)}</td>
+        <td>${(dr.last_alt||0).toFixed(0)}m</td>
+        <td class="mono">${dist}</td>
+        <td>${dr.line_name||'-'}</td>
+        <td class="mono" style="font-size:10px">${dr.takeoff_lat!=null?dr.takeoff_lat.toFixed(4)+','+dr.takeoff_lon.toFixed(4):'-'}</td>
+        <td><span class="tag ${tagClass[s]||'tag-active'}">${tagText[s]||s}</span></td>
+        <td class="mono">${time}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function startScan(){
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mode:document.getElementById('modeSelect').value})}).then(r=>r.json());
+}
+function stopScan(){fetch('/api/stop',{method:'POST'}).then(r=>r.json());}
+function openPowerLines(){
+  fetch('/api/powerlines').then(r=>r.json()).then(d=>{
+    document.getElementById('plList').innerHTML=d.length===0
+      ?'<div style="color:var(--muted);padding:12px;text-align:center">暂无电力线</div>'
+      :d.map((l,i)=>`<div class="pl-item"><span><b>${l.name}</b><span style="color:var(--muted);font-size:11px">  (${l.lat1.toFixed(4)},${l.lon1.toFixed(4)},${l.alt1}m) → (${l.lat2.toFixed(4)},${l.lon2.toFixed(4)},${l.alt2}m)</span></span><span class="del" onclick="delPowerLine(${i})">×</span></div>`).join('');
+  });
+  document.getElementById('plModal').classList.add('active');
+}
+function addPowerLine(){
+  let data={
+    name:document.getElementById('plName').value,
+    lat1:parseFloat(document.getElementById('plLat1').value),
+    lon1:parseFloat(document.getElementById('plLon1').value),
+    alt1:parseFloat(document.getElementById('plAlt1').value),
+    lat2:parseFloat(document.getElementById('plLat2').value),
+    lon2:parseFloat(document.getElementById('plLon2').value),
+    alt2:parseFloat(document.getElementById('plAlt2').value)};
+  fetch('/api/powerlines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  .then(r=>r.json()).then(()=>openPowerLines());
+}
+function delPowerLine(idx){
+  fetch('/api/powerlines/'+idx,{method:'DELETE'}).then(r=>r.json()).then(()=>openPowerLines());
+}
+function closeModal(id){document.getElementById(id).classList.remove('active');}
+function showTraj(){
+  fetch('/api/trajectories').then(r=>r.json()).then(d=>{
+    let keys=Object.keys(d);
+    let html='<h3>轨迹记录</h3><div style="max-height:400px;overflow-y:auto">';
+    if(keys.length===0){html+='<div style="color:var(--muted);padding:12px;text-align:center">暂无轨迹数据</div>';}
+    for(let did of keys){
+      html+=`<div class="pl-item"><span><b>${did}</b><span style="color:var(--muted);font-size:11px">  ${d[did].count} 点 · 最近 ${d[did].min_dist.toFixed(1)}m · ${d[did].first} → ${d[did].last}</span></span></div>`;
+    }
+    html+='</div><div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal(\'trajModal\')">关闭</button></div>';
+    let m=document.createElement('div');m.className='modal active';m.id='trajModal';
+    m.innerHTML='<div class="modal-box">'+html+'</div>';
+    document.body.appendChild(m);
+  });
+}
+
+updateUI();
+pollTimer=setInterval(updateUI,1500);
+</script>
+</body>
+</html>

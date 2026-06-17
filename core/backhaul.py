@@ -14,9 +14,11 @@
 import json
 import threading
 import time
-import queue
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Optional, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from storage.database import Database
 
 import requests
 
@@ -34,13 +36,63 @@ class ChannelStatus:
     DEGRADED = 2  # 降级 (仅北斗可用)
 
 
+class TokenManager:
+    """JWT Token 管理器 — 自动获取、缓存、过期刷新"""
+
+    def __init__(self, auth_url: str, device_name: str, device_secret: str,
+                 expire_seconds: int = 86400):
+        self._auth_url = auth_url
+        self._device_name = device_name
+        self._device_secret = device_secret
+        self._expire_seconds = expire_seconds
+        self._token: Optional[str] = None
+        self._expires_at: float = 0
+
+    def get_token(self) -> Optional[str]:
+        """获取有效 token，过期自动刷新 (提前 5 分钟)"""
+        if not self._token or time.time() > self._expires_at - 300:
+            self._refresh()
+        return self._token
+
+    def force_refresh(self):
+        """强制刷新 token (供外部在收到 401 后调用)"""
+        self._refresh()
+
+    def _refresh(self):
+        try:
+            resp = requests.post(
+                self._auth_url,
+                json={
+                    "device_name": self._device_name,
+                    "device_secret": self._device_secret,
+                },
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self._token = data.get("access_token")
+                expires_in = data.get("expires_in", self._expire_seconds)
+                self._expires_at = time.time() + expires_in
+                logger.info("JWT token 已刷新，有效期 %ds", expires_in)
+            else:
+                logger.warning("JWT token 获取失败: HTTP %d", resp.status_code)
+        except Exception as e:
+            logger.warning("JWT token 刷新异常: %s", e)
+
+    @property
+    def has_token(self) -> bool:
+        return self._token is not None
+
+
 class BackhaulManager:
     """数据回传管理器"""
 
     def __init__(self, config: dict, beidou: BeidouDevice,
-                 device_name: str = 'NW-F1'):
+                 db: "Database", device_name: str = 'NW-F1',
+                 token_manager: Optional[TokenManager] = None):
         self._config = config
         self._beidou = beidou
+        self._db = db
         self._device_name = device_name
         self._lock = threading.Lock()
 
@@ -65,6 +117,11 @@ class BackhaulManager:
         self._heartbeat_url = http_cfg.get('heartbeat_url', '')
         self._heartbeat_interval = http_cfg.get('heartbeat_interval', 30)
 
+        # ── JWT 认证 (支持依赖注入) ──
+        self._token_manager = token_manager
+        if self._token_manager:
+            logger.info("JWT 认证已启用")
+
         # ── 设备自身位置 ──
         pos_cfg = config.get('position', {})
         self._position_source = pos_cfg.get('source', 'beidou')
@@ -73,10 +130,7 @@ class BackhaulManager:
         self._fallback_alt = pos_cfg.get('manual_alt', 0)
         self._device_location = config.get('backhaul', {}).get('device_location', '')
 
-        # ── 消息队列 ──
-        queue_cfg = config.get('backhaul', {}).get('queue', {})
-        self._queue: queue.Queue = queue.Queue(maxsize=queue_cfg.get('max_size', 1000))
-        self._emergency_queue: queue.Queue = queue.Queue(maxsize=200)
+        # ── 消息队列 ── (使用 SQLite outbox 持久化)
 
         # ── 北斗应急配置 ──
         bd_cfg = config.get('backhaul', {}).get('beidou', {})
@@ -92,7 +146,7 @@ class BackhaulManager:
         self._stats = {
             'http_sent': 0, 'http_failed': 0,
             'beidou_sent': 0, 'beidou_failed': 0,
-            'queued': 0, 'last_send_time': '',
+            'last_send_time': '',
         }
 
         # ── 告警回调 (供 UI 使用) ──
@@ -104,6 +158,7 @@ class BackhaulManager:
         if self._running:
             return
         self._running = True
+        self._db.drain_outbox_on_start()
         self._start_beidou()
         self._check_primary()
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
@@ -173,11 +228,13 @@ class BackhaulManager:
 
     @property
     def stats(self) -> dict:
-        return dict(self._stats)
+        s = dict(self._stats)
+        s['queued'] = self._db.outbox_pending_count()
+        return s
 
     @property
     def queue_size(self) -> int:
-        return self._queue.qsize()
+        return self._db.outbox_pending_count()
 
     def set_alert_callback(self, cb: Callable):
         self._alert_callback = cb
@@ -204,7 +261,13 @@ class BackhaulManager:
             'timestamp': datetime.now().isoformat(),
         }
         try:
-            resp = requests.post(url, json=payload, timeout=self._http_timeout)
+            headers = dict(self._http_headers)
+            if self._token_manager and self._token_manager.has_token:
+                token = self._token_manager.get_token()
+                if token:
+                    headers['Authorization'] = f'Bearer {token}'
+            resp = requests.post(url, json=payload, headers=headers,
+                                 timeout=self._http_timeout)
             return resp.status_code < 500
         except Exception:
             return False
@@ -290,12 +353,38 @@ class BackhaulManager:
     # ── 内部方法 ──
 
     def _send_http(self, payload: dict) -> bool:
+        headers = dict(self._http_headers)
+        if self._token_manager and self._token_manager.has_token:
+            token = self._token_manager.get_token()
+            if token:
+                headers['Authorization'] = f'Bearer {token}'
+
         try:
             resp = requests.post(
                 self._http_endpoint, json=payload,
-                headers=self._http_headers,
+                headers=headers,
                 timeout=self._http_timeout,
             )
+            if resp.status_code == 401 and self._token_manager:
+                # Token 过期，尝试刷新后重试一次
+                self._token_manager.force_refresh()
+                token = self._token_manager.get_token()
+                if token:
+                    headers['Authorization'] = f'Bearer {token}'
+                    resp = requests.post(
+                        self._http_endpoint, json=payload,
+                        headers=headers,
+                        timeout=self._http_timeout,
+                    )
+                else:
+                    self._stats['http_failed'] += 1
+                    return False
+
+            if resp.status_code == 401:
+                # 无 token_manager 或 retry 后仍 401
+                self._stats['http_failed'] += 1
+                return False
+
             ok = resp.status_code < 500
             if ok:
                 self._stats['http_sent'] += 1
@@ -315,46 +404,50 @@ class BackhaulManager:
         return cur_idx >= min_idx
 
     def _enqueue(self, payload: dict):
-        try:
-            self._queue.put_nowait(payload)
-            self._stats['queued'] = max(self._stats['queued'], self._queue.qsize())
-        except queue.Full:
-            # 丢弃最旧的消息
-            try:
-                self._queue.get_nowait()
-                self._queue.put_nowait(payload)
-            except queue.Full:
-                pass
+        self._db.insert_outbox(payload, '/api/report')
 
     def _enqueue_emergency(self, payload: dict):
-        try:
-            self._emergency_queue.put_nowait(payload)
-        except queue.Full:
-            try:
-                self._emergency_queue.get_nowait()
-                self._emergency_queue.put_nowait(payload)
-            except queue.Full:
-                pass
+        self._db.insert_outbox(payload, '/api/report_alert', priority=1)
 
     def _flush_queue(self):
-        """通道恢复后补传积压数据"""
+        """通道恢复后补传积压数据 (从 outbox 读取)"""
         drained = 0
-        # 优先发送紧急队列
-        while not self._emergency_queue.empty():
+        for msg in self._db.get_pending_outbox(limit=50):
+            msg_id = msg["id"]
+            target_path = msg["target_path"]
             try:
-                payload = self._emergency_queue.get_nowait()
-                self._send_http(payload)
-                drained += 1
-            except queue.Empty:
-                break
+                payload = json.loads(msg["payload"])
+            except json.JSONDecodeError:
+                self._db.mark_outbox_dead(msg_id)
+                continue
 
-        while not self._queue.empty():
+            # 使用对应端点发送
             try:
-                payload = self._queue.get_nowait()
-                self._send_http(payload)
-                drained += 1
-            except queue.Empty:
-                break
+                headers = dict(self._http_headers)
+                if self._token_manager and self._token_manager.has_token:
+                    token = self._token_manager.get_token()
+                    if token:
+                        headers['Authorization'] = f'Bearer {token}'
+
+                resp = requests.post(
+                    self._http_endpoint.replace('/api/report', target_path),
+                    json=payload,
+                    headers=headers,
+                    timeout=self._http_timeout,
+                )
+                if resp.status_code < 500:
+                    self._db.mark_outbox_sent(msg_id)
+                    self._stats['http_sent'] += 1
+                    self._stats['last_send_time'] = datetime.now().strftime('%H:%M:%S')
+                    drained += 1
+                else:
+                    self._db.mark_outbox_failed(msg_id, f"HTTP {resp.status_code}")
+                    self._stats['http_failed'] += 1
+            except Exception as e:
+                self._db.mark_outbox_failed(msg_id, str(e))
+                self._stats['http_failed'] += 1
+                self._primary_status = ChannelStatus.OFFLINE
+                break  # 网络不通，停止尝试
 
         if drained > 0:
             logger.info("已补传 %d 条积压数据", drained)
