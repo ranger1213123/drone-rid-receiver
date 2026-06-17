@@ -45,8 +45,7 @@ class RIDController:
 
         # 使用共享工厂初始化所有核心组件
         from core.bootstrap import bootstrap_core
-        base_dir = os.path.dirname(os.path.abspath(
-            config.get('_config_path') or __file__))
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         core = bootstrap_core(config=config, base_dir=base_dir)
 
         self.db = core['db']

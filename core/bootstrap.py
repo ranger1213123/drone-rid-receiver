@@ -37,10 +37,10 @@ def bootstrap_core(config: Optional[dict] = None, *,
         if config_path is None:
             raise ValueError("config 或 config_path 必须提供一个")
         if base_dir is None:
-            base_dir = os.path.dirname(os.path.abspath(config_path))
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
         config = load_config(config_path)
     elif base_dir is None and config_path is not None:
-        base_dir = os.path.dirname(os.path.abspath(config_path))
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
     elif base_dir is None:
         base_dir = os.getcwd()
 
