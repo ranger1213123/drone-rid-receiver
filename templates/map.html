@@ -146,6 +146,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .alert-row .al-info{flex:1;min-width:0}
 .alert-row .al-id{font-family:"JetBrains Mono","SF Mono",Consolas,monospace;font-size:10px;font-weight:600}
 .alert-row .al-model{font-size:10px;color:var(--blue)}
+.alert-row .al-sub{font-size:9px;color:var(--muted)}
 .alert-row .al-dist{font-weight:600;font-size:11px}
 .alert-row .al-time{font-size:9px;color:var(--muted);white-space:nowrap}
 
@@ -168,6 +169,27 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .drone-row .d-sub{font-size:10px;color:var(--muted)}
 .drone-row .d-model{font-size:10px;color:var(--blue)}
 .drone-row .d-dist{font-weight:700;font-size:11px;white-space:nowrap}
+
+/* Quick stats mini row */
+.stats-mini{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;padding:8px 14px;border-bottom:1px solid var(--border)}
+.sm{border-radius:7px;padding:8px 4px;text-align:center;transition:transform .12s}
+.sm:hover{transform:translateY(-1px)}
+.sm .v{font-size:20px;font-weight:700;line-height:1}
+.sm .l{font-size:9px;color:var(--muted);margin-top:1px}
+.sm-i{background:var(--blue-bg)}.sm-i .v{color:var(--blue)}
+.sm-w{background:var(--yellow-bg)}.sm-w .v{color:var(--yellow)}
+.sm-s{background:var(--orange-bg)}.sm-s .v{color:var(--orange)}
+.sm-c{background:var(--red-bg)}.sm-c .v{color:var(--red)}
+
+/* Small button */
+.btn-sm{
+  padding:4px 12px;border-radius:var(--radius-sm);font-size:10px;font-weight:500;
+  cursor:pointer;border:1px solid var(--border);background:var(--surface);
+  transition:all .1s;white-space:nowrap;
+}
+.btn-sm:hover{background:#f3f4f6;border-color:#c0c4cc}
+.btn-sm.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn-sm.primary:hover{background:#1d4ed8}
 
 /* Search input */
 .search-wrap{padding:6px 14px;border-bottom:1px solid var(--border)}
@@ -251,6 +273,37 @@ body.sta-mode .nat-only{display:none!important}
 .popup-btn:hover{background:var(--blue-bg)}
 .popup-btn.traj-active{background:var(--blue);color:#fff}
 
+/* ═══════════ Modal (power line CRUD) ═══════════ */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay.show{display:flex}
+.modal-dialog{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:20px 24px;width:480px;max-width:94vw;max-height:80vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.15);
+}
+.modal-dialog h3{font-size:13px;font-weight:600;margin:0 0 14px;color:var(--text)}
+.modal-dialog label{font-size:10px;color:var(--muted);display:block;margin:8px 0 3px;text-transform:uppercase;letter-spacing:.5px}
+.modal-dialog input{
+  width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);
+  color:var(--text);border-radius:var(--radius-sm);font-size:11px;outline:none;
+}
+.modal-dialog input:focus{border-color:var(--blue);box-shadow:0 0 0 2px rgba(37,99,235,.08)}
+.modal-dialog .row{display:flex;gap:8px}
+.modal-dialog .row input{flex:1}
+.modal-dialog .pl-entry{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg);border-radius:var(--radius-sm);margin-bottom:3px;font-size:11px}
+.modal-dialog .pl-entry .pl-del{color:var(--red);cursor:pointer;font-weight:700;padding:2px 8px;border-radius:4px;transition:background .15s}
+.modal-dialog .pl-entry .pl-del:hover{background:var(--red-bg)}
+.modal-actions{display:flex;gap:8px;margin-top:14px}
+.modal-actions button{
+  padding:6px 14px;border-radius:var(--radius-sm);font-size:11px;font-weight:500;
+  cursor:pointer;border:1px solid var(--border);background:var(--surface);transition:all .1s;
+}
+.modal-actions button:hover{background:#f3f4f6}
+.modal-actions button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+.modal-actions button.primary:hover{background:#1d4ed8}
+.modal-actions button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+.modal-actions button.danger:hover{background:#b91c1c}
+
 /* Station marker pulse */
 @keyframes stationPulse{
   0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.5);border-color:var(--blue)}
@@ -310,6 +363,15 @@ body.sta-mode .nat-only{display:none!important}
       </select>
       <button class="primary" onclick="startScan()" id="btnStart">▶</button>
       <button class="danger" onclick="stopScan()" id="btnStop" disabled>■</button>
+      <button class="btn-sm" onclick="openPlModal()" title="管理电力线">⚙</button>
+    </div>
+
+    <!-- Quick stats row (both modes) -->
+    <div class="stats-mini" id="quickStats">
+      <div class="sm sm-i"><div class="v" id="qsDrones">0</div><div class="l">活跃</div></div>
+      <div class="sm sm-w"><div class="v" id="qsWarn">0</div><div class="l">警告</div></div>
+      <div class="sm sm-s"><div class="v" id="qsSev">0</div><div class="l">严重</div></div>
+      <div class="sm sm-c"><div class="v" id="qsCrit">0</div><div class="l">危险</div></div>
     </div>
 
     <!-- ════ National Mode Panels ════ -->
@@ -363,6 +425,7 @@ body.sta-mode .nat-only{display:none!important}
         </div>
         <div class="side-body collapsed" id="secPL" style="max-height:180px;overflow-y:auto">
           <div id="plItems"><div class="empty-state">加载中...</div></div>
+          <div style="padding:6px 14px"><button class="btn-sm primary" onclick="openPlModal()" style="width:100%;padding:4px">+ 管理电力线</button></div>
         </div>
       </div>
     </div>
@@ -401,6 +464,16 @@ body.sta-mode .nat-only{display:none!important}
         </div>
         <div class="side-body" id="secNatAlerts" style="max-height:320px;overflow-y:auto">
           <div id="natAlertList"><div class="empty-state">暂无预警</div></div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" style="cursor:default">
+          <span>快捷操作</span>
+        </div>
+        <div class="side-body" style="padding:8px 14px;display:flex;flex-direction:column;gap:6px">
+          <button class="btn-sm" onclick="openPlModal()" style="text-align:left">🔌 管理电力线</button>
+          <button class="btn-sm" onclick="window.location='/list'" style="text-align:left">📋 查看列表视图</button>
         </div>
       </div>
 
@@ -445,6 +518,16 @@ body.sta-mode .nat-only{display:none!important}
           <div class="station-grid" id="staStationGrid">
             <div class="empty-state" style="grid-column:1/-1">加载中...</div>
           </div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secStaAlerts',this)">
+          <span>本站预警 <span id="staAlertCount" style="font-weight:400;color:var(--muted);font-size:10px"></span></span>
+          <span class="chevron open" id="secStaAlertsChev">▶</span>
+        </div>
+        <div class="side-body" id="secStaAlerts" style="max-height:200px;overflow-y:auto">
+          <div id="staAlertList"><div class="empty-state">暂无预警</div></div>
         </div>
       </div>
 
@@ -508,6 +591,23 @@ body.sta-mode .nat-only{display:none!important}
 <button id="toggleLeftBtn" onclick="toggleLeft()">◀</button>
 <button id="toggleRightBtn" onclick="toggleRight()">▶</button>
 
+<div class="modal-overlay" id="plModal">
+  <div class="modal-dialog">
+    <h3>电力线管理</h3>
+    <div id="plModalList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
+    <h3 style="margin-top:8px">新增线段</h3>
+    <label>名称</label><input id="plName" placeholder="例如: 高压线A-北段">
+    <label>端点 1 (纬度, 经度, 海拔)</label>
+    <div class="row"><input id="plLat1" placeholder="纬度"><input id="plLon1" placeholder="经度"><input id="plAlt1" placeholder="海拔"></div>
+    <label>端点 2 (纬度, 经度, 海拔)</label>
+    <div class="row"><input id="plLat2" placeholder="纬度"><input id="plLon2" placeholder="经度"><input id="plAlt2" placeholder="海拔"></div>
+    <div class="modal-actions">
+      <button class="primary" onclick="addPowerLine()">添加</button>
+      <button onclick="closePlModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ═══════════ Map ═══════════
@@ -542,16 +642,7 @@ function enterStationView(station){
   loadPowerLines();
   var lat = station.position.lat, lon = station.position.lon;
   if(lat && lon){
-    // Find power line bounds or zoom to station
-    setTimeout(function(){
-      if(plPolylines.length > 0){
-        var b = plPolylines[0].getBounds();
-        for(var i=1;i<plPolylines.length;i++) b.extend(plPolylines[i].getBounds());
-        map.flyToBounds(b, {padding:[80,80], maxZoom:15, duration:1});
-      }else{
-        map.flyTo([lat, lon], 15, {duration:1});
-      }
-    }, 400);
+    map.flyTo([lat, lon], 14, {duration:1});
   }
 }
 
@@ -717,11 +808,11 @@ function renderNationalAlerts(drones){
     var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
     var model=dr.product_model||'';
     var time=(dr.last_seen||'').substring(11,19);
+    var stationName=(cachedDashboard&&cachedDashboard.station)?cachedDashboard.station.device_name:'站点';
     return '<div class="alert-row" onclick="enterStationView(cachedDashboard?cachedDashboard.station:null)">'
       +'<span class="al-dot '+s+'"></span>'
-      +'<div class="al-info"><div class="al-id">'+dr.id+'</div><div class="al-model">'+model+'</div></div>'
-      +'<span class="al-time">'+time+'</span>'
-      +'<div class="al-dist">'+dist+'</div></div>';
+      +'<div class="al-info"><div class="al-id">'+dr.id+' ('+model+')</div><div class="al-sub">'+stationName+' · '+statusZh[s]+' · '+time+'</div></div>'
+      +'<span class="al-dist">'+dist+'</span></div>';
   }).join('');
 }
 
@@ -751,6 +842,30 @@ function renderDroneList(){
       +'<span class="d-icon '+s+'"></span>'
       +'<div class="d-info"><div class="d-id">'+idShort+'</div><div class="d-model">'+model+'</div><div class="d-sub">'+time+' · '+statusZh[s]+'</div></div>'
       +'<div class="d-dist">'+dist+'</div></div>';
+  }).join('');
+}
+
+// ═══════════ Station alert list ═══════════
+function renderStationAlerts(drones){
+  var div=document.getElementById('staAlertList');
+  if(!div) return;
+  var alerts=(drones||[]).filter(function(dr){
+    var s=dr.status||'active';
+    return s==='warning'||s==='severe'||s==='critical';
+  }).sort(function(a,b){
+    var order={critical:0,severe:1,warning:2};
+    return (order[a.status]||9)-(order[b.status]||9);
+  });
+  document.getElementById('staAlertCount').textContent=alerts.length||'';
+  if(!alerts.length){div.innerHTML='<div class="empty-state">暂无预警</div>';return;}
+  div.innerHTML=alerts.map(function(dr){
+    var s=dr.status||'active';
+    var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
+    var time=(dr.last_seen||'').substring(11,19);
+    return '<div class="alert-row" onclick="flyToDrone('+dr.last_lat+','+dr.last_lon+')">'
+      +'<span class="al-dot '+s+'"></span>'
+      +'<div class="al-info"><div class="al-id">'+dr.id+'</div><div class="al-sub">'+dr.line_name+' · '+time+'</div></div>'
+      +'<span class="al-dist">'+dist+'</span></div>';
   }).join('');
 }
 
@@ -857,6 +972,52 @@ function updateComms(bh, prefix){
   }
 }
 
+// ═══════════ Power Line Modal ═══════════
+function openPlModal(){
+  document.getElementById('plModal').classList.add('show');
+  refreshPlModalList();
+}
+function closePlModal(){document.getElementById('plModal').classList.remove('show')}
+
+function refreshPlModalList(){
+  fetch('/api/powerlines').then(function(r){return r.json()}).then(function(lines){
+    var div=document.getElementById('plModalList');
+    if(!lines.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无电力线</div>';return}
+    div.innerHTML=lines.map(function(l,i){
+      return '<div class="pl-entry"><span><b>'+l.name+'</b> <span style="color:var(--muted);font-size:10px">('+l.lat1.toFixed(4)+','+l.lon1.toFixed(4)+') → ('+l.lat2.toFixed(4)+','+l.lon2.toFixed(4)+')</span></span><span class="pl-del" onclick="delPowerLine('+i+')">×</span></div>';
+    }).join('');
+  });
+}
+
+function addPowerLine(){
+  var data={
+    name:document.getElementById('plName').value,
+    lat1:parseFloat(document.getElementById('plLat1').value),
+    lon1:parseFloat(document.getElementById('plLon1').value),
+    alt1:parseFloat(document.getElementById('plAlt1').value)||0,
+    lat2:parseFloat(document.getElementById('plLat2').value),
+    lon2:parseFloat(document.getElementById('plLon2').value),
+    alt2:parseFloat(document.getElementById('plAlt2').value)||0
+  };
+  fetch('/api/powerlines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(function(r){return r.json()}).then(function(){
+      document.getElementById('plName').value='';
+      document.getElementById('plLat1').value='';document.getElementById('plLon1').value='';document.getElementById('plAlt1').value='';
+      document.getElementById('plLat2').value='';document.getElementById('plLon2').value='';document.getElementById('plAlt2').value='';
+      refreshPlModalList();
+      loadPowerLines();
+    });
+}
+
+function delPowerLine(idx){
+  fetch('/api/powerlines/'+idx,{method:'DELETE'}).then(function(r){return r.json()}).then(function(){
+    refreshPlModalList();
+    loadPowerLines();
+  });
+}
+// Click outside modal to close
+document.addEventListener('click',function(e){if(e.target.id==='plModal')closePlModal()});
+
 // ═══════════ Main update loop ═══════════
 var prevAlertLevels={};
 
@@ -880,6 +1041,12 @@ function updateAll(){
     // Stats
     var warn=0,sev=0,crit=0;
     d.drones.forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});
+
+    // Quick stats mini counters
+    animateEl(document.getElementById('qsDrones'),d.drones.length);
+    animateEl(document.getElementById('qsWarn'),warn);
+    animateEl(document.getElementById('qsSev'),sev);
+    animateEl(document.getElementById('qsCrit'),crit);
 
     if(nationalMode){
       // ── National bottom bar ──
@@ -953,8 +1120,9 @@ function updateAll(){
         showTrajectory(trajId);
       }
 
-      // Render drone list
+      // Render drone list and station alerts
       renderDroneList();
+      renderStationAlerts(d.drones);
     }
   });
 
