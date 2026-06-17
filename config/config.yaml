@@ -149,3 +149,15 @@ raw_archive:
   enabled: true
   retention_days: 30
   cleanup_interval: 86400    # 清理间隔 (秒, 默认 24h)
+
+# ── Web GUI 用户认证 ──
+web_auth:
+  secret_key: "change-me-in-production"
+  users:
+    - username: admin
+      password: admin123
+      role: admin
+    - username: user1
+      password: user123
+      role: user
+      station: NW-F1

@@ -66,11 +66,12 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 /* ═══════════ Shared sidebar elements ═══════════ */
 .side-section{border-bottom:1px solid var(--border)}
 .side-head{
-  padding:9px 14px; display:flex; align-items:center; justify-content:space-between;
+  padding:10px 14px; display:flex; align-items:center; justify-content:space-between;
   cursor:pointer; user-select:none; font-weight:600; font-size:11px; color:var(--text);
-  position:sticky; top:0; background:rgba(255,255,255,.97); z-index:2;
+  position:sticky; top:0; background:linear-gradient(180deg,rgba(250,251,252,1),rgba(255,255,255,.97)); z-index:2;
+  letter-spacing:0.2px;
 }
-.side-head:hover{background:#f9fafb}
+.side-head:hover{background:#f3f4f6}
 .side-head .chevron{transition:transform var(--transition);font-size:10px;color:var(--muted)}
 .side-body{padding:0 0 6px}
 .side-body.collapsed{display:none}
@@ -115,22 +116,30 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 
 /* ═══════════ Station list (national mode) ═══════════ */
 .station-card{
-  margin:6px 12px; padding:10px 12px; border-radius:var(--radius); cursor:pointer;
-  border:1px solid var(--border); transition:all .15s; background:var(--surface);
+  margin:8px 12px; padding:14px 16px; border-radius:var(--radius); cursor:pointer;
+  border:1px solid var(--border); transition:all .18s; background:var(--surface);
+  position:relative; overflow:hidden;
 }
-.station-card:hover{border-color:var(--blue);box-shadow:0 2px 8px rgba(37,99,235,.1)}
-.station-card .s-name{font-weight:600;font-size:12px;color:var(--text)}
-.station-card .s-loc{font-size:10px;color:var(--muted);margin-top:2px}
-.station-card .s-row{display:flex;gap:12px;margin-top:4px;font-size:10px;color:var(--text)}
-.station-card .s-row span{display:flex;align-items:center;gap:3px}
+.station-card::before{
+  content:'';position:absolute;left:0;top:10px;bottom:10px;width:3px;
+  border-radius:0 2px 2px 0;
+  background:linear-gradient(180deg,var(--blue),#60a5fa);
+}
+.station-card:hover{border-color:var(--blue);box-shadow:0 4px 16px rgba(37,99,235,.12);transform:translateY(-1px)}
+.station-card .s-name{font-weight:600;font-size:13px;color:var(--text)}
+.station-card .s-loc{font-size:10px;color:var(--muted);margin-top:3px}
+.station-card .s-row{display:flex;gap:14px;margin-top:6px;font-size:10px;color:var(--text)}
+.station-card .s-row span{display:flex;align-items:center;gap:4px}
 
 /* ═══════════ Alert drone row (national mode) ═══════════ */
 .alert-row{
-  display:flex; align-items:center; gap:8px; padding:6px 14px;
-  font-size:11px; cursor:pointer; transition:background .1s;
+  display:flex; align-items:center; gap:10px; padding:8px 14px;
+  font-size:11px; cursor:pointer; transition:background .12s;
+  border-bottom:1px solid #f3f4f6;
 }
+.alert-row:last-child{border-bottom:none}
 .alert-row:hover{background:#f6f8fa}
-.alert-row .al-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.alert-row .al-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 .alert-row .al-dot.critical{background:var(--red);animation:dotPulse 1.4s infinite}
 .alert-row .al-dot.severe{background:var(--orange)}
 .alert-row .al-dot.warning{background:var(--yellow)}
@@ -138,12 +147,15 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .alert-row .al-id{font-family:"JetBrains Mono","SF Mono",Consolas,monospace;font-size:10px;font-weight:600}
 .alert-row .al-model{font-size:10px;color:var(--blue)}
 .alert-row .al-dist{font-weight:600;font-size:11px}
+.alert-row .al-time{font-size:9px;color:var(--muted);white-space:nowrap}
 
 /* ═══════════ Drone list (station mode) ═══════════ */
 .drone-row{
-  display:flex; align-items:center; gap:8px; padding:7px 14px;
+  display:flex; align-items:center; gap:8px; padding:8px 14px;
   cursor:pointer; transition:background .1s; font-size:11px;
+  border-bottom:1px solid #f8f9fa;
 }
+.drone-row:last-child{border-bottom:none}
 .drone-row:hover{background:#f6f8fa}
 .drone-row .d-icon{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .drone-row .d-icon.active{background:var(--green);box-shadow:0 0 3px rgba(22,163,74,.35)}
@@ -286,6 +298,10 @@ body.sta-mode .nat-only{display:none!important}
       <div class="title">
         <span class="st-dot stop" id="statusDot"></span>
         Drone RID Monitor
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="userBadge" style="font-size:10px;padding:3px 8px;border-radius:10px;background:var(--blue-bg);color:var(--blue);font-weight:500"></span>
+        <a href="/logout" title="退出登录" style="color:var(--muted);text-decoration:none;font-size:14px">⏻</a>
       </div>
     </div>
     <div class="ctrl-row">
@@ -517,6 +533,7 @@ function markerRadius(s){if(s==='critical')return 10;if(s==='severe')return 8;if
 
 var cachedDashboard = null;
 var cachedDrones = [];
+var currentUser = {username:'', role:'user', station:''};
 
 // ═══════════ Mode switching ═══════════
 function enterStationView(station){
@@ -539,6 +556,11 @@ function enterStationView(station){
 }
 
 function returnToNational(){
+  // Regular users: go back to their station view
+  if(currentUser.role!=='admin'){
+    if(cachedDashboard) enterStationView(cachedDashboard.station);
+    return;
+  }
   nationalMode = true;
   document.body.className = 'nat-mode';
   // Clear station-mode layers
@@ -694,9 +716,11 @@ function renderNationalAlerts(drones){
     var s=dr.status||'active';
     var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
     var model=dr.product_model||'';
+    var time=(dr.last_seen||'').substring(11,19);
     return '<div class="alert-row" onclick="enterStationView(cachedDashboard?cachedDashboard.station:null)">'
       +'<span class="al-dot '+s+'"></span>'
       +'<div class="al-info"><div class="al-id">'+dr.id+'</div><div class="al-model">'+model+'</div></div>'
+      +'<span class="al-time">'+time+'</span>'
       +'<div class="al-dist">'+dist+'</div></div>';
   }).join('');
 }
@@ -845,6 +869,12 @@ function updateAll(){
     document.getElementById('btnStart').disabled=running;
     document.getElementById('btnStop').disabled=!running;
 
+    // Update user info
+    if(d.current_user){
+      currentUser=d.current_user;
+      document.getElementById('userBadge').textContent=currentUser.username+' ('+(currentUser.role==='admin'?'管理员':'操作员')+')';
+    }
+
     cachedDrones=d.drones;
 
     // Stats
@@ -943,6 +973,14 @@ function updateAll(){
       renderNationalStationCard(s.station);
       updateStationMarker(s.station);
 
+      // First-time: regular user auto-enters station view
+      if(!updateAll._userInit){
+        updateAll._userInit=true;
+        if(currentUser.role!=='admin'){
+          enterStationView(s.station);
+        }
+      }
+
       if(nationalMode){
         natChart = buildAlertChart('natAlertChart', natChart, s.hourly_alerts, false);
       }else{
@@ -952,6 +990,7 @@ function updateAll(){
     });
   }
 }
+updateAll._userInit=false;
 updateAll._lastStats=0;
 
 // ═══════════ Scan controls ═══════════

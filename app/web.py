@@ -14,7 +14,8 @@ import asyncio
 from pathlib import Path
 from datetime import datetime
 
-from flask import Flask, render_template, jsonify, request
+from functools import wraps
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
@@ -29,19 +30,68 @@ from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / 'templates'))
 
+# ── 加载 Web 认证配置 ──
+_web_auth_cfg = {}
+try:
+    from core.config import load_config
+    _cfg = load_config(str(PROJECT_ROOT / 'config' / 'config.yaml'))
+    _web_auth_cfg = _cfg.get('web_auth', {})
+except Exception:
+    pass
+
+app.secret_key = _web_auth_cfg.get('secret_key', 'dev-fallback-key')
+WEB_USERS = _web_auth_cfg.get('users', [
+    {'username': 'admin', 'password': 'admin123', 'role': 'admin'},
+])
+
+def require_web_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
 # ── 全局状态 ──
 controller = None
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = ''
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        for u in WEB_USERS:
+            if u['username'] == username and u['password'] == password:
+                session['user'] = {
+                    'username': username,
+                    'role': u.get('role', 'user'),
+                    'station': u.get('station', ''),
+                }
+                return redirect(url_for('index'))
+        error = '用户名或密码错误'
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
 @app.route('/')
+@require_web_auth
 def index():
     return render_template('map.html')
 
 
 @app.route('/list')
+@require_web_auth
 def list_view():
     return render_template('dashboard.html')
 
 @app.route('/api/status')
+@require_web_auth
 def api_status():
     global controller
     drones = controller.db.get_active_drones() if controller else []
@@ -59,6 +109,7 @@ def api_status():
     logs = controller._log_buffer[-50:] if controller and hasattr(controller, '_log_buffer') else []
 
     bhaul = controller.backhaul if controller else None
+    user = session.get('user', {})
     return jsonify({
         'running': controller.running if controller else False,
         'mode': controller.mode if controller else '',
@@ -68,6 +119,11 @@ def api_status():
         'drones': drones,
         'logs': logs,
         'now': datetime.now().strftime('%H:%M:%S'),
+        'current_user': {
+            'username': user.get('username', ''),
+            'role': user.get('role', 'user'),
+            'station': user.get('station', ''),
+        },
         'backhaul': {
             'channel': bhaul.channel_status if bhaul else 'offline',
             'primary_online': bhaul.primary_online if bhaul else False,
@@ -79,6 +135,7 @@ def api_status():
     })
 
 @app.route('/api/start', methods=['POST'])
+@require_web_auth
 def api_start():
     global controller
     data = request.json or {}
@@ -89,6 +146,7 @@ def api_start():
     return jsonify({'status': 'ok', 'mode': mode})
 
 @app.route('/api/stop', methods=['POST'])
+@require_web_auth
 def api_stop():
     global controller
     if controller:
@@ -96,6 +154,7 @@ def api_stop():
     return jsonify({'status': 'ok'})
 
 @app.route('/api/powerlines', methods=['GET', 'POST', 'DELETE'])
+@require_web_auth
 def api_powerlines():
     global controller
     if not controller:
@@ -122,6 +181,7 @@ def api_powerlines():
         return jsonify({'status': 'ok'})
 
 @app.route('/api/powerlines/<int:idx>', methods=['DELETE'])
+@require_web_auth
 def api_delete_powerline(idx):
     global controller
     if controller and idx < len(controller.pl_manager.lines):
@@ -134,6 +194,7 @@ def api_delete_powerline(idx):
     return jsonify({'status': 'ok'})
 
 @app.route('/api/trajectories')
+@require_web_auth
 def api_trajectories():
     global controller
     if not controller:
@@ -154,6 +215,7 @@ def api_trajectories():
 
 
 @app.route('/api/trajectories/<drone_id>/points')
+@require_web_auth
 def api_trajectory_points(drone_id):
     """返回指定无人机轨迹点坐标（用于地图绘制）"""
     global controller
@@ -170,6 +232,7 @@ def api_trajectory_points(drone_id):
 
 
 @app.route('/api/backhaul')
+@require_web_auth
 def api_backhaul():
     """数据回传通道状态"""
     global controller
@@ -188,6 +251,7 @@ def api_backhaul():
 
 
 @app.route('/api/stats/dashboard')
+@require_web_auth
 def api_stats_dashboard():
     """聚合统计: 24h 告警趋势 + 机型分布 + 站点信息"""
     global controller
@@ -242,6 +306,7 @@ def api_stats_dashboard():
 
 
 @app.route('/api/archive/<drone_id>')
+@require_web_auth
 def api_archive_drone(drone_id):
     """原始报文存档查询 + 哈希链验证"""
     global controller
@@ -260,6 +325,7 @@ def api_archive_drone(drone_id):
 
 
 @app.route('/api/archive/verify')
+@require_web_auth
 def api_archive_verify_all():
     """全量哈希链验证"""
     global controller

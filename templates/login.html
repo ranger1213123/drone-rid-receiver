@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 — Drone RID Monitor</title>
+<style>
+:root{
+  --bg:#f0f2f5; --surface:#fff; --border:#e0e3e8;
+  --text:#1a1d23; --muted:#6b7280;
+  --blue:#2563eb; --blue-bg:#eff6ff;
+  --red:#dc262e; --red-bg:#fef2f2;
+  --radius-sm:6px; --radius:10px;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.12);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  -webkit-font-smoothing:antialiased;
+}
+
+.login-card{
+  background:var(--surface); border-radius:14px; box-shadow:var(--shadow-lg);
+  width:380px; max-width:90vw; padding:36px 32px;
+}
+
+.login-card .brand{
+  text-align:center; margin-bottom:28px;
+}
+.login-card .brand .icon{
+  width:48px; height:48px; margin:0 auto 12px;
+  background:var(--blue-bg); border-radius:12px; display:flex;
+  align-items:center; justify-content:center;
+}
+.login-card .brand h1{
+  font-size:18px; font-weight:700; color:var(--text);
+  letter-spacing:-0.3px;
+}
+.login-card .brand p{
+  font-size:11px; color:var(--muted); margin-top:4px;
+}
+
+.form-group{margin-bottom:14px}
+.form-group label{
+  display:block; font-size:11px; font-weight:600; color:var(--text);
+  margin-bottom:4px;
+}
+.form-group input{
+  width:100%; padding:9px 12px; border:1px solid var(--border);
+  border-radius:var(--radius-sm); font-size:13px; outline:none;
+  transition:border-color .15s; background:var(--bg); color:var(--text);
+}
+.form-group input:focus{
+  border-color:var(--blue); box-shadow:0 0 0 3px rgba(37,99,235,.1);
+}
+
+.login-btn{
+  width:100%; padding:10px; border-radius:var(--radius-sm);
+  font-size:13px; font-weight:600; cursor:pointer; border:none;
+  background:var(--blue); color:#fff; margin-top:6px;
+  transition:background .15s,box-shadow .15s;
+}
+.login-btn:hover{background:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.3)}
+
+.error-msg{
+  background:var(--red-bg); color:var(--red); font-size:11px;
+  padding:8px 12px; border-radius:var(--radius-sm); margin-bottom:14px;
+  text-align:center;
+}
+
+.footer-note{
+  text-align:center; margin-top:16px; font-size:10px; color:var(--muted);
+}
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="brand">
+    <div class="icon">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2">
+        <path d="M12 2L8 6h3v4.5L7 12l-3-1.5V13l3 2v3l5 3 5-3v-3l3-2v-2.5l-3 1.5-4-1.5V6h3l-4-4z"/>
+      </svg>
+    </div>
+    <h1>Drone RID Monitor</h1>
+    <p>无人机 RID 接收与电力线防碰撞监控系统</p>
+  </div>
+
+  {% if error %}
+  <div class="error-msg">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" action="/login">
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" name="username" placeholder="请输入用户名" autocomplete="username" required autofocus>
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" name="password" placeholder="请输入密码" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="login-btn">登 录</button>
+  </form>
+
+  <div class="footer-note">杆塔端监控系统 v3.2</div>
+</div>
+</body>
+</html>
