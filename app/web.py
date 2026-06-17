@@ -195,14 +195,17 @@ def api_stats_dashboard():
         return jsonify({})
 
     try:
-        from core.parser.types import UA_TYPE_NAMES
+        from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
+        from collections import Counter
 
         hourly = controller.db.get_hourly_alert_counts(24)
         ua_stats = controller.db.get_ua_type_stats()
-        model_dist = [
-            {'name': UA_TYPE_NAMES.get(s['ua_type'], f'类型{s["ua_type"]}'), 'count': s['count']}
-            for s in ua_stats
-        ]
+        # 产品型号分布 — 优先 lookup_model_by_sn，无匹配 fallback 到 UA_TYPE_NAMES
+        model_counts = Counter()
+        for d in controller.db.get_active_drones():
+            model = lookup_model_by_sn(d['id']) or UA_TYPE_NAMES.get(d.get('ua_type', 0), '未知')
+            model_counts[model] += 1
+        model_dist = [{'name': k, 'count': v} for k, v in model_counts.most_common()]
 
         bh = controller.backhaul
         pos_lat, pos_lon, pos_alt = 0.0, 0.0, 0.0
