@@ -70,9 +70,93 @@ class Alert(Base):
     distance = Column(Float)
     line_name = Column(String)
     message = Column(String)
+    acknowledged = Column(Integer, default=0)
+    ack_by = Column(String, default="")
+    ack_time = Column(DateTime, nullable=True)
+    ack_note = Column(String, default="")
 
     __table_args__ = (
         Index("idx_alerts_time", "timestamp"),
+    )
+
+
+class PowerLine(Base):
+    __tablename__ = "power_lines"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    lat1 = Column(Float, default=0)
+    lon1 = Column(Float, default=0)
+    alt1 = Column(Float, default=0)
+    lat2 = Column(Float, default=0)
+    lon2 = Column(Float, default=0)
+    alt2 = Column(Float, default=0)
+    voltage_level = Column(String, default="")
+    device_name = Column(String, ForeignKey("devices.name"), nullable=True)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class WebUser(Base):
+    __tablename__ = "web_users"
+
+    username = Column(String, primary_key=True)
+    password_hash = Column(String, nullable=False)
+    role = Column(String, default="user")
+    station = Column(String, default="")
+
+
+class Station(Base):
+    __tablename__ = "stations"
+
+    name = Column(String, primary_key=True)
+    location = Column(String, default="")
+    lat = Column(Float, default=0)
+    lon = Column(Float, default=0)
+    alt = Column(Float, default=0)
+    device_name = Column(String, nullable=True)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, default="")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime)
+    username = Column(String)
+    operation = Column(String)
+    table_name = Column(String, default="")
+    record_id = Column(Integer, nullable=True)
+    detail = Column(String, default="")
+
+
+class DeviceSecret(Base):
+    __tablename__ = "device_secrets"
+
+    device_name = Column(String, primary_key=True)
+    device_secret = Column(String, nullable=False)
+    station = Column(String, default="")
+    created_at = Column(DateTime)
+
+
+class StationPersonnel(Base):
+    """站点负责人及其联系电话 (SMS通知用)"""
+
+    __tablename__ = "station_personnel"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    station_name = Column(String, nullable=False)
+    name = Column(String, default="")
+    phone = Column(String, nullable=False)
+
+    __table_args__ = (
+        Index("idx_personnel_station", "station_name"),
     )
 
 
@@ -233,20 +317,81 @@ def get_all_drones() -> list:
     ]
 
 
-def get_recent_alerts(limit: int = 100) -> list:
+def get_recent_alerts(limit: int = 100, level: str = None, since: str = None,
+                     to_date: str = None, drone_id: str = None,
+                     device_name: str = None, acknowledged: int = None) -> list:
     sess = get_session()
-    alerts = sess.query(Alert).order_by(
-        Alert.timestamp.desc()
-    ).limit(limit).all()
+    q = sess.query(Alert)
+    if level:
+        q = q.filter(Alert.level == level)
+    if since:
+        q = q.filter(Alert.timestamp >= since)
+    if to_date:
+        q = q.filter(Alert.timestamp <= to_date)
+    if drone_id:
+        q = q.filter(Alert.drone_id == drone_id)
+    if device_name:
+        q = q.filter(Alert.device_name == device_name)
+    if acknowledged is not None:
+        q = q.filter(Alert.acknowledged == acknowledged)
+    alerts = q.order_by(Alert.timestamp.desc()).limit(limit).all()
     return [
         {
+            "id": a.id,
             "device_name": a.device_name, "drone_id": a.drone_id,
             "timestamp": a.timestamp.isoformat() if a.timestamp else "",
             "level": a.level, "distance": a.distance,
             "line_name": a.line_name or "", "message": a.message or "",
+            "acknowledged": bool(a.acknowledged),
+            "ack_by": a.ack_by or "",
+            "ack_time": a.ack_time.isoformat() if a.ack_time else "",
+            "ack_note": a.ack_note or "",
         }
         for a in alerts
     ]
+
+
+def acknowledge_alert(alert_id: int, username: str, note: str = "") -> bool:
+    sess = get_session()
+    a = sess.get(Alert, alert_id)
+    if a:
+        a.acknowledged = 1
+        a.ack_by = username
+        a.ack_time = datetime.now(timezone.utc)
+        a.ack_note = note
+        sess.commit()
+        return True
+    return False
+
+
+def get_hourly_alert_counts(hours: int = 24) -> list:
+    """近N小时每小时的告警数量 (用于24h趋势图)"""
+    from sqlalchemy import func
+    sess = get_session()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    rows = sess.query(
+        func.strftime("%Y-%m-%dT%H:00", Alert.timestamp).label("hour"),
+        func.count().label("cnt"),
+    ).filter(
+        Alert.timestamp >= cutoff
+    ).group_by("hour").order_by("hour").all()
+    return [{"hour": r.hour, "count": r.cnt} for r in rows]
+
+
+def get_alert_stats() -> dict:
+    """告警统计: 按等级计数"""
+    from sqlalchemy import func
+    sess = get_session()
+    rows = sess.query(
+        Alert.level, func.count()
+    ).filter(
+        Alert.acknowledged == 0
+    ).group_by(Alert.level).all()
+    result = {"critical": 0, "severe": 0, "warning": 0}
+    for level, cnt in rows:
+        if level in result:
+            result[level] = cnt
+    return result
 
 
 def mark_stale_devices(timeout_seconds: int = 60):
@@ -259,3 +404,289 @@ def mark_stale_devices(timeout_seconds: int = 60):
         {"status": "gone"}, synchronize_session=False
     )
     sess.commit()
+
+
+# ── Power Line CRUD ──
+
+def get_power_lines(device_name: str = None) -> list:
+    """获取电力线列表。device_name=None返回全局电力线，否则返回全局+该设备的"""
+    sess = get_session()
+    q = sess.query(PowerLine)
+    if device_name:
+        from sqlalchemy import or_
+        q = q.filter(or_(PowerLine.device_name == None, PowerLine.device_name == device_name))
+    lines = q.order_by(PowerLine.id).all()
+    return [{
+        'id': l.id, 'name': l.name,
+        'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
+        'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2,
+        'voltage_level': l.voltage_level or '',
+        'device_name': l.device_name or '',
+        'updated_at': l.updated_at.isoformat() if l.updated_at else '',
+    } for l in lines]
+
+
+def upsert_power_line(data: dict) -> int:
+    """新增或更新电力线，返回id"""
+    sess = get_session()
+    now = datetime.now(timezone.utc)
+    pl_id = data.get('id')
+    if pl_id:
+        pl = sess.get(PowerLine, pl_id)
+        if pl:
+            for k in ('name', 'lat1', 'lon1', 'alt1', 'lat2', 'lon2', 'alt2', 'voltage_level', 'device_name'):
+                if k in data:
+                    setattr(pl, k, data[k])
+            pl.updated_at = now
+            sess.commit()
+            return pl_id
+    pl = PowerLine(
+        name=data.get('name', ''),
+        lat1=data.get('lat1', 0), lon1=data.get('lon1', 0), alt1=data.get('alt1', 0),
+        lat2=data.get('lat2', 0), lon2=data.get('lon2', 0), alt2=data.get('alt2', 0),
+        voltage_level=data.get('voltage_level', ''),
+        device_name=data.get('device_name') or None,
+        created_at=now, updated_at=now,
+    )
+    sess.add(pl)
+    sess.commit()
+    return pl.id
+
+
+def delete_power_line(pl_id: int) -> bool:
+    sess = get_session()
+    pl = sess.get(PowerLine, pl_id)
+    if pl:
+        sess.delete(pl)
+        sess.commit()
+        return True
+    return False
+
+
+def load_power_lines_from_list(lines: list):
+    """从列表批量替换电力线（用于边缘同步）"""
+    sess = get_session()
+    sess.query(PowerLine).delete()
+    now = datetime.now(timezone.utc)
+    for i, l in enumerate(lines, 1):
+        pl = PowerLine(
+            id=i,
+            name=l.get('name', ''),
+            lat1=l.get('lat1', 0), lon1=l.get('lon1', 0), alt1=l.get('alt1', 0),
+            lat2=l.get('lat2', 0), lon2=l.get('lon2', 0), alt2=l.get('alt2', 0),
+            voltage_level=l.get('voltage_level', ''),
+            device_name=l.get('device_name') or None,
+            created_at=now, updated_at=now,
+        )
+        sess.add(pl)
+    sess.commit()
+
+
+# ── Web User CRUD ──
+
+from werkzeug.security import generate_password_hash, check_password_hash
+
+
+def get_web_users() -> list:
+    sess = get_session()
+    return [{
+        'username': u.username, 'role': u.role, 'station': u.station or '',
+    } for u in sess.query(WebUser).all()]
+
+
+def verify_web_user(username: str, password: str) -> dict:
+    """验证web用户，成功返回用户dict，失败返回None"""
+    sess = get_session()
+    u = sess.get(WebUser, username)
+    if u and check_password_hash(u.password_hash, password):
+        return {'username': u.username, 'role': u.role, 'station': u.station or ''}
+    return None
+
+
+def upsert_web_user(username: str, password: str = None, role: str = 'user', station: str = '') -> bool:
+    sess = get_session()
+    u = sess.get(WebUser, username)
+    if u:
+        if password:
+            u.password_hash = generate_password_hash(password)
+        u.role = role
+        u.station = station
+    else:
+        if not password:
+            return False
+        u = WebUser(
+            username=username,
+            password_hash=generate_password_hash(password),
+            role=role, station=station,
+        )
+        sess.add(u)
+    sess.commit()
+    return True
+
+
+def delete_web_user(username: str) -> bool:
+    sess = get_session()
+    u = sess.get(WebUser, username)
+    if u:
+        sess.delete(u)
+        sess.commit()
+        return True
+    return False
+
+
+def count_admin_users() -> int:
+    sess = get_session()
+    return sess.query(WebUser).filter(WebUser.role == 'admin').count()
+
+
+# ── Station CRUD ──
+
+def get_stations() -> list:
+    sess = get_session()
+    return [{
+        'name': s.name, 'location': s.location or '',
+        'lat': s.lat or 0, 'lon': s.lon or 0, 'alt': s.alt or 0,
+        'device_name': s.device_name or '',
+    } for s in sess.query(Station).all()]
+
+
+def upsert_station(name: str, location: str = '', lat: float = 0, lon: float = 0,
+                   alt: float = 0, device_name: str = None):
+    sess = get_session()
+    s = sess.get(Station, name)
+    if s:
+        s.location = location
+        s.lat = lat; s.lon = lon; s.alt = alt
+        s.device_name = device_name
+    else:
+        s = Station(name=name, location=location, lat=lat, lon=lon, alt=alt,
+                    device_name=device_name)
+        sess.add(s)
+    sess.commit()
+
+
+def delete_station(name: str) -> bool:
+    sess = get_session()
+    s = sess.get(Station, name)
+    if s:
+        sess.delete(s)
+        sess.commit()
+        return True
+    return False
+
+
+# ── System Settings CRUD ──
+
+def get_settings() -> dict:
+    sess = get_session()
+    return {s.key: s.value for s in sess.query(SystemSetting).all()}
+
+
+def get_setting(key: str, default: str = '') -> str:
+    sess = get_session()
+    s = sess.get(SystemSetting, key)
+    return s.value if s else default
+
+
+def set_setting(key: str, value: str):
+    sess = get_session()
+    s = sess.get(SystemSetting, key)
+    if s:
+        s.value = value
+    else:
+        sess.add(SystemSetting(key=key, value=value))
+    sess.commit()
+
+
+# ── Audit Log ──
+
+def add_audit_log(username: str, operation: str, table_name: str = '',
+                  record_id: int = None, detail: str = ''):
+    sess = get_session()
+    a = AuditLog(
+        timestamp=datetime.now(timezone.utc),
+        username=username, operation=operation,
+        table_name=table_name, record_id=record_id, detail=detail,
+    )
+    sess.add(a)
+    sess.commit()
+
+
+def get_audit_logs(limit: int = 100) -> list:
+    sess = get_session()
+    logs = sess.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
+    return [{
+        'id': a.id,
+        'timestamp': a.timestamp.isoformat() if a.timestamp else '',
+        'username': a.username, 'operation': a.operation,
+        'table_name': a.table_name, 'record_id': a.record_id, 'detail': a.detail,
+    } for a in logs]
+
+
+# ── Device Secrets ──
+
+def get_device_secrets() -> dict:
+    sess = get_session()
+    return {d.device_name: d.device_secret for d in sess.query(DeviceSecret).all()}
+
+
+def upsert_device_secret(device_name: str, device_secret: str, station: str = '') -> bool:
+    sess = get_session()
+    d = sess.get(DeviceSecret, device_name)
+    if d:
+        d.device_secret = device_secret
+        d.station = station
+    else:
+        d = DeviceSecret(device_name=device_name, device_secret=device_secret,
+                         station=station, created_at=datetime.now(timezone.utc))
+        sess.add(d)
+    sess.commit()
+    return True
+
+
+def delete_device_secret(device_name: str) -> bool:
+    sess = get_session()
+    d = sess.get(DeviceSecret, device_name)
+    if d:
+        sess.delete(d)
+        sess.commit()
+        return True
+    return False
+
+
+# ── Station Personnel (SMS) ──
+
+def get_personnel_by_station(station_name: str) -> list:
+    sess = get_session()
+    rows = sess.query(StationPersonnel).filter(
+        StationPersonnel.station_name == station_name
+    ).all()
+    return [{'name': r.name, 'phone': r.phone} for r in rows]
+
+
+def get_all_alert_phones() -> list:
+    sess = get_session()
+    return list(set(r.phone for r in sess.query(StationPersonnel).all()))
+
+
+def upsert_personnel(station_name: str, name: str, phone: str):
+    sess = get_session()
+    p = sess.query(StationPersonnel).filter(
+        StationPersonnel.station_name == station_name,
+        StationPersonnel.phone == phone,
+    ).first()
+    if p:
+        p.name = name
+    else:
+        sess.add(StationPersonnel(station_name=station_name, name=name, phone=phone))
+    sess.commit()
+
+
+def delete_personnel(personnel_id: int) -> bool:
+    sess = get_session()
+    p = sess.get(StationPersonnel, personnel_id)
+    if p:
+        sess.delete(p)
+        sess.commit()
+        return True
+    return False

@@ -89,12 +89,14 @@ class BackhaulManager:
 
     def __init__(self, config: dict, beidou: BeidouDevice,
                  db: "Database", device_name: str = 'NW-F1',
-                 token_manager: Optional[TokenManager] = None):
+                 token_manager: Optional[TokenManager] = None,
+                 pl_manager=None):
         self._config = config
         self._beidou = beidou
         self._db = db
         self._device_name = device_name
         self._lock = threading.Lock()
+        self._pl_manager = pl_manager  # 电力线管理器 (用于云端同步)
 
         # ── 通道状态 ──
         self._primary_status = ChannelStatus.OFFLINE
@@ -106,6 +108,7 @@ class BackhaulManager:
         sms_cfg = config.get('backhaul', {}).get('sms', {})
         self._sms_alert_phones = sms_cfg.get('alert_phones', [])
         self._sms_enabled = sms_cfg.get('enabled', False)
+        self._send_sms_from_edge = sms_cfg.get('send_from_edge', True)
 
         # ── HTTP 配置 ──
         http_cfg = config.get('backhaul', {}).get('http', {})
@@ -148,6 +151,12 @@ class BackhaulManager:
             'beidou_sent': 0, 'beidou_failed': 0,
             'last_send_time': '',
         }
+
+        # ── 电力线同步配置 ──
+        self._pl_sync_config = config.get('backhaul', {}).get('power_line_sync', {})
+        self._pl_sync_enabled = self._pl_sync_config.get('enabled', False)
+        self._pl_sync_interval = self._pl_sync_config.get('interval', 300)
+        self._pl_sync_url = self._pl_sync_config.get('sync_url', '')
 
         # ── 告警回调 (供 UI 使用) ──
         self._alert_callback: Optional[Callable] = None
@@ -313,8 +322,8 @@ class BackhaulManager:
         if sent:
             return 'http'
 
-        # 4G/有线不通 → SMS (专责人员)
-        if self._sms_enabled and self._sms_alert_phones:
+        # 4G/有线不通 → SMS (仅边缘设备，云侧统一发则跳过)
+        if self._send_sms_from_edge and self._sms_enabled and self._sms_alert_phones:
             # 组装短信: SN + 机型 + 高度 + 距离 + 位置 + 起飞点
             model_part = f"机型:{drone_model} " if drone_model else ""
             alt_part = f"高度:{alt:.0f}m " if alt else ""
@@ -397,6 +406,17 @@ class BackhaulManager:
             self._primary_status = ChannelStatus.OFFLINE
             return False
 
+    def flush_if_needed(self):
+        """周期性冲洗出队 (供 headless 主循环调用)"""
+        if self._primary_status == ChannelStatus.ONLINE and self._db.outbox_pending_count() > 0:
+            self._flush_queue()
+
+    def inject_gps(self, lat: float, lon: float, alt: float):
+        """注入外部 GPS 数据 (来自接收器的 GPS 流)"""
+        self._fallback_lat = lat
+        self._fallback_lon = lon
+        self._fallback_alt = alt
+
     def _should_use_beidou(self, level: str) -> bool:
         levels = ['warning', 'severe', 'critical']
         min_idx = levels.index(self._bd_min_level) if self._bd_min_level in levels else 2
@@ -405,6 +425,40 @@ class BackhaulManager:
 
     def _enqueue(self, payload: dict):
         self._db.insert_outbox(payload, '/api/report')
+
+    def fetch_power_lines(self) -> int:
+        """从云服务器同步电力线配置，返回更新条数"""
+        if not self._pl_sync_enabled or not self._pl_manager:
+            return 0
+
+        url = self._pl_sync_url
+        if not url:
+            url = self._http_endpoint.replace('/api/report', '/api/powerlines/sync')
+            url += f'?device_name={self._device_name}'
+
+        try:
+            headers = dict(self._http_headers)
+            if self._token_manager and self._token_manager.has_token:
+                token = self._token_manager.get_token()
+                if token:
+                    headers['Authorization'] = f'Bearer {token}'
+            resp = requests.get(url, headers=headers, timeout=self._http_timeout)
+            if resp.status_code == 200:
+                data = resp.json()
+                lines = data.get('lines', [])
+                version = data.get('version', '')
+                count = data.get('count', len(lines))
+                if lines:
+                    self._pl_manager.load_from_list(lines)
+                    self._db.load_power_lines(lines)
+                    logger.info("电力线已同步: %d 条 (version=%s)", count, version)
+                return count
+            elif resp.status_code == 401 and self._token_manager:
+                self._token_manager.force_refresh()
+                return self.fetch_power_lines()
+        except Exception as e:
+            logger.warning("电力线同步失败: %s", e)
+        return 0
 
     def _enqueue_emergency(self, payload: dict):
         self._db.insert_outbox(payload, '/api/report_alert', priority=1)
@@ -462,9 +516,10 @@ class BackhaulManager:
                 self._flush_queue()
 
     def _health_loop(self):
-        """健康检测循环 (通道检测 + 设备心跳)"""
+        """健康检测循环 (通道检测 + 设备心跳 + 电力线同步)"""
         check_interval = self._config.get('backhaul', {}).get('health_check_interval', 15)
         last_heartbeat = 0
+        last_pl_sync = 0
         while self._running:
             time.sleep(min(check_interval, self._heartbeat_interval))
             was_offline = self._primary_status == ChannelStatus.OFFLINE
@@ -484,3 +539,8 @@ class BackhaulManager:
             if now - last_heartbeat >= self._heartbeat_interval:
                 self.send_heartbeat()
                 last_heartbeat = now
+
+            # 电力线同步 (边缘设备从云拉取)
+            if self._pl_sync_enabled and now - last_pl_sync >= self._pl_sync_interval:
+                self.fetch_power_lines()
+                last_pl_sync = now

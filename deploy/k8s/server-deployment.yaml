@@ -48,6 +48,36 @@ spec:
                   key: DEVICE_SECRETS
             - name: JWT_EXPIRE_SECONDS
               value: "86400"
+            - name: WEB_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: WEB_SECRET_KEY
+            - name: SMS_ENABLED
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: SMS_ENABLED
+            - name: SMS_PROVIDER
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: SMS_PROVIDER
+            - name: ALIBABA_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: ALIBABA_ACCESS_KEY
+            - name: ALIBABA_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: ALIBABA_ACCESS_SECRET
+            - name: SMS_ALERT_PHONES
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: SMS_ALERT_PHONES
           resources:
             requests:
               cpu: 200m

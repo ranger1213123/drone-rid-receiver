@@ -6,11 +6,11 @@ metadata:
   labels:
     app: drone-rid
 data:
-  # 中心数据库配置 (PostgreSQL 连接信息由 Secret 提供)
+  # 中心数据库 URL (PostgreSQL 密码由 Secret 注入)
   DATABASE_URL: "postgresql://drone_rid:$(DB_PASSWORD)@postgres:5432/drone_rid_center"
   JWT_EXPIRE_SECONDS: "86400"
 
-  # 应用配置
+  # 应用配置 (云端服务器)
   config.yaml: |
     thresholds:
       warning: 200
@@ -19,6 +19,16 @@ data:
     stale_timeout: 120
     display:
       update_interval: 1.0
+    # 云端数据库
+    center_db:
+      driver: postgresql
+      host: postgres
+      port: 5432
+      database: drone_rid_center
+      user: drone_rid
+      pool_size: 10
+      pool_overflow: 20
+      pool_timeout: 30
 
   power_lines.yaml: |
     power_lines:

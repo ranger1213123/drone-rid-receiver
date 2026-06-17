@@ -29,12 +29,24 @@ def _get_jwt_secret():
 
 
 def _load_device_secrets():
+    # 1) DB device_secrets 表 (优先)
+    try:
+        from .models import get_device_secrets
+        db_secrets = get_device_secrets()
+        if db_secrets:
+            return db_secrets
+    except Exception:
+        pass
+
+    # 2) Flask app config
     try:
         secrets = current_app.config.get("DEVICE_SECRETS")
         if secrets:
             return secrets
     except RuntimeError:
         pass
+
+    # 3) 环境变量 (回退)
     raw = os.environ.get("DEVICE_SECRETS", "{}")
     try:
         return json.loads(raw)

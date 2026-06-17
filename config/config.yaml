@@ -1,166 +1,118 @@
-# 无人机 RID 接收系统配置
-
-# RID 协议: gb46750 (国标, 默认) | astm_f3411 (ASTM 国际标准)
 protocol: gb46750
-
-# BLE 扫描配置
 ble:
-  scan_duration: 5           # 每次扫描持续时间 (秒)
-  scan_interval: 1           # 扫描间隔 (秒)
-  device_filter: null        # MAC 地址过滤列表 (null = 不过滤)
-
-# 电力线配置文件路径
+  scan_duration: 5
+  scan_interval: 1
+  device_filter: null
 power_lines_file: config/power_lines.yaml
-
-# 监控站点配置文件路径
 stations_file: config/stations.yaml
-
-# 距离告警阈值 (米)
 thresholds:
-  warning: 200    # ≤200m: 记录轨迹
-  severe: 100     # ≤100m: 严重警告
-  critical: 50    # ≤50m:  危险
-
-# 过时无人机清理 (秒) - 超过此时间未更新的无人机将被标记为离线
+  warning: 200
+  severe: 100
+  critical: 50
 stale_timeout: 120
-
-# 轨迹记录配置
 trajectory:
-  min_interval: 2.0          # 同一无人机轨迹点最小记录间隔 (秒)
-  max_points_per_drone: 1000 # 每个无人机最大轨迹点数
-
-# 显示配置
+  min_interval: 2.0
+  max_points_per_drone: 1000
 display:
-  update_interval: 1.0       # 显示刷新间隔 (秒)
-  max_drones_display: 50     # 最多显示无人机数
-
-# 数据库 (杆塔端 SQLite)
+  update_interval: 1.0
+  max_drones_display: 50
 database:
   path: data/drone_rid.db
-
-# 中心服务器数据库 (支持 SQLite 或 PostgreSQL)
 center_db:
-  driver: sqlite                                  # sqlite | postgresql
-  sqlite_path: data/center.db                     # SQLite 模式下的文件路径
-  # PostgreSQL 模式 (driver: postgresql 时启用):
+  driver: sqlite
+  sqlite_path: data/center.db
   host: localhost
   port: 5432
   database: drone_rid_center
   user: drone_rid
-  password: ${DB_PASSWORD}                        # 环境变量注入
+  password: ${DB_PASSWORD}
   pool_size: 10
   pool_overflow: 20
   pool_timeout: 30
-
-# ── 设备自身定位 (杆塔安装位置) ──
-# 来源: beidou (北斗/GPS 模块 NMEA 实时定位) | manual (配置文件硬编码)
 position:
-  source: beidou                # beidou | manual
-  # manual 模式下的固定坐标 (WGS-84)
+  source: beidou
   manual_lat: 30.0
   manual_lon: 120.0
   manual_alt: 50.0
-
-# ── 北斗短报文应急通信 ──
 beidou:
-  mode: simulated              # simulated | real (需串口硬件)
-  port: COM1                   # 串口号 (real 模式)
-  baudrate: 115200             # 波特率
-  card_id: "0000000001"        # 北斗卡号
-  timeout: 5.0                 # 串口超时 (秒)
-
-# ── 数据回传: 4G/有线双通道 + 北斗应急 ──
+  mode: simulated
+  port: COM1
+  baudrate: 115200
+  card_id: '0000000001'
+  timeout: 5.0
 backhaul:
-  # HTTP 主通道 (4G / 有线)
   http:
-    endpoint: http://localhost:8080/api/report   # 中心服务器上报地址
-    health_url: ""                               # 健康检测 URL (为空则用 endpoint)
-    heartbeat_url: http://localhost:8080/api/heartbeat  # 设备心跳地址
-    heartbeat_interval: 30                       # 心跳间隔 (秒)
-    timeout: 10                                  # HTTP 超时 (秒)
-    retry_interval: 30                           # 重试间隔 (秒)
+    endpoint: http://localhost:8080/api/report
+    health_url: ''
+    heartbeat_url: http://localhost:8080/api/heartbeat
+    heartbeat_interval: 30
+    timeout: 10
+    retry_interval: 30
     headers:
       Content-Type: application/json
-
-  # 北斗应急通道
   beidou:
-    emergency_receiver_id: "0000000099"  # 应急接收方北斗卡号
-    min_alert_level: critical            # 触发北斗上报的最低告警级别 (warning|severe|critical)
-
-  # 离线消息队列
+    emergency_receiver_id: 0000000099
+    min_alert_level: critical
   queue:
-    max_size: 1000     # 最大积压消息数
-
-  # 健康检测
-  health_check_interval: 15   # 通道检测间隔 (秒)
-  device_name: NW-F1          # 本设备名称 (用于报文标识)
-  device_location: "杭州市富阳区-杆塔#12"  # 设备安装位置描述
-
-  # JWT 认证 (设备接入中心服务器)
+    max_size: 1000
+  health_check_interval: 15
+  device_name: NW-F1
+  device_location: 杭州市富阳区-杆塔#12
   auth:
     enabled: false
-    token_url: http://localhost:8080/api/auth/token   # Token 签发端点
-    device_secret: ${DEVICE_SECRET}                     # 设备密钥 (环境变量注入)
-    expire_seconds: 86400                               # Token 有效期 (秒)
-
-  # SMS 短信通知 (专责人员)
+    token_url: http://localhost:8080/api/auth/token
+    device_secret: ${DEVICE_SECRET}
+    expire_seconds: 86400
   sms:
     enabled: false
-    provider: simulated          # simulated | alibaba
-    alert_phones:                # 专责人员手机号 (非飞手)
-      - "+8613800138000"
+    provider: simulated
+    alert_phones:
+    - '+8613800138000'
     rate_limit_per_hour: 10
-    template_id: "SMS_123456789"
+    template_id: SMS_123456789
     alibaba:
-      access_key: your_ali_key          # 或环境变量 ALIBABA_ACCESS_KEY
-      access_secret: your_ali_secret    # 或环境变量 ALIBABA_ACCESS_SECRET
+      access_key: your_ali_key
+      access_secret: your_ali_secret
       sign_name: 无人机监控系统
       template_code: SMS_123456789
-
-# ── 告警防抖 ──
+    send_from_edge: false
+  power_line_sync:
+    enabled: true
+    interval: 300
+    sync_url: ''
 anti_flapping:
   enabled: false
-  debounce_in: 3          # 进入确认时间 (秒)
-  debounce_out: 10        # 离开确认时间 (秒)
-
-# ── 空域数据 (禁飞区) ──
+  debounce_in: 3
+  debounce_out: 10
 airspace:
   enabled: false
   sources:
-    - type: yaml
-      path: config/power_lines.yaml
-    - type: uom
-      base_url: https://uom.caac.gov.cn/api       # UOM 平台 API
-      app_id: ""                                   # 在 UOM 平台注册获取 (或环境变量 UOM_APP_ID)
-      app_key: ""                                  # 接口密钥 (或环境变量 UOM_APP_KEY)
-      cache_ttl: 3600
-      cache_path: data/uom_cache.json
-
-# ── 飞手端推送 ──
-# 可行性: DJI MSDK 不提供外部推送能力。飞手推送需通过 USS/UOM 平台。
-#         对未注册无人机, 推送降级为本地日志记录, 由管理员手动处理。
+  - type: yaml
+    path: config/power_lines.yaml
+  - type: uom
+    base_url: https://uom.caac.gov.cn/api
+    app_id: ''
+    app_key: ''
+    cache_ttl: 3600
+    cache_path: data/uom_cache.json
 pilot_notify:
   enabled: false
-  provider: console           # console | uom
+  provider: console
   uom:
     base_url: https://uom.caac.gov.cn/api
-    app_id: ""                # 在 UOM 平台注册获取 (或环境变量 UOM_APP_ID)
-    app_key: ""               # 接口密钥 (或环境变量 UOM_APP_KEY)
-
-# ── 原始报文存档 (默认启用) ──
+    app_id: ''
+    app_key: ''
 raw_archive:
   enabled: true
   retention_days: 30
-  cleanup_interval: 86400    # 清理间隔 (秒, 默认 24h)
-
-# ── Web GUI 用户认证 ──
+  cleanup_interval: 86400
 web_auth:
-  secret_key: "change-me-in-production"
+  secret_key: change-me-in-production
   users:
-    - username: admin
-      password: admin123
-      role: admin
-    - username: user1
-      password: user123
-      role: user
-      station: NW-F1
+  - username: admin
+    password: admin123
+    role: admin
+  - username: user1
+    password: user123
+    role: user
+    station: NW-F1

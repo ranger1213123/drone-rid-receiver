@@ -14,7 +14,13 @@ from .models import init_db, close_db
 def create_app(database_url: str = "sqlite:///data/center.db",
                pool_size: int = 5,
                config_overrides: dict = None) -> Flask:
-    app = Flask(__name__)
+    import os as _os
+    from pathlib import Path as _Path
+
+    app = Flask(
+        __name__,
+        template_folder=str(_Path(__file__).resolve().parent.parent.parent / "templates"),
+    )
     app.config["JSON_AS_ASCII"] = False
 
     # 注入安全配置 (环境变量 → Flask app.config)
@@ -37,6 +43,12 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     # 初始化数据库
     init_db(database_url, pool_size=pool_size)
 
+    # 首次启动: 创建默认管理员
+    from .models import count_admin_users, upsert_web_user
+    if count_admin_users() == 0:
+        upsert_web_user("admin", "admin123", "admin", "")
+        app.logger.info("已创建默认管理员账户 admin / admin123")
+
     # ── 健康检查 (无需鉴权，供 K8s 探针使用) ──
     @app.route("/api/health")
     def health():
@@ -50,13 +62,18 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     from .api_report import bp as report_bp
     from .api_heartbeat import bp as heartbeat_bp
     from .api_status import bp as status_bp
+    from .api_web import bp as web_bp
     from .dashboard import bp as dashboard_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(report_bp)
     app.register_blueprint(heartbeat_bp)
     app.register_blueprint(status_bp)
+    app.register_blueprint(web_bp)
     app.register_blueprint(dashboard_bp)
+
+    # Web session secret key
+    app.secret_key = _os.environ.get("WEB_SECRET_KEY", _os.urandom(24).hex())
 
     # 请求结束时释放数据库会话
     @app.teardown_appcontext

@@ -1,18 +1,32 @@
-"""GET /api/status"""
+"""GET /api/status — 双模式: web session + device JWT"""
 
 from datetime import datetime
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request, session
 
 from .models import get_devices, get_all_drones, get_recent_alerts, mark_stale_devices
-from .auth import require_auth
+from .auth import _verify_token
 
 bp = Blueprint("status", __name__)
 
 
+def _is_web_session():
+    return "user" in session
+
+
+def _is_device_auth():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False
+    return _verify_token(auth_header[7:]) is not None
+
+
 @bp.route("/api/status")
-@require_auth
 def api_status():
+    # 双模式鉴权: web session 或 device JWT
+    if not _is_web_session() and not _is_device_auth():
+        return jsonify({"error": "未登录或 token 无效"}), 401
+
     mark_stale_devices(timeout_seconds=120)
 
     devices = get_devices()
@@ -26,7 +40,7 @@ def api_status():
     sev = sum(1 for d in drones if d["status"] == "severe")
     warn = sum(1 for d in drones if d["status"] == "warning")
 
-    return jsonify({
+    result = {
         "server_time": datetime.now().strftime("%H:%M:%S"),
         "devices": {
             "total": total_devices,
@@ -50,4 +64,21 @@ def api_status():
             "line": a["line_name"],
             "msg": a["message"],
         } for a in alerts],
-    })
+    }
+
+    # Web session: 附加 current_user + backhaul null (前端兼容)
+    if _is_web_session():
+        u = session["user"]
+        result["current_user"] = {
+            "username": u.get("username", ""),
+            "role": u.get("role", "user"),
+            "station": u.get("station", ""),
+        }
+        result["backhaul"] = None
+        result["mode"] = "cloud"
+        result["running"] = True
+        result["drone_count"] = active_drones
+        result["alert_count"] = len(alerts)
+        result["pl_count"] = 0  # 由 api_powerlines 独立获取
+
+    return jsonify(result)

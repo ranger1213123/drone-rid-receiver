@@ -25,13 +25,15 @@ def _resolve_path(path: str, base_dir: str) -> str:
 
 def bootstrap_core(config: Optional[dict] = None, *,
                    config_path: Optional[str] = None,
-                   base_dir: Optional[str] = None) -> dict:
+                   base_dir: Optional[str] = None,
+                   headless: bool = False) -> dict:
     """创建所有核心组件，返回 dict 供 Controller 使用。
 
     Args:
         config: 已加载的配置 dict (与 config_path 二选一)
         config_path: 配置文件路径 (与 config 二选一)
         base_dir: 解析相对路径的基准目录 (默认使用 config_path 所在目录)
+        headless: 边缘设备模式 — 跳过本地电力线加载，由 cloud 同步
     """
     if config is None:
         if config_path is None:
@@ -54,20 +56,24 @@ def bootstrap_core(config: Optional[dict] = None, *,
 
     # ── 电力线 ──
     pl_manager = PowerLineManager()
-    pl_file = config.get("power_lines_file", "config/power_lines.yaml")
-    pl_file = _resolve_path(pl_file, base_dir)
-    count = pl_manager.load_from_yaml(pl_file)
-    logger.info("已加载 %d 条电力线段", count)
+    if headless:
+        # 边缘设备: 初始为空，由云同步
+        logger.info("Headless 模式: 电力线管理器初始化为空，等待云端同步")
+    else:
+        pl_file = config.get("power_lines_file", "config/power_lines.yaml")
+        pl_file = _resolve_path(pl_file, base_dir)
+        count = pl_manager.load_from_yaml(pl_file)
+        logger.info("已加载 %d 条电力线段", count)
 
-    pl_dicts = [
-        {
-            "name": l.name, "lat1": l.lat1, "lon1": l.lon1, "alt1": l.alt1,
-            "lat2": l.lat2, "lon2": l.lon2, "alt2": l.alt2,
-            "id": l.line_id,
-        }
-        for l in pl_manager.lines
-    ]
-    db.load_power_lines(pl_dicts)
+        pl_dicts = [
+            {
+                "name": l.name, "lat1": l.lat1, "lon1": l.lon1, "alt1": l.alt1,
+                "lat2": l.lat2, "lon2": l.lon2, "alt2": l.alt2,
+                "id": l.line_id,
+            }
+            for l in pl_manager.lines
+        ]
+        db.load_power_lines(pl_dicts)
 
     # ── 告警阈值 ──
     thresholds = config.get("thresholds", {
@@ -136,6 +142,7 @@ def bootstrap_core(config: Optional[dict] = None, *,
         config, beidou, db,
         device_name=device_name,
         token_manager=token_manager,
+        pl_manager=pl_manager,
     )
 
     # ── 数据处理管道 ──
@@ -154,7 +161,7 @@ def bootstrap_core(config: Optional[dict] = None, *,
         'config': config,
         'db': db,
         'pl_manager': pl_manager,
-        'pl_file': pl_file,
+        'pl_file': pl_file if not headless else None,
         'alert_system': alert_system,
         'trajectory_recorder': trajectory_recorder,
         'raw_archive': raw_archive,

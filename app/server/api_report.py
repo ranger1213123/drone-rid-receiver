@@ -1,13 +1,87 @@
-"""POST /api/report, /api/report_alert"""
+"""POST /api/report, /api/report_alert — 含云侧 SMS"""
+
+import os
 
 from flask import Blueprint, request, jsonify
 
-from .models import upsert_device, upsert_drone, update_drone_status, add_alert
+from .models import (
+    upsert_device, upsert_drone, update_drone_status, add_alert,
+    get_personnel_by_station, get_all_alert_phones,
+)
 from .auth import require_auth
 from logging_config import get_logger
 
 bp = Blueprint("report", __name__)
 logger = get_logger(__name__)
+
+# ── SMS 网关 (懒加载) ──
+_sms_gateway = None
+
+
+def _get_sms_gateway():
+    global _sms_gateway
+    if _sms_gateway is not None:
+        return _sms_gateway
+
+    sms_enabled = os.environ.get("SMS_ENABLED", "0")
+    if sms_enabled not in ("1", "true", "True"):
+        from core.sms_gateway import SimulatedSMSGateway
+        _sms_gateway = SimulatedSMSGateway()
+        logger.info("SMS: 模拟模式 (SMS_ENABLED=0)")
+        return _sms_gateway
+
+    provider = os.environ.get("SMS_PROVIDER", "alibaba")
+    if provider == "alibaba":
+        from core.sms_gateway import AlibabaSMSGateway
+        _sms_gateway = AlibabaSMSGateway(
+            access_key=os.environ.get("ALIBABA_ACCESS_KEY", ""),
+            access_secret=os.environ.get("ALIBABA_ACCESS_SECRET", ""),
+            sign_name=os.environ.get("ALIBABA_SIGN_NAME", "无人机防碰撞监测"),
+            template_code=os.environ.get("ALIBABA_TEMPLATE_CODE", ""),
+        )
+        logger.info("SMS: 阿里云模式")
+    else:
+        from core.sms_gateway import SimulatedSMSGateway
+        _sms_gateway = SimulatedSMSGateway()
+        logger.info("SMS: 模拟模式 (unknown provider=%s)", provider)
+
+    return _sms_gateway
+
+
+def _notify_station_personnel(device_name: str, drone_id: str, level: str,
+                              distance: float, line_name: str, lat: float, lon: float):
+    """向站点负责人发送告警短信"""
+    try:
+        gateway = _get_sms_gateway()
+        # 查找该设备的站点负责人
+        from .models import get_stations
+        stations = get_stations()
+        station_name = None
+        for s in stations:
+            if s["device_name"] == device_name:
+                station_name = s["name"]
+                break
+
+        if station_name:
+            personnel = get_personnel_by_station(station_name)
+            phones = [p["phone"] for p in personnel if p.get("phone")]
+        else:
+            phones = get_all_alert_phones()
+
+        if not phones:
+            # 回退: 环境变量配置的应急电话
+            fallback = os.environ.get("SMS_ALERT_PHONES", "")
+            phones = [p.strip() for p in fallback.split(",") if p.strip()]
+
+        if not phones:
+            logger.info("SMS: 无接收号码 (device=%s station=%s)", device_name, station_name)
+            return
+
+        coords = f"({lat:.4f},{lon:.4f})" if lat or lon else ""
+        msg = f"[{level.upper()}] {drone_id} 接近 {line_name} 距离{distance:.0f}m {coords} — 设备{device_name}"
+        gateway.send(phones, msg)
+    except Exception as e:
+        logger.error("SMS notification error: %s", e)
 
 
 @bp.route("/api/report", methods=["POST"])
@@ -65,6 +139,10 @@ def api_report_alert():
         if drone_id:
             upsert_drone(device_name, drone_id, lat, lon, alt)
             update_drone_status(device_name, drone_id, distance, line_name, level)
+
+        # 云侧 SMS
+        _notify_station_personnel(device_name, drone_id, level, distance,
+                                  line_name, lat, lon)
 
         return jsonify({"status": "ok"})
     except Exception as e:
