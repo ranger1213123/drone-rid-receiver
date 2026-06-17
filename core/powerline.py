@@ -2,27 +2,79 @@
 电力线模块 - 电力线数据管理
 
 管理电力线段的加载、查询、以及与无人机的距离计算。
+参考标准: GB 50545-2010《110kV～750kV架空输电线路设计规范》
 """
 
 import math
 import yaml
 from typing import List, Dict, Optional, Tuple
 
+# GB 50545-2010 非居民区最小对地距离 (m)
+VOLTAGE_CLEARANCE = {
+    '10kV': 5.5,
+    '35kV': 6.5,
+    '66kV': 7.0,
+    '110kV': 7.0,
+    '220kV': 8.5,
+    '330kV': 9.5,
+    '500kV': 14.0,
+    '750kV': 19.5,
+    '±800kV': 21.0,
+    '1000kV': 27.0,
+}
+
+VOLTAGE_LEVELS = list(VOLTAGE_CLEARANCE.keys())
+
 
 class PowerLineSegment:
-    """电力线段 - 两个三维端点定义一个线段"""
+    """电力线段 - 两个三维端点定义一个线段
+
+    缓存端点 2 相对于端点 1 的平面偏移和线段长度平方，
+    避免对同一线段重复进行经纬度→米制转换。
+    """
+
+    __slots__ = ('name', 'line_id', 'lat1', 'lon1', 'alt1',
+                 'lat2', 'lon2', 'alt2', 'voltage_level',
+                 '_cache_dx2', '_cache_dy2', '_cache_len_sq')
 
     def __init__(self, name: str,
                  lat1: float, lon1: float, alt1: float,
                  lat2: float, lon2: float, alt2: float,
-                 line_id: int = 0):
+                 line_id: int = 0, voltage_level: str = ''):
         self.name = name
         self.line_id = line_id
         self.lat1, self.lon1, self.alt1 = lat1, lon1, alt1
         self.lat2, self.lon2, self.alt2 = lat2, lon2, alt2
+        self.voltage_level = voltage_level
+        self._cache_dx2: Optional[float] = None
+        self._cache_dy2: Optional[float] = None
+        self._cache_len_sq: Optional[float] = None
+
+    def ensure_cache(self):
+        """惰性计算并缓存端点 2 相对于端点 1 的平面偏移"""
+        if self._cache_dx2 is not None:
+            return
+        self._cache_dx2, self._cache_dy2 = _latlon_to_meters(
+            self.lat2, self.lon2, self.lat1, self.lon1
+        )
+        self._cache_len_sq = (self._cache_dx2 * self._cache_dx2 +
+                              self._cache_dy2 * self._cache_dy2)
+
+    def invalidate_cache(self):
+        """坐标变更后清除缓存"""
+        self._cache_dx2 = None
+        self._cache_dy2 = None
+        self._cache_len_sq = None
+
+    def get_clearance(self) -> Optional[float]:
+        """返回该电压等级对应的 GB 50545 最小对地距离，无等级则返回 None"""
+        return VOLTAGE_CLEARANCE.get(self.voltage_level)
 
     def __repr__(self):
-        return f"PowerLine({self.name}: [{self.lat1:.4f},{self.lon1:.4f},{self.alt1:.1f}] → [{self.lat2:.4f},{self.lon2:.4f},{self.alt2:.1f}])"
+        vl = f" {self.voltage_level}" if self.voltage_level else ""
+        return (f"PowerLine({self.name}{vl}: "
+                f"[{self.lat1:.4f},{self.lon1:.4f},{self.alt1:.1f}] → "
+                f"[{self.lat2:.4f},{self.lon2:.4f},{self.alt2:.1f}])")
 
 
 class PowerLineManager:
@@ -46,6 +98,7 @@ class PowerLineManager:
                 lat2=line_data["lat2"], lon2=line_data["lon2"],
                 alt2=line_data["alt2"],
                 line_id=line_id,
+                voltage_level=line_data.get("voltage_level", ""),
             )
             self.lines.append(segment)
             line_id += 1
@@ -63,6 +116,7 @@ class PowerLineManager:
                 lat2=line_data["lat2"], lon2=line_data["lon2"],
                 alt2=line_data["alt2"],
                 line_id=line_data.get("id", 0),
+                voltage_level=line_data.get("voltage_level", ""),
             )
             self.lines.append(segment)
         return len(self.lines)
@@ -70,16 +124,10 @@ class PowerLineManager:
     def find_nearest_line(self, lat: float, lon: float, alt: float
                            ) -> Tuple[Optional[PowerLineSegment], float]:
         """
-        查找距离无人机最近的电力线段，返回 (线段, 垂直距离_米)
+        查找距离无人机最近的电力线段，返回 (线段, 3D欧氏距离_米)
 
-        垂直距离 = 无人机海拔高度 - 电力线在该点的海拔高度
-        （正值表示无人机在电力线上方，负值表示在下方）
-
-        为了简化计算：
-        1. 将经纬度近似转换为平面坐标 (米)
-        2. 计算点到线段的水平投影距离
-        3. 取电力线在投影点的高程
-        4. 垂直距离 = |无人机高度 - 电力线高程|
+        使用三维欧氏距离: sqrt(水平距离² + 垂直距离²)
+        线段平面坐标会被缓存以避免重复转换。
         """
         if not self.lines:
             return None, float('inf')
@@ -88,10 +136,8 @@ class PowerLineManager:
         best_distance = float('inf')
 
         for line in self.lines:
-            dist = self._vertical_distance_to_line(
-                drone_lat=lat, drone_lon=lon, drone_alt=alt,
-                line=line
-            )
+            line.ensure_cache()
+            dist = _distance_to_line(lat, lon, alt, line)
             if dist < best_distance:
                 best_distance = dist
                 best_line = line
@@ -103,92 +149,74 @@ class PowerLineManager:
                         ) -> List[Tuple[PowerLineSegment, float]]:
         """
         查找所有距离小于指定值的电力线段
-        返回 [(线段, 垂直距离), ...] 按距离升序排列
+        返回 [(线段, 3D欧氏距离), ...] 按距离升序排列
         """
         results = []
         for line in self.lines:
-            dist = self._vertical_distance_to_line(
-                drone_lat=lat, drone_lon=lon, drone_alt=alt, line=line
-            )
+            line.ensure_cache()
+            dist = _distance_to_line(lat, lon, alt, line)
             if dist <= max_distance:
                 results.append((line, dist))
 
         results.sort(key=lambda x: x[1])
         return results
 
-    @staticmethod
-    def _latlon_to_meters(lat: float, lon: float,
-                          ref_lat: float, ref_lon: float) -> Tuple[float, float]:
-        """
-        将经纬度转换为以参考点为原点的近似平面坐标 (米)
-        使用 WGS84 简化公式
-        """
-        lat_mid = (ref_lat + lat) / 2.0
-        meters_per_deg_lat = 111132.954 - 559.822 * math.cos(2 * math.radians(lat_mid))
-        meters_per_deg_lon = (math.pi / 180) * 6378137.0 * math.cos(math.radians(lat_mid))
 
-        dy = (lat - ref_lat) * meters_per_deg_lat
-        dx = (lon - ref_lon) * meters_per_deg_lon
-        return dx, dy
+# ─────────────────── 经纬度转换 ───────────────────
 
-    @staticmethod
-    def _vertical_distance_to_line(drone_lat: float, drone_lon: float,
-                                    drone_alt: float,
-                                    line: PowerLineSegment) -> float:
-        """
-        计算无人机到电力线段的垂直距离 (绝对值，米)
+def _latlon_to_meters(lat: float, lon: float,
+                      ref_lat: float, ref_lon: float) -> Tuple[float, float]:
+    """
+    将经纬度转换为以参考点为原点的近似平面坐标 (米)
+    使用 WGS84 简化公式
+    """
+    lat_mid = (ref_lat + lat) / 2.0
+    meters_per_deg_lat = 111132.954 - 559.822 * math.cos(2 * math.radians(lat_mid))
+    meters_per_deg_lon = (math.pi / 180) * 6378137.0 * math.cos(math.radians(lat_mid))
 
-        方法:
-        1. 将经纬度转为平面坐标 (以线段起点为参考)
-        2. 计算无人机水平投影到线段的最短垂直距离
-        3. 在线段最近点处插值电力线高度
-        4. 垂直距离 = |无人机高度 - 电力线最近点高度|
-        """
-        # 转换为平面坐标
-        dx1, dy1 = 0.0, 0.0  # 线段起点为原点
-
-        dx2, dy2 = PowerLineManager._latlon_to_meters(
-            line.lat2, line.lon2, line.lat1, line.lon1
-        )
-
-        dx_drone, dy_drone = PowerLineManager._latlon_to_meters(
-            drone_lat, drone_lon, line.lat1, line.lon1
-        )
-
-        # 线段向量
-        seg_dx = dx2 - dx1
-        seg_dy = dy2 - dy1
-
-        # 线段长度的平方
-        seg_len_sq = seg_dx * seg_dx + seg_dy * seg_dy
-
-        if seg_len_sq < 1e-6:
-            # 线段退化为点
-            line_alt = line.alt1
-        else:
-            # 计算投影参数 t (0~1 表示投影在线段上)
-            t = ((dx_drone - dx1) * seg_dx + (dy_drone - dy1) * seg_dy) / seg_len_sq
-            t = max(0.0, min(1.0, t))  # 钳制到线段范围内
-
-            # 插值电力线高度
-            line_alt = line.alt1 + t * (line.alt2 - line.alt1)
-
-        # 垂直距离 = |无人机海拔高度 - 电力线在该点的高度|
-        return abs(drone_alt - line_alt)
+    dy = (lat - ref_lat) * meters_per_deg_lat
+    dx = (lon - ref_lon) * meters_per_deg_lon
+    return dx, dy
 
 
-# ─────────────────── 距离计算独立函数 ───────────────────
+# ─────────────────── 3D 欧氏距离 ───────────────────
 
-def calculate_vertical_distance(drone_alt: float, line_alt: float) -> float:
-    """简单垂直距离计算 (两海拔高度之差)"""
-    return abs(drone_alt - line_alt)
+def _distance_to_line(drone_lat: float, drone_lon: float, drone_alt: float,
+                      line: PowerLineSegment) -> float:
+    """
+    计算无人机到电力线段的三维欧氏距离 (米)
 
+    1. 将经纬度转为平面坐标 (以线段起点为参考)
+    2. 找到无人机在线段水平投影上的最近点
+    3. 计算水平距离 + 垂直距离 → 3D 欧氏距离
 
-def calculate_3d_distance(drone_lat: float, drone_lon: float, drone_alt: float,
-                          line_lat: float, line_lon: float, line_alt: float) -> float:
-    """计算无人机到电力线点的三维距离 (米)"""
-    dx, dy = PowerLineManager._latlon_to_meters(
-        drone_lat, drone_lon, line_lat, line_lon
+    使用线段已缓存的端点 2 平面偏移。
+    """
+    # 线段端点 2 的平面偏移 (已缓存)
+    dx2, dy2 = line._cache_dx2, line._cache_dy2
+    seg_len_sq = line._cache_len_sq
+
+    # 无人机相对线段起点的平面偏移
+    dx_drone, dy_drone = _latlon_to_meters(
+        drone_lat, drone_lon, line.lat1, line.lon1
     )
-    dz = drone_alt - line_alt
-    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    if seg_len_sq < 1e-6:
+        # 线段退化为点 — 3D 距离 = sqrt(水平² + 垂直²)
+        h_sq = dx_drone * dx_drone + dy_drone * dy_drone
+        v = drone_alt - line.alt1
+        return math.sqrt(h_sq + v * v)
+
+    # 投影参数 t ∈ [0, 1]
+    t = (dx_drone * dx2 + dy_drone * dy2) / seg_len_sq
+    t = max(0.0, min(1.0, t))
+
+    # 最近点坐标 + 插值高度
+    closest_x = t * dx2
+    closest_y = t * dy2
+    line_alt = line.alt1 + t * (line.alt2 - line.alt1)
+
+    # 3D 欧氏距离
+    h_sq = (dx_drone - closest_x) ** 2 + (dy_drone - closest_y) ** 2
+    v = drone_alt - line_alt
+    return math.sqrt(h_sq + v * v)

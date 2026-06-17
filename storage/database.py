@@ -231,7 +231,8 @@ class Database:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 lat1 REAL, lon1 REAL, alt1 REAL,
-                lat2 REAL, lon2 REAL, alt2 REAL
+                lat2 REAL, lon2 REAL, alt2 REAL,
+                voltage_level TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS trajectories (
@@ -256,6 +257,10 @@ class Database:
                 distance REAL,
                 line_id INTEGER,
                 message TEXT,
+                acknowledged INTEGER DEFAULT 0,
+                ack_time TEXT,
+                ack_by TEXT,
+                ack_note TEXT,
                 FOREIGN KEY (drone_id) REFERENCES drones(id),
                 FOREIGN KEY (line_id) REFERENCES power_lines(id)
             );
@@ -264,6 +269,22 @@ class Database:
                 ON alerts(drone_id, timestamp);
         """)
         self._commit()
+
+        # 迁移: 为旧数据库添加 voltage_level 列
+        try:
+            self._execute("ALTER TABLE power_lines ADD COLUMN voltage_level TEXT DEFAULT ''")
+            self._commit()
+        except Exception:
+            pass
+
+        # 迁移: 为旧数据库添加告警确认字段
+        for col in [('acknowledged', 'INTEGER DEFAULT 0'),
+                     ('ack_time', 'TEXT'), ('ack_by', 'TEXT'), ('ack_note', 'TEXT')]:
+            try:
+                self._execute(f"ALTER TABLE alerts ADD COLUMN {col[0]} {col[1]}")
+                self._commit()
+            except Exception:
+                pass
 
     # ──────────────────── 无人机操作 ────────────────────
 
@@ -339,20 +360,33 @@ class Database:
         )
         self._commit()
 
+    def mark_stale_drones_as_gone(self, stale_timeout: int) -> int:
+        """将 last_seen 超过 stale_timeout 秒的无人机标记为 gone，返回计数"""
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=stale_timeout)).isoformat()
+        cur = self._execute(
+            "UPDATE drones SET status = 'gone' WHERE status != 'gone' AND last_seen < ?",
+            (cutoff,)
+        )
+        self._commit()
+        return cur.rowcount
+
     # ──────────────────── 电力线操作 ────────────────────
 
     def load_power_lines(self, lines: List[Dict]):
         """从配置加载电力线（先解除外键引用再清空插入，ID 对齐）"""
+        self._execute("BEGIN IMMEDIATE")
         self._execute("UPDATE alerts SET line_id = NULL")
         self._execute("UPDATE trajectories SET line_id = NULL")
         self._execute("DELETE FROM power_lines")
         self._execute("DELETE FROM sqlite_sequence WHERE name='power_lines'")
         for i, line in enumerate(lines, 1):
             self._execute("""
-                INSERT INTO power_lines (id, name, lat1, lon1, alt1, lat2, lon2, alt2)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO power_lines (id, name, lat1, lon1, alt1, lat2, lon2, alt2, voltage_level)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (i, line["name"], line["lat1"], line["lon1"], line["alt1"],
-                  line["lat2"], line["lon2"], line["alt2"]))
+                  line["lat2"], line["lon2"], line["alt2"],
+                  line.get("voltage_level", "")))
         self._commit()
 
     def get_power_lines(self) -> List[Dict]:
@@ -417,20 +451,58 @@ class Database:
         """, (drone_id, level)).fetchone()
         return dict(row) if row else None
 
+    def acknowledge_alert(self, alert_id: int, username: str, note: str = ''):
+        """确认告警"""
+        now = datetime.now(timezone.utc).isoformat()
+        self._execute("""
+            UPDATE alerts SET acknowledged=1, ack_time=?, ack_by=?, ack_note=?
+            WHERE id=?
+        """, (now, username, note, alert_id))
+        self._commit()
+
+    def get_recent_alerts(self, limit: int = 200, level: str = None,
+                          drone_id: str = None, since: str = None,
+                          to_date: str = None) -> List[Dict]:
+        """查询最近告警记录，支持按等级/无人机/时间范围筛选"""
+        conditions = []
+        params = []
+        if level:
+            conditions.append("level = ?")
+            params.append(level)
+        if drone_id:
+            conditions.append("drone_id LIKE ?")
+            params.append(f"%{drone_id}%")
+        if since:
+            conditions.append("timestamp >= ?")
+            params.append(since)
+        if to_date:
+            conditions.append("timestamp <= ?")
+            params.append(to_date)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        self.conn.row_factory = sqlite3.Row
+        rows = self._execute(f"""
+            SELECT * FROM alerts
+            {where}
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (*params, limit)).fetchall()
+        return [dict(r) for r in rows]
+
     # ──────────────────── 原始报文存档 ────────────────────
 
     def insert_raw_message(self, drone_id: str, timestamp: str,
                            protocol: str, msg_type: str, raw_data: str,
                            mac: str, rssi: float,
                            prev_hash: str, current_hash: str) -> int:
+        self._execute("BEGIN IMMEDIATE")
         cur = self._execute("""
             INSERT INTO raw_messages (drone_id, timestamp, protocol, msg_type,
                 raw_data, mac, rssi, prev_hash, current_hash)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (drone_id, timestamp, protocol, msg_type, raw_data, mac, rssi,
               prev_hash, current_hash))
-        self._commit()
         self._add_audit_log_internal("INSERT", "raw_messages", cur.lastrowid)
+        self._commit()
         return cur.lastrowid
 
     def get_raw_message_chain(self, drone_id: str) -> List[Dict]:
@@ -527,12 +599,13 @@ class Database:
     def insert_outbox(self, payload: dict, target_path: str,
                       priority: int = 0) -> int:
         now = datetime.now(timezone.utc).isoformat()
+        self._execute("BEGIN IMMEDIATE")
         cur = self._execute("""
             INSERT INTO outbox (created_at, payload, target_path, priority, status)
             VALUES (?, ?, ?, ?, 'pending')
         """, (now, json.dumps(payload), target_path, priority))
-        self._commit()
         self._add_audit_log_internal("INSERT", "outbox", cur.lastrowid)
+        self._commit()
         return cur.lastrowid
 
     def get_pending_outbox(self, limit: int = 50) -> List[Dict]:

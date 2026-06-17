@@ -12,6 +12,9 @@ ble:
 # 电力线配置文件路径
 power_lines_file: config/power_lines.yaml
 
+# 监控站点配置文件路径
+stations_file: config/stations.yaml
+
 # 距离告警阈值 (米)
 thresholds:
   warning: 200    # ≤200m: 记录轨迹

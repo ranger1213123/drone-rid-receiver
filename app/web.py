@@ -30,6 +30,15 @@ from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / 'templates'))
 
+
+def _safe_float(val, default=0.0):
+    """安全转换为 float，失败返回 default"""
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 # ── 加载 Web 认证配置 ──
 _web_auth_cfg = {}
 try:
@@ -39,16 +48,50 @@ try:
 except Exception:
     pass
 
-app.secret_key = _web_auth_cfg.get('secret_key', 'dev-fallback-key')
-WEB_USERS = _web_auth_cfg.get('users', [
-    {'username': 'admin', 'password': 'admin123', 'role': 'admin'},
-])
+_fallback_key = os.urandom(24).hex()
+app.secret_key = _web_auth_cfg.get('secret_key', _fallback_key)
+
+def _load_web_users():
+    """从 web_users.yaml 加载用户列表，失败则回退到 config.yaml 默认值"""
+    import yaml
+    users_file = PROJECT_ROOT / 'config' / 'web_users.yaml'
+    try:
+        if users_file.exists():
+            with open(str(users_file), 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f) or {}
+                users = data.get('users', [])
+                if users:
+                    return users
+    except Exception:
+        pass
+    return _web_auth_cfg.get('users', [
+        {'username': 'admin', 'password': 'admin123', 'role': 'admin'},
+    ])
+
+def _save_web_users(users):
+    """将用户列表写回 web_users.yaml"""
+    import yaml
+    users_file = PROJECT_ROOT / 'config' / 'web_users.yaml'
+    with open(str(users_file), 'w', encoding='utf-8') as f:
+        yaml.dump({'users': users}, f, allow_unicode=True, default_flow_style=False)
+
+WEB_USERS = _load_web_users()
 
 def require_web_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user' not in session:
             return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def require_admin(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user' not in session:
+            return redirect(url_for('login'))
+        if session['user'].get('role') != 'admin':
+            return jsonify({'error': '需要管理员权限'}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -162,36 +205,400 @@ def api_powerlines():
     if request.method == 'GET':
         return jsonify([{
             'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2
+            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2,
+            'voltage_level': getattr(l, 'voltage_level', ''),
         } for l in controller.pl_manager.lines])
     elif request.method == 'POST':
-        data = request.json
+        data = request.json or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': '电力线名称不能为空'}), 400
         from core.powerline import PowerLineSegment
+        voltage_level = (data.get('voltage_level') or '').strip()
         seg = PowerLineSegment(
-            name=data['name'], lat1=data['lat1'], lon1=data['lon1'], alt1=data['alt1'],
-            lat2=data['lat2'], lon2=data['lon2'], alt2=data['alt2'],
-            line_id=len(controller.pl_manager.lines) + 1
+            name=name,
+            lat1=_safe_float(data.get('lat1')), lon1=_safe_float(data.get('lon1')),
+            alt1=_safe_float(data.get('alt1')),
+            lat2=_safe_float(data.get('lat2')), lon2=_safe_float(data.get('lon2')),
+            alt2=_safe_float(data.get('alt2')),
+            line_id=len(controller.pl_manager.lines) + 1,
+            voltage_level=voltage_level,
         )
         controller.pl_manager.lines.append(seg)
         controller.db.load_power_lines([{
             'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': l.line_id
+            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': l.line_id,
+            'voltage_level': getattr(l, 'voltage_level', ''),
         } for l in controller.pl_manager.lines])
         controller._save_power_lines_to_yaml()
         return jsonify({'status': 'ok'})
 
-@app.route('/api/powerlines/<int:idx>', methods=['DELETE'])
+@app.route('/api/powerlines/<int:idx>', methods=['DELETE', 'PUT'])
 @require_web_auth
-def api_delete_powerline(idx):
+def api_modify_powerline(idx):
     global controller
-    if controller and idx < len(controller.pl_manager.lines):
-        del controller.pl_manager.lines[idx]
+    if not controller:
+        return jsonify({'error': '系统未启动'}), 503
+
+    if request.method == 'DELETE':
+        if idx < len(controller.pl_manager.lines):
+            del controller.pl_manager.lines[idx]
+            controller.db.load_power_lines([{
+                'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
+                'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': i+1,
+                'voltage_level': getattr(l, 'voltage_level', ''),
+            } for i, l in enumerate(controller.pl_manager.lines)])
+            controller._save_power_lines_to_yaml()
+        return jsonify({'status': 'ok'})
+
+    if request.method == 'PUT':
+        if idx >= len(controller.pl_manager.lines):
+            return jsonify({'error': '无效的电力线索引'}), 404
+        data = request.json or {}
+        line = controller.pl_manager.lines[idx]
+        if 'name' in data:
+            line.name = data['name'].strip()
+        if 'voltage_level' in data:
+            line.voltage_level = data['voltage_level'].strip()
+        for attr in ['alt1', 'alt2', 'lat1', 'lon1', 'lat2', 'lon2']:
+            if attr in data and data[attr] is not None:
+                setattr(line, attr, _safe_float(data[attr]))
         controller.db.load_power_lines([{
             'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': i+1
+            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': i+1,
+            'voltage_level': getattr(l, 'voltage_level', ''),
         } for i, l in enumerate(controller.pl_manager.lines)])
         controller._save_power_lines_to_yaml()
+        return jsonify({'status': 'ok'})
+
+
+@app.route('/api/stations', methods=['GET', 'POST', 'DELETE'])
+@require_web_auth
+def api_stations():
+    global controller
+    if not controller:
+        return jsonify([])
+
+    if request.method == 'GET':
+        return jsonify(controller.stations)
+
+    # POST / DELETE require admin
+    if session['user'].get('role') != 'admin':
+        return jsonify({'error': '需要管理员权限'}), 403
+
+    if request.method == 'POST':
+        data = request.json or {}
+        name = (data.get('name', '') or '').strip()
+        location = (data.get('location', '') or '').strip()
+        lat = _safe_float(data.get('lat'))
+        lon = _safe_float(data.get('lon'))
+        alt = _safe_float(data.get('alt'))
+        if not name:
+            return jsonify({'error': '站点名称不能为空'}), 400
+        controller.stations.append({
+            'name': name, 'location': location,
+            'lat': lat, 'lon': lon, 'alt': alt,
+        })
+        controller._save_stations_to_yaml()
+        return jsonify({'status': 'ok'})
+
+    if request.method == 'DELETE':
+        data = request.json or {}
+        idx = data.get('idx')
+        if idx is None:
+            return jsonify({'error': '缺少 idx 参数'}), 400
+        idx = int(idx)
+        if 0 <= idx < len(controller.stations):
+            del controller.stations[idx]
+            controller._save_stations_to_yaml()
+            return jsonify({'status': 'ok'})
+        return jsonify({'error': '无效的站点索引'}), 404
+
+
+@app.route('/api/users', methods=['GET', 'POST', 'DELETE'])
+@require_web_auth
+def api_users():
+    global WEB_USERS
+    if request.method == 'GET':
+        # 返回用户列表，隐藏密码字段
+        return jsonify([{
+            'username': u.get('username', ''),
+            'role': u.get('role', 'user'),
+            'station': u.get('station', ''),
+        } for u in WEB_USERS])
+
+    # POST / DELETE 需管理员权限
+    if session['user'].get('role') != 'admin':
+        return jsonify({'error': '需要管理员权限'}), 403
+
+    if request.method == 'POST':
+        data = request.json
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        role = data.get('role', 'user').strip()
+        station = data.get('station', '').strip()
+        if not username or not password:
+            return jsonify({'error': '用户名和密码不能为空'}), 400
+        # 检查是否已存在
+        if any(u['username'] == username for u in WEB_USERS):
+            return jsonify({'error': '用户名已存在'}), 409
+        WEB_USERS.append({
+            'username': username, 'password': password,
+            'role': role, 'station': station,
+        })
+        _save_web_users(WEB_USERS)
+        return jsonify({'status': 'ok'})
+
+    if request.method == 'DELETE':
+        data = request.json or {}
+        username = data.get('username', '').strip()
+        if not username:
+            return jsonify({'error': '缺少 username 参数'}), 400
+        # 禁止删除最后一个管理员
+        admins = [u for u in WEB_USERS if u.get('role') == 'admin']
+        target = next((u for u in WEB_USERS if u['username'] == username), None)
+        if target and target.get('role') == 'admin' and len(admins) <= 1:
+            return jsonify({'error': '不能删除最后一个管理员账户'}), 400
+        WEB_USERS = [u for u in WEB_USERS if u['username'] != username]
+        _save_web_users(WEB_USERS)
+        return jsonify({'status': 'ok'})
+
+
+@app.route('/api/alerts/history')
+@require_web_auth
+def api_alerts_history():
+    """查询历史告警记录，支持筛选"""
+    global controller
+    if not controller:
+        return jsonify([])
+    level = request.args.get('level', '').strip() or None
+    drone_id = request.args.get('drone_id', '').strip() or None
+    since = request.args.get('since', '').strip() or None
+    to_date = request.args.get('to', '').strip() or None
+    limit = min(int(request.args.get('limit', 200)), 1000)
+    rows = controller.db.get_recent_alerts(limit=limit, level=level,
+                                            drone_id=drone_id, since=since,
+                                            to_date=to_date)
+    line_names = {}
+    if controller.pl_manager:
+        line_names = {l.line_id: l.name for l in controller.pl_manager.lines}
+    return jsonify([{
+        'id': r['id'],
+        'drone_id': r['drone_id'],
+        'timestamp': r['timestamp'][:19] if r['timestamp'] else '',
+        'level': r['level'],
+        'distance': r['distance'],
+        'line_name': line_names.get(r.get('line_id'), ''),
+        'message': r.get('message', ''),
+        'acknowledged': bool(r.get('acknowledged', 0)),
+        'ack_time': (r.get('ack_time') or '')[:19],
+        'ack_by': r.get('ack_by', ''),
+        'ack_note': r.get('ack_note', ''),
+    } for r in rows])
+
+
+@app.route('/api/alerts/<int:alert_id>/acknowledge', methods=['POST'])
+@require_web_auth
+def api_acknowledge_alert(alert_id):
+    """确认告警"""
+    global controller
+    if not controller:
+        return jsonify({'error': '系统未启动'}), 503
+    user = session.get('user', {})
+    note = (request.json or {}).get('note', '').strip()
+    controller.db.acknowledge_alert(alert_id, user.get('username', 'system'), note)
     return jsonify({'status': 'ok'})
+
+
+@app.route('/api/alerts/export')
+@require_web_auth
+def api_alerts_export():
+    """导出告警历史为 CSV"""
+    global controller
+    if not controller:
+        return jsonify({'error': '系统未启动'}), 503
+    import csv, io
+    level = request.args.get('level', '').strip() or None
+    since = request.args.get('since', '').strip() or None
+    rows = controller.db.get_recent_alerts(limit=5000, level=level, since=since)
+    si = io.StringIO()
+    w = csv.writer(si)
+    w.writerow(['ID', '时间', '无人机ID', '等级', '距离(m)', '电力线', '已确认', '确认人', '确认时间'])
+    line_names = {l.line_id: l.name for l in controller.pl_manager.lines}
+    for r in rows:
+        w.writerow([
+            r['id'], r['timestamp'][:19] if r['timestamp'] else '',
+            r['drone_id'], r['level'], f"{r['distance']:.1f}" if r['distance'] else '',
+            line_names.get(r.get('line_id'), ''), '是' if r.get('acknowledged') else '否',
+            r.get('ack_by', ''), (r.get('ack_time') or '')[:19],
+        ])
+    resp = app.make_response(si.getvalue())
+    resp.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    resp.headers['Content-Disposition'] = 'attachment; filename=alerts_export.csv'
+    return resp
+
+
+@app.route('/api/drones/export')
+@require_web_auth
+def api_drones_export():
+    """导出活跃无人机列表为 CSV"""
+    global controller
+    if not controller:
+        return jsonify({'error': '系统未启动'}), 503
+    import csv, io
+    from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
+    drones = controller.db.get_active_drones()
+    si = io.StringIO()
+    w = csv.writer(si)
+    w.writerow(['无人机ID', '推测型号', '类型', '纬度', '经度', '海拔(m)', '速度(m/s)', '航向', '状态', '最近距离(m)', '最近电力线', '最后更新'])
+    line_names = {l.line_id: l.name for l in controller.pl_manager.lines}
+    for d in drones:
+        w.writerow([
+            d['id'], lookup_model_by_sn(d['id']) or '', UA_TYPE_NAMES.get(d.get('ua_type', 0), ''),
+            f"{d['last_lat']:.6f}" if d.get('last_lat') else '',
+            f"{d['last_lon']:.6f}" if d.get('last_lon') else '',
+            f"{d['last_alt']:.1f}" if d.get('last_alt') else '',
+            f"{d.get('speed', 0):.1f}", f"{d.get('heading', 0):.0f}",
+            d.get('status', 'active'), f"{d.get('min_distance', 0):.0f}",
+            line_names.get(d.get('nearest_line_id'), ''), (d.get('last_seen') or '')[:19],
+        ])
+    resp = app.make_response(si.getvalue())
+    resp.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    resp.headers['Content-Disposition'] = 'attachment; filename=drones_export.csv'
+    return resp
+
+
+@app.route('/api/powerlines/import', methods=['POST'])
+@require_web_auth
+def api_import_powerlines():
+    """批量导入电力线 — 支持 JSON 数组或 CSV 文本"""
+    global controller
+    if not controller:
+        return jsonify({'error': '系统未启动'}), 503
+    data = request.json or {}
+    items = data.get('items', [])
+    csv_text = data.get('csv', '').strip()
+
+    # CSV 模式: 文本解析
+    if csv_text and not items:
+        import csv, io
+        reader = csv.DictReader(io.StringIO(csv_text))
+        for row in reader:
+            try:
+                items.append({
+                    'name': row.get('name', row.get('名称', '')),
+                    'lat1': float(row.get('lat1', row.get('纬度1', 0))),
+                    'lon1': float(row.get('lon1', row.get('经度1', 0))),
+                    'alt1': float(row.get('alt1', row.get('海拔1', 0))),
+                    'lat2': float(row.get('lat2', row.get('纬度2', 0))),
+                    'lon2': float(row.get('lon2', row.get('经度2', 0))),
+                    'alt2': float(row.get('alt2', row.get('海拔2', 0))),
+                    'voltage_level': row.get('voltage_level', row.get('电压等级', '')),
+                })
+            except (ValueError, KeyError):
+                continue
+
+    if not items:
+        return jsonify({'error': '没有有效的导入数据'}), 400
+
+    from core.powerline import PowerLineSegment
+    count = 0
+    for item in items:
+        if not item.get('name'):
+            continue
+        seg = PowerLineSegment(
+            name=item['name'],
+            lat1=_safe_float(item.get('lat1')), lon1=_safe_float(item.get('lon1')),
+            alt1=_safe_float(item.get('alt1')),
+            lat2=_safe_float(item.get('lat2')), lon2=_safe_float(item.get('lon2')),
+            alt2=_safe_float(item.get('alt2')),
+            line_id=len(controller.pl_manager.lines) + 1,
+            voltage_level=item.get('voltage_level', ''),
+        )
+        controller.pl_manager.lines.append(seg)
+        count += 1
+
+    controller.db.load_power_lines([{
+        'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
+        'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': l.line_id,
+        'voltage_level': getattr(l, 'voltage_level', ''),
+    } for l in controller.pl_manager.lines])
+    controller._save_power_lines_to_yaml()
+    return jsonify({'status': 'ok', 'imported': count})
+
+
+@app.route('/api/audit')
+@require_web_auth
+def api_audit_logs():
+    """操作审计日志"""
+    global controller
+    if not controller:
+        return jsonify([])
+    limit = min(int(request.args.get('limit', 100)), 500)
+    rows = controller.db.get_audit_logs(limit=limit)
+    return jsonify([{
+        'id': r['id'],
+        'timestamp': r['timestamp'][:19] if r.get('timestamp') else '',
+        'operation': r.get('operation', ''),
+        'table_name': r.get('table_name', ''),
+        'record_id': r.get('record_id'),
+        'operator': r.get('operator', 'system'),
+        'details': r.get('details', ''),
+    } for r in rows])
+
+
+@app.route('/api/settings', methods=['GET', 'PUT'])
+@require_web_auth
+def api_settings():
+    global controller
+    _settings_file = PROJECT_ROOT / 'config' / 'settings.yaml'
+
+    def _read_settings():
+        import yaml
+        try:
+            if _settings_file.exists():
+                with open(str(_settings_file), 'r', encoding='utf-8') as f:
+                    return yaml.safe_load(f) or {}
+        except Exception:
+            pass
+        return {}
+
+    def _write_settings(data):
+        import yaml
+        with open(str(_settings_file), 'w', encoding='utf-8') as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
+
+    if request.method == 'GET':
+        # 返回当前设置，首次从 config.yaml 读取默认值
+        s = _read_settings()
+        if not s:
+            cfg = controller._config if controller else {}
+            s = {
+                'thresholds': cfg.get('thresholds', {'warning': 200, 'severe': 100, 'critical': 50}),
+                'anti_flapping': cfg.get('anti_flapping', {'enabled': False, 'debounce_in': 3, 'debounce_out': 10}),
+                'sms': {'enabled': cfg.get('sms', {}).get('enabled', cfg.get('backhaul', {}).get('sms', {}).get('enabled', False)),
+                        'alert_phones': cfg.get('sms', {}).get('alert_phones', cfg.get('backhaul', {}).get('sms', {}).get('alert_phones', []))},
+                'pilot_notify': {'enabled': cfg.get('pilot_notify', {}).get('enabled', False)},
+                'raw_archive': cfg.get('raw_archive', {'enabled': True, 'retention_days': 30}),
+            }
+        return jsonify(s)
+
+    # PUT — 管理员才能修改
+    if session['user'].get('role') != 'admin':
+        return jsonify({'error': '需要管理员权限'}), 403
+
+    data = request.json or {}
+    _write_settings(data)
+
+    # 实时应用阈值变更
+    if controller and 'thresholds' in data:
+        try:
+            controller.thresholds.update(data['thresholds'])
+        except Exception:
+            pass
+
+    return jsonify({'status': 'ok'})
+
 
 @app.route('/api/trajectories')
 @require_web_auth
@@ -302,6 +709,7 @@ def api_stats_dashboard():
         'hourly_alerts': hourly,
         'model_dist': model_dist,
         'station': station,
+        'stations': controller.stations if controller else [],
     })
 
 
@@ -357,6 +765,8 @@ class WebController:
         core = bootstrap_core(config_path=config_path)
         self._config = core['config']
         self._pl_file = core['pl_file']
+        self._stations_file = PROJECT_ROOT / 'config' / 'stations.yaml'
+        self.stations = self._load_stations()
         self.db = core['db']
         self.pl_manager = core['pl_manager']
         self.alert_system = core['alert_system']
@@ -368,6 +778,27 @@ class WebController:
         self.thresholds = core['thresholds']
 
         self.backhaul.start()
+        self._stale_cleanup_event = threading.Event()
+        self._stale_thread = None
+
+    def _load_stations(self):
+        """从 YAML 文件加载监控站点列表"""
+        import yaml
+        try:
+            if self._stations_file.exists():
+                with open(str(self._stations_file), 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f) or {}
+                    return data.get('stations', [])
+        except Exception:
+            pass
+        return []
+
+    def _save_stations_to_yaml(self):
+        """将当前站点数据写回 YAML 文件"""
+        import yaml
+        data = {"stations": self.stations}
+        with open(str(self._stations_file), 'w', encoding='utf-8') as f:
+            yaml.dump(data, f, allow_unicode=True, default_flow_style=False)
 
     def _save_power_lines_to_yaml(self):
         """将当前电力线数据写回 YAML 文件"""
@@ -378,12 +809,27 @@ class WebController:
                     "name": l.name,
                     "lat1": l.lat1, "lon1": l.lon1, "alt1": l.alt1,
                     "lat2": l.lat2, "lon2": l.lon2, "alt2": l.alt2,
+                    "voltage_level": getattr(l, 'voltage_level', ''),
                 }
                 for l in self.pl_manager.lines
             ]
         }
         with open(str(self._pl_file), 'w', encoding='utf-8') as f:
             yaml.dump(pl_data, f, allow_unicode=True, default_flow_style=False)
+
+    def _stale_drone_cleanup_loop(self):
+        """后台线程：定期将超时无人机标记为 gone"""
+        stale_timeout = self._config.get('stale_timeout', 120)
+        while not self._stale_cleanup_event.is_set():
+            self._stale_cleanup_event.wait(timeout=30)
+            if self._stale_cleanup_event.is_set():
+                break
+            try:
+                count = self.db.mark_stale_drones_as_gone(stale_timeout)
+                if count > 0:
+                    self._log(f"清理 {count} 个过期无人机", "info")
+            except Exception:
+                pass
 
     def switch_mode(self, mode, wifi_interface=None):
         """切换接收模式 (不重建 DB)"""
@@ -396,6 +842,11 @@ class WebController:
         self.running = True
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        self._stale_cleanup_event.clear()
+        self._stale_thread = threading.Thread(
+            target=self._stale_drone_cleanup_loop, daemon=True
+        )
+        self._stale_thread.start()
 
     def stop(self):
         self.running = False
@@ -419,6 +870,10 @@ class WebController:
             self._thread.join(timeout=5)
         self._thread = None
         self._loop = None
+        self._stale_cleanup_event.set()
+        if self._stale_thread and self._stale_thread.is_alive():
+            self._stale_thread.join(timeout=5)
+        self._stale_thread = None
 
     def shutdown(self):
         """完全关闭，释放数据库"""
