@@ -34,12 +34,12 @@ controller = None
 
 @app.route('/')
 def index():
-    return render_template('dashboard.html')
-
-
-@app.route('/map')
-def map_view():
     return render_template('map.html')
+
+
+@app.route('/list')
+def list_view():
+    return render_template('dashboard.html')
 
 @app.route('/api/status')
 def api_status():
@@ -184,6 +184,53 @@ def api_backhaul():
         'active_channel': bh.active_channel,
         'queue_size': bh.queue_size,
         'stats': bh.stats,
+    })
+
+
+@app.route('/api/stats/dashboard')
+def api_stats_dashboard():
+    """聚合统计: 24h 告警趋势 + 机型分布 + 站点信息"""
+    global controller
+    if not controller:
+        return jsonify({})
+
+    from core.parser.types import UA_TYPE_NAMES
+
+    # 24h hourly alert counts
+    hourly = controller.db.get_hourly_alert_counts(24)
+
+    # Drone model distribution
+    ua_stats = controller.db.get_ua_type_stats()
+    model_dist = [
+        {'name': UA_TYPE_NAMES.get(s['ua_type'], f'类型{s["ua_type"]}'), 'count': s['count']}
+        for s in ua_stats
+    ]
+
+    # Station info
+    bh = controller.backhaul
+    beidou = controller._beidou if hasattr(controller, '_beidou') else None
+    position = bh._get_device_position() if bh else (0, 0, 0)
+
+    station = {
+        'device_name': controller._config.get('backhaul', {}).get('device_name', 'NW-F1'),
+        'device_location': controller._config.get('backhaul', {}).get('device_location', ''),
+        'position': {'lat': position[0], 'lon': position[1], 'alt': position[2]},
+        'active_channel': bh.active_channel if bh else 'none',
+        'primary_online': bh.primary_online if bh else False,
+        'beidou_online': bh.beidou_online if bh else False,
+        'beidou_signal': beidou.signal_strength if beidou else 0,
+        'queue_size': bh.queue_size if bh else 0,
+        'http_sent': bh.stats.get('http_sent', 0) if bh else 0,
+        'beidou_sent': bh.stats.get('beidou_sent', 0) if bh else 0,
+        'last_send': bh.stats.get('last_send_time', '--') if bh else '--',
+        'pl_count': len(controller.pl_manager.lines),
+        'drone_count': len(controller.db.get_active_drones()),
+    }
+
+    return jsonify({
+        'hourly_alerts': hourly,
+        'model_dist': model_dist,
+        'station': station,
     })
 
 

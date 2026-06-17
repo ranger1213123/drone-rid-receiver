@@ -458,6 +458,33 @@ class Database:
         """).fetchall()
         return [r[0] for r in rows]
 
+    def get_hourly_alert_counts(self, hours: int = 24) -> List[Dict]:
+        """过去 N 小时每小时告警次数 (按等级分组)"""
+        from datetime import datetime as dt, timezone, timedelta
+        cutoff = (dt.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        rows = self._execute("""
+            SELECT
+                substr(timestamp, 1, 13) AS hour,
+                level,
+                COUNT(*) AS cnt
+            FROM alerts
+            WHERE timestamp >= ?
+            GROUP BY hour, level
+            ORDER BY hour
+        """, (cutoff,)).fetchall()
+        return [{'hour': r[0], 'level': r[1], 'count': r[2]} for r in rows]
+
+    def get_ua_type_stats(self) -> List[Dict]:
+        """活跃无人机飞行器类型分布"""
+        rows = self._execute("""
+            SELECT ua_type, COUNT(*) AS cnt
+            FROM drones
+            WHERE status != 'gone'
+            GROUP BY ua_type
+            ORDER BY cnt DESC
+        """).fetchall()
+        return [{'ua_type': r[0], 'count': r[1]} for r in rows]
+
     def delete_raw_messages_before(self, cutoff: str):
         self._execute("""
             DELETE FROM raw_messages WHERE timestamp < ?
