@@ -63,12 +63,12 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
   padding:0 16px;
 }
 
-/* ═══════════ Sidebar sections ═══════════ */
+/* ═══════════ Shared sidebar elements ═══════════ */
 .side-section{border-bottom:1px solid var(--border)}
 .side-head{
   padding:9px 14px; display:flex; align-items:center; justify-content:space-between;
   cursor:pointer; user-select:none; font-weight:600; font-size:11px; color:var(--text);
-  position:sticky; top:0; background:rgba(255,255,255,.97); backdrop-filter:blur(8px); z-index:2;
+  position:sticky; top:0; background:rgba(255,255,255,.97); z-index:2;
 }
 .side-head:hover{background:#f9fafb}
 .side-head .chevron{transition:transform var(--transition);font-size:10px;color:var(--muted)}
@@ -80,15 +80,14 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .brand-head{
   padding:12px 14px; display:flex; align-items:center; justify-content:space-between;
   border-bottom:1px solid var(--border); position:sticky; top:0;
-  background:rgba(255,255,255,.97); backdrop-filter:blur(8px); z-index:3;
+  background:rgba(255,255,255,.97); z-index:3;
 }
 .brand-head .title{font-size:14px; font-weight:700; color:var(--text); letter-spacing:-0.3px}
-.brand-head .ver{font-size:10px; color:var(--muted); margin-left:6px; font-weight:400}
 
 /* Controls row */
-.ctrl-row{display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--border)}
-.ctrl-row select{font-size:11px; padding:4px 8px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg); color:var(--text); flex:1; min-width:0}
-.ctrl-row button{padding:4px 12px; border-radius:var(--radius-sm); font-size:11px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--surface); transition:all .1s; white-space:nowrap}
+.ctrl-row{display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--border); flex-shrink:0}
+.ctrl-row select{font-size:11px; padding:4px 6px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg); color:var(--text); flex:1; min-width:0}
+.ctrl-row button{padding:4px 10px; border-radius:var(--radius-sm); font-size:11px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--surface); transition:all .1s; white-space:nowrap}
 .ctrl-row button:hover{background:#f3f4f6}
 .ctrl-row button.primary{background:var(--green); color:#fff; border-color:var(--green)}
 .ctrl-row button.danger{background:var(--red); color:#fff; border-color:var(--red)}
@@ -113,9 +112,34 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .comm-pill{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--muted)}
 .comm-pill .comm-dot{width:7px;height:7px;border-radius:50%;background:var(--red)}
 .comm-pill .comm-dot.online{background:var(--green);box-shadow:0 0 5px rgba(22,163,74,.35)}
-.comm-pill .comm-dot.degraded{background:var(--orange)}
 
-/* ═══════════ Drone list ═══════════ */
+/* ═══════════ Station list (national mode) ═══════════ */
+.station-card{
+  margin:6px 12px; padding:10px 12px; border-radius:var(--radius); cursor:pointer;
+  border:1px solid var(--border); transition:all .15s; background:var(--surface);
+}
+.station-card:hover{border-color:var(--blue);box-shadow:0 2px 8px rgba(37,99,235,.1)}
+.station-card .s-name{font-weight:600;font-size:12px;color:var(--text)}
+.station-card .s-loc{font-size:10px;color:var(--muted);margin-top:2px}
+.station-card .s-row{display:flex;gap:12px;margin-top:4px;font-size:10px;color:var(--text)}
+.station-card .s-row span{display:flex;align-items:center;gap:3px}
+
+/* ═══════════ Alert drone row (national mode) ═══════════ */
+.alert-row{
+  display:flex; align-items:center; gap:8px; padding:6px 14px;
+  font-size:11px; cursor:pointer; transition:background .1s;
+}
+.alert-row:hover{background:#f6f8fa}
+.alert-row .al-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.alert-row .al-dot.critical{background:var(--red);animation:dotPulse 1.4s infinite}
+.alert-row .al-dot.severe{background:var(--orange)}
+.alert-row .al-dot.warning{background:var(--yellow)}
+.alert-row .al-info{flex:1;min-width:0}
+.alert-row .al-id{font-family:"JetBrains Mono","SF Mono",Consolas,monospace;font-size:10px;font-weight:600}
+.alert-row .al-model{font-size:10px;color:var(--blue)}
+.alert-row .al-dist{font-weight:600;font-size:11px}
+
+/* ═══════════ Drone list (station mode) ═══════════ */
 .drone-row{
   display:flex; align-items:center; gap:8px; padding:7px 14px;
   cursor:pointer; transition:background .1s; font-size:11px;
@@ -146,8 +170,8 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .pl-mini:hover{color:var(--blue)}
 .pl-mini .pl-swatch{width:16px;height:3px;border-radius:1px;flex-shrink:0}
 
-/* ═══════════ Right sidebar content ═══════════ */
-.chart-wrap{padding:8px 14px; position:relative; height:130px}
+/* ═══════════ Right panel content ═══════════ */
+.chart-wrap{padding:8px 14px;position:relative;height:130px}
 .chart-wrap canvas{width:100%!important;height:100%!important}
 .model-bar{display:flex;align-items:center;gap:8px;padding:3px 14px;font-size:11px}
 .model-bar .m-name{width:90px;text-align:right;color:var(--muted);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -155,10 +179,11 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .model-bar .m-fill{height:100%;border-radius:3px;background:var(--blue);opacity:.75;transition:width .4s ease}
 .model-bar .m-cnt{width:28px;text-align:right;font-weight:600;font-size:10px;color:var(--text)}
 
-.station-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:6px 14px}
+.station-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:8px 14px}
 .station-item{font-size:10px}
 .station-item .sk{color:var(--muted);font-size:9px}
 .station-item .sv{font-weight:600;color:var(--text)}
+.station-item.full{grid-column:1/-1}
 
 .legend-inline{display:flex;flex-wrap:wrap;gap:10px;padding:8px 14px;font-size:10px}
 .legend-inline .li{display:flex;align-items:center;gap:4px}
@@ -166,7 +191,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 
 .empty-state{text-align:center;padding:16px;color:var(--muted);font-size:11px}
 
-/* ═══════════ Map overlays ═══════════ */
+/* ═══════════ Map overlay buttons ═══════════ */
 #mapOverlays{position:absolute;top:10px;right:10px;z-index:800;display:flex;flex-direction:column;gap:6px;align-items:flex-end}
 .btn-map{
   padding:6px 14px; border-radius:var(--radius-sm); font-size:11px; font-weight:500;
@@ -190,6 +215,18 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 #toggleRightBtn.shifted{right:calc(var(--right-w) + 8px)}
 #toggleLeftBtn:hover,#toggleRightBtn:hover{transform:scale(1.1)}
 
+/* ═══════════ Mode toggle: nat-only / sta-only ═══════════ */
+body.nat-mode .sta-only{display:none!important}
+body.sta-mode .nat-only{display:none!important}
+
+/* Back to national button */
+.back-btn{
+  display:flex; align-items:center; gap:6px; padding:8px 14px;
+  font-size:11px; font-weight:500; color:var(--blue); cursor:pointer;
+  border-bottom:1px solid var(--border); user-select:none;
+}
+.back-btn:hover{background:var(--blue-bg)}
+
 /* Leaflet popup */
 .leaflet-popup-content{font-size:11px;font-family:inherit;margin:8px 12px}
 .leaflet-popup-content b{font-size:12px}
@@ -208,46 +245,49 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
   50%{box-shadow:0 0 0 12px rgba(37,99,235,0);border-color:#60a5fa}
 }
 .station-icon{
-  width:18px;height:18px;border-radius:50%;background:#fff;
+  width:20px;height:20px;border-radius:50%;background:#fff;
   border:3px solid var(--blue);animation:stationPulse 2.5s infinite;
 }
 
 /* ═══════════ Responsive ═══════════ */
 @media(max-width:1100px){
-  #rightBar{position:fixed;top:0;right:0;height:100%;transform:translateX(var(--right-w))}
+  #rightBar{position:fixed;top:0;right:0;height:100%;width:var(--right-w);transform:translateX(var(--right-w));z-index:150}
   #rightBar.open{transform:translateX(0)}
   #toggleRightBtn{display:flex!important}
 }
-@media(min-width:1101px){
-  #toggleRightBtn{display:none}
-}
+@media(min-width:1101px){#toggleRightBtn{display:none}}
 @media(max-width:700px){
   :root{--left-w:260px;--bottom-h:auto}
   #leftBar{width:var(--left-w);min-width:var(--left-w)}
   #bottomBar{flex-wrap:wrap;padding:6px 10px;gap:4px;height:auto;position:fixed}
   #shell{height:calc(100% - 80px)}
-  #toggleRightBtn{display:flex!important}
-  #rightBar{position:fixed;top:0;right:0;height:100%;width:280px;min-width:280px;transform:translateX(280px)}
+  #rightBar{width:280px;min-width:280px;transform:translateX(280px)}
   #rightBar.open{transform:translateX(0)}
   .bt-stat{padding:4px 8px;min-width:60px}
   .bt-stat .btv{font-size:18px}
 }
+@media(max-width:480px){
+  :root{--left-w:100vw}
+  #rightBar{display:none}
+  #toggleRightBtn{display:none!important}
+  #toggleLeftBtn{left:4px;top:8px}
+}
 </style>
 </head>
-<body>
+<body class="nat-mode">
 
 <!-- ════════ Shell: Left + Map + Right ════════ -->
 <div id="shell">
 
   <!-- ── Left Sidebar ── -->
   <div id="leftBar">
+    <!-- Always visible -->
     <div class="brand-head">
       <div class="title">
         <span class="st-dot stop" id="statusDot"></span>
-        Drone RID <span class="ver">v3.1</span>
+        Drone RID Monitor
       </div>
     </div>
-
     <div class="ctrl-row">
       <select id="modeSelect">
         <option value="simulated">模拟演示</option><option value="ble">BLE 蓝牙</option><option value="wifi">WiFi</option>
@@ -256,31 +296,62 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
       <button class="danger" onclick="stopScan()" id="btnStop" disabled>■</button>
     </div>
 
-    <div class="search-wrap">
-      <input id="droneSearch" placeholder="搜索无人机 ID / 型号..." oninput="renderDroneList()" autocomplete="off">
+    <!-- ════ National Mode Panels ════ -->
+    <div class="nat-only">
+      <div class="side-section">
+        <div class="side-head" style="cursor:default">
+          <span>站点列表 <span id="natStationCount" style="font-weight:400;color:var(--muted);font-size:10px">1</span></span>
+        </div>
+        <div class="side-body" id="natStationList">
+          <div class="empty-state">加载中...</div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secNatInfo',this)">
+          <span>站点信息</span>
+          <span class="chevron open" id="secNatInfoChev">▶</span>
+        </div>
+        <div class="side-body" id="secNatInfo">
+          <div class="station-grid" id="natStationGrid">
+            <div class="empty-state" style="grid-column:1/-1">加载中...</div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="side-section">
-      <div class="side-head" onclick="toggleSection('secDrones',this)">
-        <span>活跃无人机 <span id="droneCountPill" style="font-weight:400;color:var(--muted);font-size:10px">0</span></span>
-        <span class="chevron open" id="secDronesChev">▶</span>
+    <!-- ════ Station Mode Panels ════ -->
+    <div class="sta-only">
+      <div class="back-btn" onclick="returnToNational()">
+        <span style="font-size:14px">←</span> 回到全国总览
       </div>
-      <div class="side-body" id="secDrones" style="max-height:300px;overflow-y:auto">
-        <div id="droneList"><div class="empty-state">等待信号...</div></div>
+
+      <div class="search-wrap">
+        <input id="droneSearch" placeholder="搜索无人机 ID / 型号..." oninput="renderDroneList()" autocomplete="off">
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secDrones',this)">
+          <span>活跃无人机 <span id="droneCountPill" style="font-weight:400;color:var(--muted);font-size:10px">0</span></span>
+          <span class="chevron open" id="secDronesChev">▶</span>
+        </div>
+        <div class="side-body" id="secDrones" style="max-height:280px;overflow-y:auto">
+          <div id="droneList"><div class="empty-state">等待信号...</div></div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secPL',this)">
+          <span>电力线 <span id="plCountLabel" style="font-weight:400;color:var(--muted);font-size:10px">0</span></span>
+          <span class="chevron" id="secPLChev">▶</span>
+        </div>
+        <div class="side-body collapsed" id="secPL" style="max-height:180px;overflow-y:auto">
+          <div id="plItems"><div class="empty-state">加载中...</div></div>
+        </div>
       </div>
     </div>
 
-    <div class="side-section">
-      <div class="side-head" onclick="toggleSection('secPL',this)">
-        <span>电力线 <span id="plCountLabel" style="font-weight:400;color:var(--muted);font-size:10px">0</span></span>
-        <span class="chevron" id="secPLChev">▶</span>
-      </div>
-      <div class="side-body collapsed" id="secPL" style="max-height:200px;overflow-y:auto">
-        <div id="plItems"><div class="empty-state">加载中...</div></div>
-      </div>
-    </div>
-
-    <div style="margin-top:auto;padding:6px 14px;font-size:10px;color:var(--muted);border-top:1px solid var(--border)">
+    <div style="margin-top:auto;padding:6px 14px;font-size:10px;color:var(--muted);border-top:1px solid var(--border);flex-shrink:0">
       <span id="footerStatus">已停止</span>
     </div>
   </div>
@@ -289,56 +360,89 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
   <div id="mapWrap">
     <div id="map"></div>
     <div id="mapOverlays">
-      <button class="btn-map accent" id="btnChinaView" style="display:none" onclick="resetToChinaView()">🗺 回到全国</button>
       <button class="btn-map" onclick="window.location='/list'">📋 列表视图</button>
     </div>
   </div>
 
   <!-- ── Right Sidebar ── -->
   <div id="rightBar">
-    <div class="side-section">
-      <div class="side-head" onclick="toggleSection('secChart',this)">
-        <span>24h 预警趋势</span>
-        <span class="chevron open" id="secChartChev">▶</span>
+    <!-- ════ National Mode ════ -->
+    <div class="nat-only">
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secNatChart',this)">
+          <span>24h 预警趋势（全部站点）</span>
+          <span class="chevron open" id="secNatChartChev">▶</span>
+        </div>
+        <div class="side-body" id="secNatChart">
+          <div class="chart-wrap"><canvas id="natAlertChart"></canvas></div>
+        </div>
       </div>
-      <div class="side-body" id="secChart">
-        <div class="chart-wrap"><canvas id="alertChart"></canvas></div>
-      </div>
-    </div>
 
-    <div class="side-section">
-      <div class="side-head" onclick="toggleSection('secModel',this)">
-        <span>无人机型号</span>
-        <span class="chevron open" id="secModelChev">▶</span>
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secNatAlerts',this)">
+          <span>最新预警无人机</span>
+          <span class="chevron open" id="secNatAlertsChev">▶</span>
+        </div>
+        <div class="side-body" id="secNatAlerts" style="max-height:320px;overflow-y:auto">
+          <div id="natAlertList"><div class="empty-state">暂无预警</div></div>
+        </div>
       </div>
-      <div class="side-body" id="secModel">
-        <div id="modelBars" style="padding:2px 0"><div class="empty-state">等待数据...</div></div>
-      </div>
-    </div>
 
-    <div class="side-section">
-      <div class="side-head" onclick="toggleSection('secStation',this)">
-        <span>站点信息</span>
-        <span class="chevron open" id="secStationChev">▶</span>
-      </div>
-      <div class="side-body" id="secStation">
-        <div class="station-grid" id="stationGrid">
-          <div class="empty-state" style="grid-column:1/-1">加载中...</div>
+      <div class="side-section" style="border-bottom:none">
+        <div class="legend-inline">
+          <span class="li"><span class="leg-dot" style="background:var(--yellow)"></span>警告</span>
+          <span class="li"><span class="leg-dot" style="background:var(--orange)"></span>严重</span>
+          <span class="li"><span class="leg-dot" style="background:var(--red)"></span>危险</span>
+          <span class="li"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid var(--blue)"></span>站点</span>
         </div>
       </div>
     </div>
 
-    <div class="side-section" style="border-bottom:none">
-      <div class="legend-inline">
-        <span class="li"><span class="leg-dot" style="background:var(--green)"></span>正常</span>
-        <span class="li"><span class="leg-dot" style="background:var(--yellow)"></span>警告</span>
-        <span class="li"><span class="leg-dot" style="background:var(--orange)"></span>严重</span>
-        <span class="li"><span class="leg-dot" style="background:var(--red)"></span>危险</span>
-        <span class="li"><span class="leg-dot" style="background:#bbb"></span>离线</span>
-        <span class="li" style="width:100%;margin-top:2px;padding-top:2px;border-top:1px solid var(--border)">
-          <span style="display:inline-block;width:16px;border-top:2px dashed #cc4400"></span>电力线
-        </span>
-        <span class="li"><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#fff;border:2.5px solid var(--blue)"></span>站点</span>
+    <!-- ════ Station Mode ════ -->
+    <div class="sta-only">
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secStaChart',this)">
+          <span>24h 预警趋势（本站）</span>
+          <span class="chevron open" id="secStaChartChev">▶</span>
+        </div>
+        <div class="side-body" id="secStaChart">
+          <div class="chart-wrap"><canvas id="staAlertChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secModel',this)">
+          <span>无人机型号</span>
+          <span class="chevron open" id="secModelChev">▶</span>
+        </div>
+        <div class="side-body" id="secModel">
+          <div id="modelBars" style="padding:2px 0"><div class="empty-state">等待数据...</div></div>
+        </div>
+      </div>
+
+      <div class="side-section">
+        <div class="side-head" onclick="toggleSection('secStaInfo',this)">
+          <span>站点信息</span>
+          <span class="chevron open" id="secStaInfoChev">▶</span>
+        </div>
+        <div class="side-body" id="secStaInfo">
+          <div class="station-grid" id="staStationGrid">
+            <div class="empty-state" style="grid-column:1/-1">加载中...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side-section" style="border-bottom:none">
+        <div class="legend-inline">
+          <span class="li"><span class="leg-dot" style="background:var(--green)"></span>正常</span>
+          <span class="li"><span class="leg-dot" style="background:var(--yellow)"></span>警告</span>
+          <span class="li"><span class="leg-dot" style="background:var(--orange)"></span>严重</span>
+          <span class="li"><span class="leg-dot" style="background:var(--red)"></span>危险</span>
+          <span class="li"><span class="leg-dot" style="background:#bbb"></span>离线</span>
+          <span class="li" style="width:100%;margin-top:2px;padding-top:2px;border-top:1px solid var(--border)">
+            <span style="display:inline-block;width:16px;border-top:2px dashed #cc4400"></span>电力线
+          </span>
+        </div>
       </div>
     </div>
   </div>
@@ -347,32 +451,46 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 
 <!-- ════════ Bottom Bar ════════ -->
 <div id="bottomBar">
-  <div style="display:flex;align-items:center;gap:4px">
-    <div class="bt-stat bt-active"><div class="btv" id="btTotal">0</div><div class="btl">活跃</div></div>
-    <div class="bt-sep"></div>
-    <div class="bt-stat bt-warn"><div class="btv" id="btWarn">0</div><div class="btl">警告</div></div>
-    <div class="bt-sep"></div>
-    <div class="bt-stat bt-sev"><div class="btv" id="btSev">0</div><div class="btl">严重</div></div>
-    <div class="bt-sep"></div>
-    <div class="bt-stat bt-crit"><div class="btv" id="btCrit">0</div><div class="btl">危险</div></div>
+  <!-- National stats (aggregated) -->
+  <div id="bottomNat" class="nat-only" style="display:flex;align-items:center;gap:4px;width:100%;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:4px">
+      <div class="bt-stat bt-active"><div class="btv" id="btNatStations">1</div><div class="btl">站点</div></div>
+      <div class="bt-sep"></div>
+      <div class="bt-stat bt-active"><div class="btv" id="btNatDrones">0</div><div class="btl">活跃</div></div>
+      <div class="bt-sep"></div>
+      <div class="bt-stat bt-crit"><div class="btv" id="btNatAlerts">0</div><div class="btl">今日预警</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="comm-pill"><span class="comm-dot" id="commNat4g"></span><span>4G</span></div>
+      <div class="comm-pill"><span class="comm-dot" id="commNatBd"></span><span>北斗</span></div>
+      <span style="font-size:10px;color:var(--muted)" id="commNatLabel">--</span>
+      <span style="font-size:10px;color:var(--muted)" id="footerNatTime">--</span>
+    </div>
   </div>
 
-  <div style="display:flex;align-items:center;gap:16px">
-    <div class="comm-pill">
-      <span class="comm-dot" id="comm4gDot"></span><span>4G</span>
+  <!-- Station stats (detailed) -->
+  <div id="bottomSta" class="sta-only" style="display:flex;align-items:center;gap:4px;width:100%;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:4px">
+      <div class="bt-stat bt-active"><div class="btv" id="btTotal">0</div><div class="btl">活跃</div></div>
+      <div class="bt-sep"></div>
+      <div class="bt-stat bt-warn"><div class="btv" id="btWarn">0</div><div class="btl">警告</div></div>
+      <div class="bt-sep"></div>
+      <div class="bt-stat bt-sev"><div class="btv" id="btSev">0</div><div class="btl">严重</div></div>
+      <div class="bt-sep"></div>
+      <div class="bt-stat bt-crit"><div class="btv" id="btCrit">0</div><div class="btl">危险</div></div>
     </div>
-    <div class="comm-pill">
-      <span class="comm-dot" id="commBdDot"></span><span>北斗</span>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="comm-pill"><span class="comm-dot" id="comm4gDot"></span><span>4G</span></div>
+      <div class="comm-pill"><span class="comm-dot" id="commBdDot"></span><span>北斗</span></div>
+      <span style="font-size:10px;color:var(--muted)" id="commLabel">--</span>
+      <span style="font-size:10px;color:var(--muted)" id="footerTime">--</span>
     </div>
-    <span style="font-size:10px;color:var(--muted)" id="commLabel">--</span>
-    <span id="commQueue" style="display:none;font-size:10px;color:var(--orange)"></span>
-    <span style="font-size:10px;color:var(--muted);margin-left:4px" id="footerTime">--</span>
   </div>
 </div>
 
 <!-- Toggle buttons -->
 <button id="toggleLeftBtn" onclick="toggleLeft()">◀</button>
-<button id="toggleRightBtn" onclick="toggleRight()" style="display:none">▶</button>
+<button id="toggleRightBtn" onclick="toggleRight()">▶</button>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -390,63 +508,86 @@ var plPolylines = [];
 var plLabels = [];
 var stationMarker = null;
 var activeTrajDrone = null;
-var firstDroneSeen = false;
-var isStationView = false;
+var nationalMode = true;
 
 var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#bbb'};
 var statusZh = {active:'正常',warning:'警告',severe:'严重',critical:'危险',gone:'离线'};
 function markerColor(s){return statusColors[s]||'#16a34a'}
 function markerRadius(s){if(s==='critical')return 10;if(s==='severe')return 8;if(s==='warning')return 6;return 5}
 
-// Cache for dashboard stats
 var cachedDashboard = null;
 var cachedDrones = [];
 
+// ═══════════ Mode switching ═══════════
+function enterStationView(station){
+  nationalMode = false;
+  document.body.className = 'sta-mode';
+  loadPowerLines();
+  var lat = station.position.lat, lon = station.position.lon;
+  if(lat && lon){
+    // Find power line bounds or zoom to station
+    setTimeout(function(){
+      if(plPolylines.length > 0){
+        var b = plPolylines[0].getBounds();
+        for(var i=1;i<plPolylines.length;i++) b.extend(plPolylines[i].getBounds());
+        map.flyToBounds(b, {padding:[80,80], maxZoom:15, duration:1});
+      }else{
+        map.flyTo([lat, lon], 15, {duration:1});
+      }
+    }, 400);
+  }
+}
+
+function returnToNational(){
+  nationalMode = true;
+  document.body.className = 'nat-mode';
+  // Clear station-mode layers
+  Object.keys(droneMarkers).forEach(function(k){map.removeLayer(droneMarkers[k]);});
+  droneMarkers = {};
+  Object.keys(trajPolylines).forEach(function(k){removeTrajectory(k);});
+  plPolylines.forEach(function(p){map.removeLayer(p)});
+  plLabels.forEach(function(l){map.removeLayer(l)});
+  plPolylines = []; plLabels = [];
+  activeTrajDrone = null;
+  map.flyTo([35, 105], 4.5, {duration:.8});
+  // Refresh station marker
+  if(cachedDashboard) updateStationMarker(cachedDashboard.station);
+}
+
 // ═══════════ Sidebar toggle ═══════════
 function toggleLeft(){
-  var lb=document.getElementById('leftBar');
-  var btn=document.getElementById('toggleLeftBtn');
-  lb.classList.toggle('collapsed');
-  btn.classList.toggle('shifted');
+  var lb=document.getElementById('leftBar'), btn=document.getElementById('toggleLeftBtn');
+  lb.classList.toggle('collapsed'); btn.classList.toggle('shifted');
   btn.textContent=lb.classList.contains('collapsed')?'▶':'◀';
   setTimeout(function(){map.invalidateSize()},350);
 }
-
 function toggleRight(){
-  var rb=document.getElementById('rightBar');
+  var rb=document.getElementById('rightBar'), btn=document.getElementById('toggleRightBtn');
   rb.classList.toggle('open');
-  document.getElementById('toggleRightBtn').textContent=rb.classList.contains('open')?'▶':'◀';
+  btn.textContent=rb.classList.contains('open')?'▶':'◀';
   setTimeout(function(){map.invalidateSize()},350);
 }
-
 function toggleSection(id,head){
-  var body=document.getElementById(id);
-  var chev=head.querySelector('.chevron');
-  body.classList.toggle('collapsed');
-  if(chev) chev.classList.toggle('open');
+  var body=document.getElementById(id), chev=head.querySelector('.chevron');
+  body.classList.toggle('collapsed'); if(chev) chev.classList.toggle('open');
 }
 
-// ═══════════ Chart.js — 24h alerts ═══════════
-var alertChart=null;
-function buildAlertChart(hourly){
-  var canvas=document.getElementById('alertChart');
-  if(!canvas) return;
+// ═══════════ Chart.js — alert charts ═══════════
+var natChart=null, staChart=null;
+
+function buildAlertChart(canvasId, chartRef, hourly, compact){
+  var canvas=document.getElementById(canvasId);
+  if(!canvas) return null;
   var ctx=canvas.getContext('2d');
 
-  var hours=[];
-  var now=new Date();
+  var hours=[], now=new Date();
   for(var i=23;i>=0;i--){
     var d=new Date(now.getFullYear(),now.getMonth(),now.getDate(),now.getHours()-i);
     hours.push(('0'+d.getHours()).slice(-2)+':00');
   }
-
-  var warnData=new Array(24).fill(0);
-  var sevData=new Array(24).fill(0);
-  var critData=new Array(24).fill(0);
-
+  var warnData=new Array(24).fill(0), sevData=new Array(24).fill(0), critData=new Array(24).fill(0);
   (hourly||[]).forEach(function(h){
-    var hourStr=h.hour;
-    var idx=hours.findIndex(function(x){return x===hourStr.slice(11,16)});
+    var idx=hours.findIndex(function(x){return x===h.hour.slice(11,16)});
     if(idx>=0){
       if(h.level==='warning') warnData[idx]=h.count;
       else if(h.level==='severe') sevData[idx]=h.count;
@@ -454,8 +595,8 @@ function buildAlertChart(hourly){
     }
   });
 
-  if(alertChart) alertChart.destroy();
-  alertChart=new Chart(ctx,{
+  if(chartRef) chartRef.destroy();
+  var c = new Chart(ctx,{
     type:'line',
     data:{
       labels:hours,
@@ -468,13 +609,14 @@ function buildAlertChart(hourly){
     options:{
       responsive:true,maintainAspectRatio:false,
       interaction:{intersect:false,mode:'index'},
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:10},usePointStyle:true}}},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:9},usePointStyle:true}}},
       scales:{
-        x:{ticks:{font:{size:9},maxTicksLimit:6,autoSkip:true},grid:{display:false}},
-        y:{beginAtZero:true,ticks:{font:{size:9},stepSize:1},grid:{color:'#f0f0f0'}}
+        x:{ticks:{font:{size:8},maxTicksLimit:compact?4:6,autoSkip:true},grid:{display:false}},
+        y:{beginAtZero:true,ticks:{font:{size:8},stepSize:1},grid:{color:'#f0f0f0'}}
       }
     }
   });
+  return c;
 }
 
 // ═══════════ Model distribution ═══════════
@@ -489,22 +631,22 @@ function buildModelBars(models){
   }).join('');
 }
 
-// ═══════════ Station info ═══════════
-function buildStation(s){
-  var g=document.getElementById('stationGrid');
+// ═══════════ Station info grid ═══════════
+function buildStationGrid(gridId, s){
+  var g=document.getElementById(gridId);
   if(!g) return;
   g.innerHTML=[
     ['设备',s.device_name],['位置',s.device_location||'--'],
-    ['通道',s.active_channel==='4g_wired'?'4G/有线':s.active_channel==='beidou_emergency'?'北斗应急':'离线'],
+    ['坐标',s.position.lat.toFixed(4)+', '+s.position.lon.toFixed(4)],
+    ['通道',s.active_channel==='4g_wired'?'4G/有线':s.active_channel==='beidou_emergency'?'北斗应急':s.active_channel!=='none'?s.active_channel:'离线'],
     ['4G/有线',s.primary_online?'✅ 在线':'❌ 离线'],
     ['北斗',s.beidou_online?'✅ 在线 (信号:'+s.beidou_signal+')':'❌ 离线'],
-    ['积压',s.queue_size+' 条'],['HTTP已发',s.http_sent],['北斗已发',s.beidou_sent],
-    ['最近发送',s.last_send],['电力线',s.pl_count+' 条'],
-    ['活跃无人机',s.drone_count+' 架'],
+    ['HTTP已发',s.http_sent+' 条'],['北斗已发',s.beidou_sent+' 条'],
+    ['最近发送',s.last_send||'--'],
   ].map(function(r){return '<div class="station-item"><div class="sk">'+r[0]+'</div><div class="sv">'+r[1]+'</div></div>'}).join('');
 }
 
-// ═══════════ Station marker (China overview) ═══════════
+// ═══════════ Station marker — national overview ═══════════
 function updateStationMarker(station){
   if(!station||!station.position||(!station.position.lat&&!station.position.lon)) return;
   var lat=station.position.lat, lon=station.position.lon;
@@ -512,47 +654,81 @@ function updateStationMarker(station){
 
   if(stationMarker){
     stationMarker.setLatLng([lat,lon]);
+    stationMarker.unbindTooltip();
+    stationMarker.bindTooltip(station.device_name||'站点',{permanent:true,direction:'top',offset:[0,-14]});
   }else{
-    var icon=L.divIcon({className:'station-icon',iconSize:[18,18],iconAnchor:[9,9]});
+    var icon=L.divIcon({className:'station-icon',iconSize:[20,20],iconAnchor:[10,10]});
     stationMarker=L.marker([lat,lon],{icon:icon}).addTo(map);
-    stationMarker.bindTooltip(station.device_name||'站点',{permanent:true,direction:'top',offset:[0,-12]});
-    stationMarker.on('click',function(){drillToStation(station)});
+    stationMarker.bindTooltip(station.device_name||'站点',{permanent:true,direction:'top',offset:[0,-14]});
+    stationMarker.on('click',function(){enterStationView(station)});
   }
 }
 
-function drillToStation(station){
-  // Find bounds from power lines or use station position
-  var bounds=null;
-  if(plPolylines.length>0){
-    bounds=plPolylines[0].getBounds();
-    for(var i=1;i<plPolylines.length;i++) bounds.extend(plPolylines[i].getBounds());
-  }
-  if(bounds&&bounds.isValid()){
-    map.flyToBounds(bounds,{padding:[60,60],maxZoom:15,duration:1});
-  }else{
-    map.flyTo([station.position.lat,station.position.lon],15,{duration:1});
-  }
-  isStationView=true;
-  document.getElementById('btnChinaView').style.display='';
+// ═══════════ National: station card click handler ═══════════
+function renderNationalStationCard(station){
+  var div=document.getElementById('natStationList');
+  if(!div) return;
+  var lat=station.position.lat, lon=station.position.lon;
+  div.innerHTML='<div class="station-card" onclick="enterStationView(cachedDashboard.station)">'
+    +'<div class="s-name">'+station.device_name+'</div>'
+    +'<div class="s-loc">'+station.device_location+'</div>'
+    +'<div class="s-row">'
+    +'<span>🛰 '+(lat?lat.toFixed(2)+','+lon.toFixed(2):'--')+'</span>'
+    +'<span>🔌 '+(station.active_channel==='4g_wired'?'4G':station.active_channel==='beidou_emergency'?'北斗':'离线')+'</span>'
+    +'</div></div>';
 }
 
-function resetToChinaView(){
-  map.flyTo([35,105],4.5,{duration:.8});
-  isStationView=false;
-  document.getElementById('btnChinaView').style.display='none';
+// ═══════════ National: alert drone list ═══════════
+function renderNationalAlerts(drones){
+  var div=document.getElementById('natAlertList');
+  if(!div) return;
+  var alerts = (drones||[]).filter(function(dr){
+    var s=dr.status||'active';
+    return s==='warning'||s==='severe'||s==='critical';
+  }).sort(function(a,b){
+    var order={critical:0,severe:1,warning:2};
+    return (order[a.status]||9)-(order[b.status]||9);
+  });
+  if(!alerts.length){div.innerHTML='<div class="empty-state">暂无预警</div>';return;}
+  div.innerHTML=alerts.map(function(dr){
+    var s=dr.status||'active';
+    var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
+    var model=dr.product_model||'';
+    return '<div class="alert-row" onclick="enterStationView(cachedDashboard?cachedDashboard.station:null)">'
+      +'<span class="al-dot '+s+'"></span>'
+      +'<div class="al-info"><div class="al-id">'+dr.id+'</div><div class="al-model">'+model+'</div></div>'
+      +'<div class="al-dist">'+dist+'</div></div>';
+  }).join('');
 }
 
-// Track zoom to auto-show/hide China button
-map.on('zoomend',function(){
-  var z=map.getZoom();
-  var btn=document.getElementById('btnChinaView');
-  if(z<=6){
-    btn.style.display='none';
-    isStationView=false;
-  }else if(isStationView){
-    btn.style.display='';
+// ═══════════ Station: drone list ═══════════
+function renderDroneList(){
+  var searchTerm=(document.getElementById('droneSearch').value||'').toLowerCase();
+  var drones=cachedDrones;
+  if(searchTerm){
+    drones=drones.filter(function(dr){
+      var id=(dr.id||'').toLowerCase();
+      var model=(dr.product_model||'').toLowerCase();
+      return id.includes(searchTerm)||model.includes(searchTerm);
+    });
   }
-});
+  var listDiv=document.getElementById('droneList');
+  if(!drones.length){
+    listDiv.innerHTML='<div class="empty-state">'+(searchTerm?'无匹配结果':'等待信号...')+'</div>';
+    return;
+  }
+  listDiv.innerHTML=drones.map(function(dr){
+    var s=dr.status||'active';
+    var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
+    var time=(dr.last_seen||'').substring(11,19);
+    var model=dr.product_model||'';
+    var idShort=dr.id.length>14?dr.id.substring(0,14)+'...':dr.id;
+    return '<div class="drone-row" onclick="flyToDrone('+dr.last_lat+','+dr.last_lon+')">'
+      +'<span class="d-icon '+s+'"></span>'
+      +'<div class="d-info"><div class="d-id">'+idShort+'</div><div class="d-model">'+model+'</div><div class="d-sub">'+time+' · '+statusZh[s]+'</div></div>'
+      +'<div class="d-dist">'+dist+'</div></div>';
+  }).join('');
+}
 
 // ═══════════ Power lines ═══════════
 function loadPowerLines(){
@@ -577,23 +753,13 @@ function loadPowerLines(){
       });
     }
     document.getElementById('plItems').innerHTML=html;
-
-    // If station view and station data exists, re-drill
-    if(isStationView&&cachedDashboard&&cachedDashboard.station){
-      // Keep current view
-    }
   });
 }
 
-// ═══════════ Trajectory toggle ═══════════
+// ═══════════ Trajectory ═══════════
 function toggleTrajectory(droneId){
-  if(activeTrajDrone===droneId){
-    removeTrajectory(droneId);
-    activeTrajDrone=null;
-  }else{
-    if(activeTrajDrone) removeTrajectory(activeTrajDrone);
-    showTrajectory(droneId);
-  }
+  if(activeTrajDrone===droneId){removeTrajectory(droneId);activeTrajDrone=null;}
+  else{if(activeTrajDrone) removeTrajectory(activeTrajDrone);showTrajectory(droneId);}
 }
 
 function showTrajectory(droneId){
@@ -615,20 +781,19 @@ function showTrajectory(droneId){
 function removeTrajectory(id){
   var l=trajPolylines[id];
   if(l){map.removeLayer(l.line);map.removeLayer(l.start);map.removeLayer(l.end);delete trajPolylines[id]}
-  // NOTE: does NOT reset activeTrajDrone — caller manages that
 }
 
 function flyToDrone(lat,lon){map.flyTo([lat,lon],Math.max(map.getZoom(),15),{duration:.5})}
 
-// ═══════════ Popup ═══════════
+// ═══════════ Popup content (station mode) ═══════════
 function popupContent(dr){
   var s=dr.status||'active';
   var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+' m':'--';
   var alt=dr.last_alt!=null?dr.last_alt.toFixed(0)+' m':'--';
-  var model=dr.product_model||dr.category_name||'未知';
+  var model=dr.product_model||'';
   var isActive=activeTrajDrone===dr.id;
   return '<b>'+dr.id+'</b>'
-    +'<div class="popup-row"><span>型号:</span><span style="color:var(--blue)">'+model+'</span></div>'
+    +(model?'<div class="popup-row"><span>型号:</span><span style="color:var(--blue)">'+model+'</span></div>':'')
     +'<div class="popup-row"><span>状态:</span><span style="color:'+markerColor(s)+';font-weight:600">'+statusZh[s]+'</span></div>'
     +'<div class="popup-row"><span>经度:</span><span>'+(dr.last_lon||0).toFixed(5)+'</span></div>'
     +'<div class="popup-row"><span>纬度:</span><span>'+(dr.last_lat||0).toFixed(5)+'</span></div>'
@@ -636,39 +801,6 @@ function popupContent(dr){
     +'<div class="popup-row"><span>距离:</span><span>'+dist+'</span></div>'
     +'<div class="popup-row"><span>最近电力线:</span><span>'+(dr.line_name||'--')+'</span></div>'
     +'<button class="popup-btn'+(isActive?' traj-active':'')+'" onclick="toggleTrajectory(\''+dr.id+'\')">'+(isActive?'隐藏轨迹':'显示轨迹')+'</button>';
-}
-
-// ═══════════ Render drone list (left sidebar) ═══════════
-function renderDroneList(){
-  var searchTerm=(document.getElementById('droneSearch').value||'').toLowerCase();
-  var listDiv=document.getElementById('droneList');
-  var drones=cachedDrones;
-
-  if(searchTerm){
-    drones=drones.filter(function(dr){
-      var id=(dr.id||'').toLowerCase();
-      var model=(dr.product_model||'').toLowerCase();
-      var cat=(dr.category_name||'').toLowerCase();
-      return id.includes(searchTerm)||model.includes(searchTerm)||cat.includes(searchTerm);
-    });
-  }
-
-  if(!drones.length){
-    listDiv.innerHTML='<div class="empty-state">'+((document.getElementById('droneSearch').value||'')?'无匹配结果':'等待信号...')+'</div>';
-    return;
-  }
-
-  listDiv.innerHTML=drones.map(function(dr){
-    var s=dr.status||'active';
-    var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
-    var time=(dr.last_seen||'').substring(11,19);
-    var model=dr.product_model||dr.category_name||'';
-    var idShort=dr.id.length>14?dr.id.substring(0,14)+'...':dr.id;
-    return '<div class="drone-row" onclick="flyToDrone('+dr.last_lat+','+dr.last_lon+')">'
-      +'<span class="d-icon '+s+'"></span>'
-      +'<div class="d-info"><div class="d-id">'+idShort+'</div><div class="d-model">'+model+'</div><div class="d-sub">'+time+' · '+statusZh[s]+'</div></div>'
-      +'<div class="d-dist">'+dist+'</div></div>';
-  }).join('');
 }
 
 // ═══════════ Animate values ═══════════
@@ -686,8 +818,24 @@ function animateEl(el,target){
   tick();
 }
 
+// ═══════════ Update comms in bottom bar ═══════════
+function updateComms(bh, prefix){
+  var dot4g=document.getElementById((prefix||'comm')+'4gDot');
+  var dotBd=document.getElementById((prefix||'comm')+'BdDot');
+  var lbl=document.getElementById((prefix||'comm')+'Label');
+  if(!dot4g) return;
+  if(bh){
+    dot4g.className='comm-dot'+(bh.primary_online?' online':'');
+    dotBd.className='comm-dot'+(bh.beidou_online?' online':'');
+    if(bh.channel==='4g_wired') lbl.textContent='4G/有线';
+    else if(bh.channel==='beidou_emergency') lbl.textContent='北斗应急';
+    else lbl.textContent='通信中断';
+  }
+}
+
 // ═══════════ Main update loop ═══════════
 var prevAlertLevels={};
+
 function updateAll(){
   fetch('/api/status').then(function(r){return r.json()}).then(function(d){
     var running=d.running;
@@ -696,76 +844,87 @@ function updateAll(){
     document.getElementById('footerStatus').textContent=running?'运行中 ('+d.mode.toUpperCase()+')':'已停止';
     document.getElementById('btnStart').disabled=running;
     document.getElementById('btnStop').disabled=!running;
-    document.getElementById('footerTime').textContent='更新 '+d.now;
 
     cachedDrones=d.drones;
 
-    // Stats counts
+    // Stats
     var warn=0,sev=0,crit=0;
-    d.drones.forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++});
-    animateEl(document.getElementById('btTotal'),d.drones.length);
-    animateEl(document.getElementById('btWarn'),warn);
-    animateEl(document.getElementById('btSev'),sev);
-    animateEl(document.getElementById('btCrit'),crit);
-    document.getElementById('droneCountPill').textContent=d.drones.length;
+    d.drones.forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});
 
-    // Alert notifications
-    d.drones.forEach(function(dr){
-      var prev=prevAlertLevels[dr.id];
-      var cur=dr.status||'active';
-      if(cur!==prev&&(cur==='critical'||cur==='severe')){
-        if(window.Notification&&Notification.permission==='granted'){
-          new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
+    if(nationalMode){
+      // ── National bottom bar ──
+      animateEl(document.getElementById('btNatDrones'),d.drones.length);
+      animateEl(document.getElementById('btNatAlerts'),warn+sev+crit);
+      document.getElementById('footerNatTime').textContent='更新 '+d.now;
+      updateComms(d.backhaul, 'commNat');
+      // Update alert list in right sidebar
+      renderNationalAlerts(d.drones);
+
+      // Notification for critical/severe
+      d.drones.forEach(function(dr){
+        var prev=prevAlertLevels[dr.id];
+        var cur=dr.status||'active';
+        if(cur!==prev&&(cur==='critical'||cur==='severe')){
+          if(window.Notification&&Notification.permission==='granted'){
+            new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
+          }
         }
+        prevAlertLevels[dr.id]=cur;
+      });
+    }else{
+      // ── Station bottom bar ──
+      animateEl(document.getElementById('btTotal'),d.drones.length);
+      animateEl(document.getElementById('btWarn'),warn);
+      animateEl(document.getElementById('btSev'),sev);
+      animateEl(document.getElementById('btCrit'),crit);
+      document.getElementById('droneCountPill').textContent=d.drones.length;
+      document.getElementById('footerTime').textContent='更新 '+d.now;
+      updateComms(d.backhaul, 'comm');
+
+      // Alert notifications
+      d.drones.forEach(function(dr){
+        var prev=prevAlertLevels[dr.id];
+        var cur=dr.status||'active';
+        if(cur!==prev&&(cur==='critical'||cur==='severe')){
+          if(window.Notification&&Notification.permission==='granted'){
+            new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
+          }
+        }
+        prevAlertLevels[dr.id]=cur;
+      });
+
+      // Drone markers
+      var seen={};
+      d.drones.forEach(function(dr){
+        if(dr.last_lat==null||dr.last_lon==null)return;
+        var id=dr.id||'?';seen[id]=true;
+        var lat=dr.last_lat,lon=dr.last_lon;
+        var s=dr.status||'active';
+        var color=markerColor(s),radius=markerRadius(s);
+        if(droneMarkers[id]){
+          droneMarkers[id].setLatLng([lat,lon]);
+          droneMarkers[id].setStyle({color:color,fillColor:color});
+          droneMarkers[id].setRadius(radius);
+          droneMarkers[id].unbindPopup();
+          droneMarkers[id].bindPopup(popupContent(dr));
+        }else{
+          var m=L.circleMarker([lat,lon],{radius:radius,color:color,fillColor:color,fillOpacity:.55,weight:2.5}).addTo(map);
+          m.bindPopup(popupContent(dr));droneMarkers[id]=m;
+        }
+      });
+      Object.keys(droneMarkers).forEach(function(k){if(!seen[k]){map.removeLayer(droneMarkers[k]);delete droneMarkers[k]}});
+      Object.keys(trajPolylines).forEach(function(k){if(!seen[k]){removeTrajectory(k);if(activeTrajDrone===k) activeTrajDrone=null}});
+
+      // Refresh active trajectory
+      if(activeTrajDrone&&seen[activeTrajDrone]){
+        var trajId=activeTrajDrone;
+        removeTrajectory(trajId);
+        activeTrajDrone=null;
+        showTrajectory(trajId);
       }
-      prevAlertLevels[dr.id]=cur;
-    });
 
-    // Drone markers
-    var seen={};
-    d.drones.forEach(function(dr){
-      if(dr.last_lat==null||dr.last_lon==null)return;
-      var id=dr.id||'?';seen[id]=true;
-      var lat=dr.last_lat,lon=dr.last_lon;
-      var s=dr.status||'active';
-      var color=markerColor(s),radius=markerRadius(s);
-      if(droneMarkers[id]){
-        droneMarkers[id].setLatLng([lat,lon]);
-        droneMarkers[id].setStyle({color:color,fillColor:color});
-        droneMarkers[id].setRadius(radius);
-        // Refresh popup content
-        droneMarkers[id].unbindPopup();
-        droneMarkers[id].bindPopup(popupContent(dr));
-      }else{
-        var m=L.circleMarker([lat,lon],{radius:radius,color:color,fillColor:color,fillOpacity:.55,weight:2.5}).addTo(map);
-        m.bindPopup(popupContent(dr));droneMarkers[id]=m;
-      }
-      if(!firstDroneSeen&&d.drones.length>0){firstDroneSeen=true;map.setView([lat,lon],14)}
-    });
-    Object.keys(droneMarkers).forEach(function(k){if(!seen[k]){map.removeLayer(droneMarkers[k]);delete droneMarkers[k]}});
-    Object.keys(trajPolylines).forEach(function(k){if(!seen[k]){removeTrajectory(k);if(activeTrajDrone===k) activeTrajDrone=null}});
-
-    // Refresh active trajectory (save id first, removeTrajectory doesn't reset activeTrajDrone)
-    if(activeTrajDrone&&seen[activeTrajDrone]){
-      var trajId=activeTrajDrone;
-      removeTrajectory(trajId);
-      activeTrajDrone=null;
-      showTrajectory(trajId);
-    }
-
-    // Re-render drone list in sidebar
-    renderDroneList();
-
-    // Comms status (bottom bar)
-    var bh=d.backhaul;
-    if(bh){
-      document.getElementById('comm4gDot').className='comm-dot'+(bh.primary_online?' online':'');
-      document.getElementById('commBdDot').className='comm-dot'+(bh.beidou_online?' online':'');
-      if(bh.channel==='4g_wired') document.getElementById('commLabel').textContent='4G/有线';
-      else if(bh.channel==='beidou_emergency') document.getElementById('commLabel').textContent='北斗应急';
-      else document.getElementById('commLabel').textContent='通信中断';
-      if(bh.queue_size>0){var cq=document.getElementById('commQueue');cq.style.display='';cq.textContent='积压'+bh.queue_size}
-      else document.getElementById('commQueue').style.display='none';
+      // Render drone list
+      renderDroneList();
     }
   });
 
@@ -775,11 +934,20 @@ function updateAll(){
     fetch('/api/stats/dashboard').then(function(r){return r.json()}).then(function(s){
       if(s.error) return;
       cachedDashboard=s;
-      if(s.hourly_alerts) buildAlertChart(s.hourly_alerts);
-      if(s.model_dist) buildModelBars(s.model_dist);
-      if(s.station){
-        buildStation(s.station);
-        updateStationMarker(s.station);
+
+      // Build station info grids
+      buildStationGrid('natStationGrid', s.station);
+      buildStationGrid('staStationGrid', s.station);
+
+      // National: station card + chart + marker
+      renderNationalStationCard(s.station);
+      updateStationMarker(s.station);
+
+      if(nationalMode){
+        natChart = buildAlertChart('natAlertChart', natChart, s.hourly_alerts, false);
+      }else{
+        staChart = buildAlertChart('staAlertChart', staChart, s.hourly_alerts, false);
+        if(s.model_dist) buildModelBars(s.model_dist);
       }
     });
   }
@@ -799,10 +967,9 @@ document.addEventListener('click',function f(){
 },{once:true});
 
 // ═══════════ Init ═══════════
-loadPowerLines();
 updateAll();
 setInterval(updateAll,2000);
-setInterval(loadPowerLines,60000);
+setInterval(function(){if(!nationalMode) loadPowerLines();},60000);
 </script>
 </body>
 </html>

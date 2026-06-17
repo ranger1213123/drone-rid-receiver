@@ -356,7 +356,7 @@ tr.row-severe{animation:alertPulse .8s ease}
     <div class="panel-body">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>飞行器类型</th><th>推测型号</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>起飞位</th><th>状态</th><th>更新</th></tr></thead>
+          <thead><tr><th>ID</th><th>型号</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>起飞位</th><th>状态</th><th>更新</th></tr></thead>
           <tbody id="droneTable"></tbody>
         </table>
       </div>
@@ -553,7 +553,7 @@ function updateUITable(){
       let dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
       let time=(dr.last_seen||'').substring(11,19);
       return `<tr class="${rowClass}">
-        <td class="mono" title="${dr.id||''}">${((dr.id||'').length>12?(dr.id||'').substring(0,12)+'...':(dr.id||'?'))}</td><td>${dr.category_name||'未知'}</td><td style="color:var(--blue);font-weight:500">${dr.product_model||'-'}</td>
+        <td class="mono" title="${dr.id||''}">${((dr.id||'').length>12?(dr.id||'').substring(0,12)+'...':(dr.id||'?'))}</td><td style="color:var(--blue);font-weight:500">${dr.product_model||'-'}</td>
         <td class="mono">${(dr.last_lat||0).toFixed(5)}</td>
         <td class="mono">${(dr.last_lon||0).toFixed(5)}</td>
         <td>${(dr.last_alt||0).toFixed(0)}m</td>
