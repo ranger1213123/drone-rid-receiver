@@ -194,38 +194,42 @@ def api_stats_dashboard():
     if not controller:
         return jsonify({})
 
-    from core.parser.types import UA_TYPE_NAMES
+    try:
+        from core.parser.types import UA_TYPE_NAMES
 
-    # 24h hourly alert counts
-    hourly = controller.db.get_hourly_alert_counts(24)
+        hourly = controller.db.get_hourly_alert_counts(24)
+        ua_stats = controller.db.get_ua_type_stats()
+        model_dist = [
+            {'name': UA_TYPE_NAMES.get(s['ua_type'], f'类型{s["ua_type"]}'), 'count': s['count']}
+            for s in ua_stats
+        ]
 
-    # Drone model distribution
-    ua_stats = controller.db.get_ua_type_stats()
-    model_dist = [
-        {'name': UA_TYPE_NAMES.get(s['ua_type'], f'类型{s["ua_type"]}'), 'count': s['count']}
-        for s in ua_stats
-    ]
+        bh = controller.backhaul
+        pos_lat, pos_lon, pos_alt = 0.0, 0.0, 0.0
+        try:
+            if bh:
+                pos_lat, pos_lon, pos_alt = bh._get_device_position()
+        except Exception:
+            pass
 
-    # Station info
-    bh = controller.backhaul
-    beidou = controller._beidou if hasattr(controller, '_beidou') else None
-    position = bh._get_device_position() if bh else (0, 0, 0)
-
-    station = {
-        'device_name': controller._config.get('backhaul', {}).get('device_name', 'NW-F1'),
-        'device_location': controller._config.get('backhaul', {}).get('device_location', ''),
-        'position': {'lat': position[0], 'lon': position[1], 'alt': position[2]},
-        'active_channel': bh.active_channel if bh else 'none',
-        'primary_online': bh.primary_online if bh else False,
-        'beidou_online': bh.beidou_online if bh else False,
-        'beidou_signal': beidou.signal_strength if beidou else 0,
-        'queue_size': bh.queue_size if bh else 0,
-        'http_sent': bh.stats.get('http_sent', 0) if bh else 0,
-        'beidou_sent': bh.stats.get('beidou_sent', 0) if bh else 0,
-        'last_send': bh.stats.get('last_send_time', '--') if bh else '--',
-        'pl_count': len(controller.pl_manager.lines),
-        'drone_count': len(controller.db.get_active_drones()),
-    }
+        station = {
+            'device_name': controller._config.get('backhaul', {}).get('device_name', 'NW-F1'),
+            'device_location': controller._config.get('backhaul', {}).get('device_location', ''),
+            'position': {'lat': pos_lat, 'lon': pos_lon, 'alt': pos_alt},
+            'active_channel': str(bh.active_channel) if bh else 'none',
+            'primary_online': bool(bh.primary_online) if bh else False,
+            'beidou_online': bool(bh.beidou_online) if bh else False,
+            'beidou_signal': 0,
+            'queue_size': int(bh.queue_size) if bh else 0,
+            'http_sent': int(bh.stats.get('http_sent', 0)) if bh else 0,
+            'beidou_sent': int(bh.stats.get('beidou_sent', 0)) if bh else 0,
+            'last_send': str(bh.stats.get('last_send_time', '--')) if bh else '--',
+            'pl_count': len(controller.pl_manager.lines),
+            'drone_count': len(controller.db.get_active_drones()),
+        }
+    except Exception as e:
+        logger.warning("stats/dashboard 查询失败: %s", e)
+        return jsonify({'error': str(e)}), 500
 
     return jsonify({
         'hourly_alerts': hourly,
