@@ -200,23 +200,30 @@ def main():
     # 创建控制器
     controller = RIDController(config)
 
+    # 包装回调 — 过滤 loop 关闭后的残余事件
+    def safe_callback(parsed):
+        try:
+            controller.on_rid_received(parsed)
+        except RuntimeError:
+            pass
+
     # 创建接收器
     if args.mode == "simulated":
         from receiver.simulated import create_simulated_receiver
         receiver = create_simulated_receiver(
-            callback=controller.on_rid_received,
+            callback=safe_callback,
             pl_manager=controller.pl_manager,
             drone_count=6,
             update_interval=1.0,
         )
     elif args.mode == "wifi":
         receiver = create_wifi_receiver(
-            callback=controller.on_rid_received,
+            callback=safe_callback,
             interface=args.wifi_interface,
         )
     else:
         receiver = BLE_RIDReceiver(
-            callback=controller.on_rid_received,
+            callback=safe_callback,
             scan_duration=args.scan_duration,
         )
 

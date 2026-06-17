@@ -326,18 +326,24 @@ class WebController:
 
     def stop(self):
         self.running = False
-        if self._loop and self._receiver:
+        receiver = self._receiver
+        self._receiver = None
+        loop = self._loop
+        if loop and receiver:
             try:
                 future = asyncio.run_coroutine_threadsafe(
-                    self._receiver.stop(), self._loop
+                    receiver.stop(), loop
                 )
-                future.result(timeout=3)
+                future.result(timeout=5)
             except Exception:
                 pass
-        if self._loop and self._loop.is_running():
-            self._loop.call_soon_threadsafe(self._loop.stop)
+        if loop and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except Exception:
+                pass
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=8)
+            self._thread.join(timeout=5)
         self._thread = None
         self._loop = None
 
@@ -369,10 +375,18 @@ class WebController:
 
         from receiver.ble import BLE_RIDReceiver
 
+        def safe_callback(parsed):
+            if not self.running or not self._receiver:
+                return
+            try:
+                self._on_rid(parsed)
+            except RuntimeError:
+                pass  # event loop closed during shutdown
+
         if self.mode == 'simulated':
             from receiver.simulated import create_simulated_receiver
             self._receiver = create_simulated_receiver(
-                callback=lambda p: self._on_rid(p),
+                callback=safe_callback,
                 pl_manager=self.pl_manager,
                 drone_count=6,
                 update_interval=1.0,
@@ -380,12 +394,12 @@ class WebController:
         elif self.mode == 'wifi':
             from receiver.wifi import create_wifi_receiver
             self._receiver = create_wifi_receiver(
-                callback=lambda p: self._on_rid(p),
+                callback=safe_callback,
                 interface=self._wifi_interface,
             )
         else:
             self._receiver = BLE_RIDReceiver(
-                callback=lambda p: self._on_rid(p),
+                callback=safe_callback,
                 scan_duration=self._config.get('ble', {}).get('scan_duration', 5.0),
             )
 
