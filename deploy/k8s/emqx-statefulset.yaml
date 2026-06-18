@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: emqx
+  namespace: drone-rid
+  labels:
+    app: emqx
+spec:
+  serviceName: emqx
+  replicas: 2
+  selector:
+    matchLabels:
+      app: emqx
+  template:
+    metadata:
+      labels:
+        app: emqx
+    spec:
+      containers:
+        - name: emqx
+          image: emqx/emqx:5.3.0
+          ports:
+            - containerPort: 8883
+              name: mqtt-tls
+            - containerPort: 18083
+              name: dashboard
+          env:
+            - name: EMQX_DASHBOARD__DEFAULT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: DB_PASSWORD
+            - name: EMQX_CLUSTER__DISCOVERY_STRATEGY
+              value: "dns"
+            - name: EMQX_CLUSTER__DNS__RECORD_TYPE
+              value: "srv"
+            - name: EMQX_CLUSTER__DNS__NAME
+              value: "emqx-headless.drone-rid.svc.cluster.local"
+            - name: EMQX_NODE__NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: EMQX_NODE__COOKIE
+              value: "drone-rid-emqx-secret-cookie"
+          volumeMounts:
+            - name: emqx-config
+              mountPath: /opt/emqx/etc/emqx.conf
+              subPath: emqx.conf
+            - name: emqx-certs
+              mountPath: /etc/emqx/certs
+              readOnly: true
+            - name: emqx-data
+              mountPath: /opt/emqx/data
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            tcpSocket:
+              port: 8883
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8883
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: emqx-config
+          configMap:
+            name: emqx-config
+        - name: emqx-certs
+          secret:
+            secretName: drone-rid-secret
+            items:
+              - key: CA_CERT
+                path: ca.crt
+              - key: SERVER_CERT
+                path: server.crt
+              - key: SERVER_KEY
+                path: server.key
+  volumeClaimTemplates:
+    - metadata:
+        name: emqx-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi

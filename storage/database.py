@@ -20,7 +20,7 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # 当前数据库 schema 版本
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 # SQLITE_BUSY 重试配置
 MAX_RETRIES = 3
@@ -92,6 +92,8 @@ class Database:
             self._migrate_v2_to_v3()
         if version < 4:
             self._migrate_v3_to_v4()
+        if version < 5:
+            self._migrate_v4_to_v5()
 
     def _migrate_v0_to_v2(self):
         logger.info("数据库 schema 初始化至 v%d", CURRENT_SCHEMA_VERSION)
@@ -209,6 +211,34 @@ class Database:
         self._execute("PRAGMA user_version = 4")
         self._commit()
         logger.info("数据库 schema 迁移完成 v4")
+
+    def _migrate_v4_to_v5(self):
+        """v5: raw_packets 表 + outbox.topic_suffix + kv_config 表"""
+        logger.info("数据库 schema 迁移 v4 → v5")
+        self._executescript("""
+            CREATE TABLE IF NOT EXISTS raw_packets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                received_at TEXT NOT NULL,
+                payload BLOB NOT NULL,
+                rssi INTEGER,
+                source_type TEXT DEFAULT 'ble',
+                processed INTEGER DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_raw_packets_unprocessed
+                ON raw_packets(processed, received_at);
+
+            CREATE TABLE IF NOT EXISTS kv_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL DEFAULT ''
+            );
+        """)
+        try:
+            self._execute("ALTER TABLE outbox ADD COLUMN topic_suffix TEXT DEFAULT ''")
+        except Exception:
+            pass  # 列已存在
+        self._execute("PRAGMA user_version = 5")
+        self._commit()
+        logger.info("数据库 schema 迁移完成 v5")
 
     def _init_tables(self):
         """创建数据库表"""
@@ -594,30 +624,28 @@ class Database:
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
 
-    # ──────────────────── 出队表 (Outbox Pattern) ────────────────────
+    # ──────────────────── 出队表 (Outbox Pattern, 简化版) ────────────────────
 
     def insert_outbox(self, payload: dict, target_path: str,
-                      priority: int = 0) -> int:
+                      priority: int = 0, topic_suffix: str = "") -> int:
         now = datetime.now(timezone.utc).isoformat()
         self._execute("BEGIN IMMEDIATE")
         cur = self._execute("""
-            INSERT INTO outbox (created_at, payload, target_path, priority, status)
-            VALUES (?, ?, ?, ?, 'pending')
-        """, (now, json.dumps(payload), target_path, priority))
+            INSERT INTO outbox (created_at, payload, target_path, topic_suffix, priority, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+        """, (now, json.dumps(payload), target_path, topic_suffix, priority))
         self._add_audit_log_internal("INSERT", "outbox", cur.lastrowid)
         self._commit()
         return cur.lastrowid
 
     def get_pending_outbox(self, limit: int = 50) -> List[Dict]:
         self.conn.row_factory = sqlite3.Row
-        now = datetime.now(timezone.utc).isoformat()
         rows = self._execute("""
             SELECT * FROM outbox
             WHERE status = 'pending'
-              AND (next_retry_at IS NULL OR next_retry_at <= ?)
             ORDER BY priority DESC, created_at ASC
             LIMIT ?
-        """, (now, limit)).fetchall()
+        """, (limit,)).fetchall()
         return [dict(r) for r in rows]
 
     def mark_outbox_sent(self, msg_id: int):
@@ -625,6 +653,7 @@ class Database:
         self._commit()
 
     def mark_outbox_failed(self, msg_id: int, error: str):
+        """简化版 — 仅记录错误, 不再计算指数退避。MQTT 重连后由 backhaul drain 循环自然重试"""
         cur = self._execute(
             "SELECT retry_count, max_retries FROM outbox WHERE id = ?", (msg_id,)
         )
@@ -636,13 +665,11 @@ class Database:
         if retry_count >= max_retries:
             self.mark_outbox_dead(msg_id)
             return
-        delay = min(2 ** (retry_count - 1) * 5, 600)
-        next_retry = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
         self._execute("""
             UPDATE outbox
-            SET retry_count = ?, next_retry_at = ?, last_error = ?, status = 'pending'
+            SET retry_count = ?, last_error = ?, status = 'pending'
             WHERE id = ?
-        """, (retry_count, next_retry, error, msg_id))
+        """, (retry_count, error, msg_id))
         self._commit()
 
     def mark_outbox_dead(self, msg_id: int):
@@ -664,6 +691,69 @@ class Database:
             "SELECT COUNT(*) FROM outbox WHERE status = 'pending'"
         ).fetchone()
         return row[0] if row else 0
+
+    # ──────────────────── raw_packets (边缘 receiver 服务写入) ────────────────────
+
+    def insert_raw_packet(self, payload: bytes, rssi: int = None,
+                          source_type: str = "ble") -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        self._execute("BEGIN IMMEDIATE")
+        cur = self._execute("""
+            INSERT INTO raw_packets (received_at, payload, rssi, source_type, processed)
+            VALUES (?, ?, ?, ?, 0)
+        """, (now, payload, rssi, source_type))
+        self._commit()
+        return cur.lastrowid
+
+    def get_unprocessed_packets(self, limit: int = 50) -> List[Dict]:
+        self.conn.row_factory = sqlite3.Row
+        rows = self._execute("""
+            SELECT * FROM raw_packets
+            WHERE processed = 0
+            ORDER BY id ASC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_packet_processed(self, packet_id: int):
+        self._execute(
+            "UPDATE raw_packets SET processed = 1 WHERE id = ?", (packet_id,)
+        )
+        self._commit()
+
+    def cleanup_raw_packets(self, keep_count: int = 10000):
+        """保留最近 N 条原始报文，删除旧数据"""
+        self._execute("""
+            DELETE FROM raw_packets WHERE id NOT IN (
+                SELECT id FROM raw_packets ORDER BY id DESC LIMIT ?
+            )
+        """, (keep_count,))
+        self._commit()
+
+    # ──────────────────── 配置版本号 (边缘侧 config_sync) ────────────────────
+
+    def get_config_version(self) -> str:
+        row = self._execute(
+            "SELECT value FROM kv_config WHERE key = 'config_version'"
+        ).fetchone()
+        return row[0] if row else ""
+
+    def set_config_version(self, version: str):
+        self._execute("BEGIN IMMEDIATE")
+        existing = self._execute(
+            "SELECT value FROM kv_config WHERE key = 'config_version'"
+        ).fetchone()
+        if existing:
+            self._execute(
+                "UPDATE kv_config SET value = ? WHERE key = 'config_version'",
+                (version,),
+            )
+        else:
+            self._execute(
+                "INSERT INTO kv_config (key, value) VALUES ('config_version', ?)",
+                (version,),
+            )
+        self._commit()
 
     def close(self):
         self.conn.close()

@@ -4,6 +4,7 @@ RID 数据处理管道 — 封装从 RID 广播到告警的完整处理链路
 所有入口 (CLI / GUI / Web) 共享同一个 Pipeline，消除重复的业务逻辑。
 """
 
+import json
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
@@ -14,7 +15,6 @@ from core.trajectory import TrajectoryRecorder
 from core.parser import ParsedRID, get_active_protocol
 
 if TYPE_CHECKING:
-    from core.backhaul import BackhaulManager
     from core.raw_archive import RawArchiveManager
     from core.pilot_notify import PilotNotifier
     from core.airspace import CompositeAirspaceSource
@@ -43,7 +43,7 @@ class RIDPipeline:
         alert_system: AlertSystem,
         trajectory_recorder: TrajectoryRecorder,
         thresholds: dict,
-        backhaul: "BackhaulManager" = None,
+        device_name: str = "",
         raw_archive: "RawArchiveManager" = None,
         airspace_manager: "CompositeAirspaceSource" = None,
         pilot_notifier: "PilotNotifier" = None,
@@ -53,7 +53,7 @@ class RIDPipeline:
         self.alert = alert_system
         self.trajectory = trajectory_recorder
         self.thresholds = thresholds
-        self.backhaul = backhaul
+        self.device_name = device_name
         self.raw_archive = raw_archive
         self.airspace_manager = airspace_manager
         self.pilot_notifier = pilot_notifier
@@ -167,24 +167,35 @@ class RIDPipeline:
                         f"距离 {distance:.0f}m — {action}",
             )
 
-        # 6. 数据回传 (4G/有线 → SMS → 北斗应急降级)
-        drone_category = parsed.drone_category
+        # 6. 数据回传 — 写入 outbox (由 backhaul 服务读取并通过 MQTT 上传)
         drone_model = parsed.drone_model
-        if self.backhaul:
-            self.backhaul.report_drone(
-                drone_id=drone_id,
-                lat=loc.latitude, lon=loc.longitude, alt=loc.altitude_geodetic,
-                distance=distance, line_name=nearest_line.name, status=status,
-            )
+        if self.device_name:
+            from datetime import datetime as dt_module
+            now = dt_module.now().isoformat()
+            report_payload = {
+                "device": self.device_name,
+                "drone_id": drone_id,
+                "latitude": loc.latitude, "longitude": loc.longitude,
+                "altitude": loc.altitude_geodetic,
+                "distance_to_line": distance,
+                "nearest_line": nearest_line.name, "status": status,
+                "timestamp": now,
+            }
+            self.db.insert_outbox(report_payload, "/api/report", topic_suffix="report")
             if alert_level:
-                channel = self.backhaul.report_alert(
-                    drone_id=drone_id, level=alert_level, distance=distance,
-                    line_name=nearest_line.name,
-                    lat=loc.latitude, lon=loc.longitude, alt=loc.altitude_geodetic,
-                    drone_model=drone_model,
-                    takeoff_lat=takeoff_lat,
-                    takeoff_lon=takeoff_lon,
-                )
+                alert_payload = {
+                    "device": self.device_name,
+                    "type": "alert",
+                    "drone_id": drone_id, "level": alert_level,
+                    "distance": distance, "nearest_line": nearest_line.name,
+                    "latitude": loc.latitude, "longitude": loc.longitude,
+                    "altitude": loc.altitude_geodetic,
+                    "drone_model": drone_model,
+                    "takeoff_lat": takeoff_lat, "takeoff_lon": takeoff_lon,
+                    "timestamp": now,
+                }
+                self.db.insert_outbox(alert_payload, "/api/report_alert",
+                                      topic_suffix="alert", priority=1)
 
         return PipelineResult(
             drone_id=drone_id,

@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emqx-config
+  namespace: drone-rid
+  labels:
+    app: emqx
+data:
+  emqx.conf: |
+    # EMQX 5.x mTLS 配置
+    listeners.ssl.default {
+      bind = "0.0.0.0:8883"
+      max_connections = 102400
+      ssl_options {
+        cacertfile = "/etc/emqx/certs/ca.crt"
+        certfile   = "/etc/emqx/certs/server.crt"
+        keyfile    = "/etc/emqx/certs/server.key"
+        verify     = verify_peer
+        fail_if_no_peer_cert = true
+        versions   = [tlsv1.3, tlsv1.2]
+      }
+    }
+
+    # Dashboard (可选, 调试用)
+    listeners.tcp.default {
+      bind = "0.0.0.0:1883"
+      max_connections = 0
+    }
+
+    dashboard {
+      listeners.http {
+        bind = "0.0.0.0:18083"
+      }
+      default_username = "admin"
+      default_password = "${EMQX_DASHBOARD_PASSWORD}"
+    }

@@ -400,7 +400,7 @@ class TestRIDPipeline(unittest.TestCase):
         self.pipeline = RIDPipeline(
             db=self.db, pl_manager=self.pl_manager,
             alert_system=self.alert, trajectory_recorder=self.trajectory,
-            thresholds=thresholds,
+            thresholds=thresholds, device_name="test-device",
         )
 
     def tearDown(self):

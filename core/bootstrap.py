@@ -121,27 +121,35 @@ def bootstrap_core(config: Optional[dict] = None, *,
 
     # ── 北斗 + 数据回传 ──
     from core.beidou import create_beidou
-    from core.backhaul import BackhaulManager, TokenManager
+    from core.backhaul import BackhaulManager
     beidou = create_beidou(config)
     device_name = config.get('backhaul', {}).get('device_name', 'NW-F1')
 
-    token_manager = None
-    auth_cfg = config.get('backhaul', {}).get('auth', {})
-    if auth_cfg.get('enabled', False):
-        token_url = auth_cfg.get('token_url', '')
-        device_secret = auth_cfg.get('device_secret', '')
-        if token_url and device_secret:
-            token_manager = TokenManager(
-                auth_url=token_url,
-                device_name=device_name,
-                device_secret=device_secret,
-                expire_seconds=auth_cfg.get('expire_seconds', 86400),
-            )
+    # MQTT channel (mTLS 认证, 替代 HTTP + JWT)
+    mqtt_channel = None
+    mqtt_cfg = config.get('mqtt', {})
+    if mqtt_cfg.get('enabled', False):
+        from core.mqtt_client import MqttChannel
+        broker = mqtt_cfg.get('broker', {})
+        tls_cfg = mqtt_cfg.get('tls', {})
+        mqtt_channel = MqttChannel(
+            broker_host=broker.get('host', 'localhost'),
+            broker_port=broker.get('port', 8883),
+            device_name=device_name,
+            ca_cert_path=tls_cfg.get('ca_cert', ''),
+            client_cert_path=tls_cfg.get('client_cert', ''),
+            client_key_path=tls_cfg.get('client_key', ''),
+            keepalive=broker.get('keepalive', 60),
+            reconnect_delay_min=broker.get('reconnect_delay_min', 1),
+            reconnect_delay_max=broker.get('reconnect_delay_max', 120),
+            get_config_version=db.get_config_version if db else None,
+        )
+        logger.info("MQTT channel 已创建: %s:%d", broker.get('host'), broker.get('port'))
 
     backhaul = BackhaulManager(
         config, beidou, db,
         device_name=device_name,
-        token_manager=token_manager,
+        mqtt_channel=mqtt_channel,
         pl_manager=pl_manager,
     )
 
@@ -152,9 +160,9 @@ def bootstrap_core(config: Optional[dict] = None, *,
         alert_system=alert_system,
         trajectory_recorder=trajectory_recorder,
         thresholds=thresholds,
+        device_name=device_name,
         raw_archive=raw_archive,
         pilot_notifier=pilot_notifier,
-        backhaul=backhaul,
     )
 
     return {

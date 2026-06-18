@@ -4,6 +4,7 @@ Session-based 鉴权 (admin/operator)，数据库持久化
 """
 import csv
 import io
+import os
 from datetime import datetime
 from functools import wraps
 
@@ -183,6 +184,49 @@ def api_powerlines_sync():
         "lines": lines,
         "version": max_updated,
         "count": len(lines),
+    })
+
+
+@bp.route("/api/powerlines/push", methods=["POST"])
+@require_web_auth
+def api_push_powerlines():
+    """管理员推送电力线配置到边缘设备 (通过 MQTT Consumer)"""
+    data = request.json or {}
+    device_name = (data.get("device_name") or "").strip()
+
+    lines = get_power_lines(device_name=device_name or None)
+    max_updated = max(
+        (l.get("updated_at", "") for l in lines if l.get("updated_at")),
+        default=""
+    )
+    payload = {"lines": lines, "version": max_updated, "count": len(lines)}
+
+    # 通过 MQTT Consumer 的内部 HTTP 端点发布
+    consumer_host = os.environ.get("MQTT_CONSUMER_HOST", "localhost")
+    consumer_port = os.environ.get("MQTT_CONSUMER_PORT", "8080")
+    try:
+        import requests
+        topic = f"cmd/{device_name}/config" if device_name else "cmd/broadcast"
+        resp = requests.post(
+            f"http://{consumer_host}:{consumer_port}/publish",
+            json={"topic": topic, "payload": payload, "qos": 1},
+            timeout=5,
+        )
+        if resp.status_code >= 500:
+            return jsonify({"error": "MQTT Consumer 不可用"}), 502
+    except Exception as e:
+        return jsonify({"error": f"MQTT Consumer 连接失败: {e}"}), 502
+
+    add_audit_log(
+        session["user"]["username"], "PUSH_POWERLINES",
+        "power_lines", None,
+        f"MQTT推送电力线 → {device_name or '(全部)'}: {len(lines)}条"
+    )
+    return jsonify({
+        "status": "ok",
+        "topic": topic,
+        "lines_count": len(lines),
+        "version": max_updated,
     })
 
 
@@ -479,8 +523,11 @@ def api_stats_dashboard():
 @bp.route("/api/devices/provision", methods=["POST"])
 @require_admin
 def api_provision_device():
-    """管理员注册新边缘设备: 生成 secret + 关联站点"""
+    """管理员注册新边缘设备: 生成 secret + 签发 mTLS 证书 + 关联站点"""
     import secrets
+    from datetime import datetime, timezone
+    from .cert_manager import get_cert_manager
+
     data = request.json or {}
     device_name = (data.get("device_name") or "").strip()
     station = (data.get("station") or "").strip()
@@ -492,7 +539,18 @@ def api_provision_device():
 
     # 生成随机密钥
     device_secret = secrets.token_hex(24)
-    upsert_device_secret(device_name, device_secret, station)
+
+    # 签发 mTLS 客户端证书
+    try:
+        cert_mgr = get_cert_manager()
+        cert_data = cert_mgr.issue_device_cert(device_name)
+    except Exception as e:
+        return jsonify({"error": f"证书签发失败: {e}"}), 500
+
+    upsert_device_secret(device_name, device_secret, station,
+                         client_cert=cert_data["cert"],
+                         cert_serial=cert_data["serial"],
+                         cert_issued_at=datetime.now(timezone.utc))
 
     # 自动创建对应站点
     if station:
@@ -502,12 +560,15 @@ def api_provision_device():
             upsert_station(name=station, device_name=device_name)
 
     add_audit_log(session["user"]["username"], "PROVISION", "device_secrets", None,
-                  f"注册设备: {device_name} → {station or '(无站点)'}")
+                  f"注册设备: {device_name} → {station or '(无站点)'} cert={cert_data['serial']}")
 
     return jsonify({
         "status": "ok",
         "device_name": device_name,
         "device_secret": device_secret,
+        "client_cert": cert_data["cert"],
+        "client_key": cert_data["key"],
+        "ca_cert": cert_data["ca_cert"],
         "station": station,
     })
 

@@ -18,6 +18,7 @@ display:
   max_drones_display: 50
 database:
   path: data/drone_rid.db
+  receiver_path: data/receiver.db
 center_db:
   driver: sqlite
   sqlite_path: data/center.db
@@ -80,6 +81,21 @@ backhaul:
     enabled: true
     interval: 300
     sync_url: ''
+# ── MQTT 通信 (mTLS 认证) ──
+mqtt:
+  enabled: false
+  broker:
+    host: localhost
+    port: 8883
+    keepalive: 60
+    reconnect_delay_min: 1
+    reconnect_delay_max: 120
+  tls:
+    enabled: true
+    ca_cert: /etc/drone-rid/certs/ca.crt
+    client_cert: /etc/drone-rid/certs/client.crt
+    client_key: /etc/drone-rid/certs/client.key
+
 anti_flapping:
   enabled: false
   debounce_in: 3

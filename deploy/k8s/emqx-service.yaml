@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: emqx
+  namespace: drone-rid
+  labels:
+    app: emqx
+spec:
+  type: ClusterIP
+  ports:
+    - name: mqtt-tls
+      port: 8883
+      targetPort: 8883
+      protocol: TCP
+    - name: dashboard
+      port: 18083
+      targetPort: 18083
+      protocol: TCP
+  selector:
+    app: emqx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: emqx-headless
+  namespace: drone-rid
+  labels:
+    app: emqx
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: mqtt-tls
+      port: 8883
+      targetPort: 8883
+      protocol: TCP
+  selector:
+    app: emqx

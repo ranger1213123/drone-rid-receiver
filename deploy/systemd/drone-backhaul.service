@@ -1,0 +1,28 @@
+[Unit]
+Description=Drone RID Edge Backhaul Service
+Documentation=https://github.com/example/drone-rid-receiver
+After=drone-pipeline.service network.target
+Requires=drone-pipeline.service
+
+[Service]
+Type=simple
+User=drone-rid
+Group=drone-rid
+WorkingDirectory=/opt/drone-rid
+ExecStart=/opt/drone-rid/venv/bin/python -m app.edge_backhaul --config /etc/drone-rid/config.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=drone-backhaul
+
+# 安全加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/drone-rid/data /var/log/drone-rid
+ReadOnlyPaths=/opt/drone-rid /etc/drone-rid
+
+[Install]
+WantedBy=multi-user.target

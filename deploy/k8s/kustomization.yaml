@@ -8,6 +8,10 @@ resources:
   - configmap.yaml
   - secret.yaml
   - postgres-statefulset.yaml
+  - emqx-configmap.yaml
+  - emqx-statefulset.yaml
+  - emqx-service.yaml
+  - mqtt-consumer-deployment.yaml
   - server-deployment.yaml
   - server-service.yaml
   - ingress.yaml

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mqtt-consumer
+  namespace: drone-rid
+  labels:
+    app: mqtt-consumer
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: mqtt-consumer
+  template:
+    metadata:
+      labels:
+        app: mqtt-consumer
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: consumer
+          image: drone-rid-center:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.mqtt_consumer"]
+          ports:
+            - containerPort: 8080
+              name: health
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: drone-rid-secret
+                  key: CONSUMER_DATABASE_URL
+            - name: MQTT_BROKER_HOST
+              value: "emqx.drone-rid.svc.cluster.local"
+            - name: MQTT_BROKER_PORT
+              value: "8883"
+            - name: MQTT_TLS_CA_CERT
+              value: "/etc/mqtt-certs/ca.crt"
+            - name: MQTT_TLS_CLIENT_CERT
+              value: "/etc/mqtt-certs/consumer.crt"
+            - name: MQTT_TLS_CLIENT_KEY
+              value: "/etc/mqtt-certs/consumer.key"
+            - name: BATCH_SIZE
+              value: "100"
+            - name: FLUSH_INTERVAL
+              value: "1.0"
+            - name: HEALTH_PORT
+              value: "8080"
+          volumeMounts:
+            - name: consumer-certs
+              mountPath: /etc/mqtt-certs
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: consumer-certs
+          secret:
+            secretName: drone-rid-secret
+            items:
+              - key: CA_CERT
+                path: ca.crt
+              - key: CONSUMER_CERT
+                path: consumer.crt
+              - key: CONSUMER_KEY
+                path: consumer.key

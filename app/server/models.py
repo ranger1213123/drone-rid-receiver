@@ -141,6 +141,9 @@ class DeviceSecret(Base):
 
     device_name = Column(String, primary_key=True)
     device_secret = Column(String, nullable=False)
+    client_cert = Column(Text, nullable=True)
+    cert_serial = Column(String, nullable=True)
+    cert_issued_at = Column(DateTime, nullable=True)
     station = Column(String, default="")
     created_at = Column(DateTime)
 
@@ -191,6 +194,7 @@ def init_db(database_url: str = "sqlite:///data/center.db",
             max_overflow=pool_overflow,
             pool_timeout=pool_timeout,
             pool_pre_ping=True,
+            isolation_level="REPEATABLE READ",
         )
 
     _Session = scoped_session(sessionmaker(bind=_engine))
@@ -630,15 +634,27 @@ def get_device_secrets() -> dict:
     return {d.device_name: d.device_secret for d in sess.query(DeviceSecret).all()}
 
 
-def upsert_device_secret(device_name: str, device_secret: str, station: str = '') -> bool:
+def upsert_device_secret(device_name: str, device_secret: str, station: str = '',
+                        client_cert: str = None, cert_serial: str = None,
+                        cert_issued_at = None) -> bool:
     sess = get_session()
     d = sess.get(DeviceSecret, device_name)
     if d:
         d.device_secret = device_secret
         d.station = station
+        if client_cert is not None:
+            d.client_cert = client_cert
+        if cert_serial is not None:
+            d.cert_serial = cert_serial
+        if cert_issued_at is not None:
+            d.cert_issued_at = cert_issued_at
     else:
         d = DeviceSecret(device_name=device_name, device_secret=device_secret,
-                         station=station, created_at=datetime.now(timezone.utc))
+                         station=station,
+                         client_cert=client_cert,
+                         cert_serial=cert_serial,
+                         cert_issued_at=cert_issued_at,
+                         created_at=datetime.now(timezone.utc))
         sess.add(d)
     sess.commit()
     return True
