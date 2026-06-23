@@ -3,10 +3,20 @@
 
 包含:
   - 消息类型常量 (MSG_*)
-  - ID 类型 / UA 类型枚举
+  - ID 类型 / UA 类型枚举 / 接收器类型枚举
   - 所有 dataclass (ParsedRID, BasicIDMessage, LocationMessage, ...)
   - 两协议线格式相同的解码器: parse_basic_id, parse_self_id
 """
+
+from enum import Enum, auto
+
+
+class ReceiverType(Enum):
+    BLE = auto()
+    WIFI = auto()
+    SERIAL = auto()
+    SIMULATED = auto()
+    AUTO = auto()
 
 import struct
 from dataclasses import dataclass, field

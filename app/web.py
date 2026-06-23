@@ -3,6 +3,7 @@ Flask Web GUI - 无人机 RID 接收与电力线防碰撞监控系统
 
 纯 Python 依赖 (flask), 不依赖 tkinter。
 浏览器访问 http://localhost:5000 即可使用。
+MQTT 启用时通过 WebSocket (Socket.IO) 实时推送无人机位置, 替代 AJAX 轮询。
 """
 
 import json
@@ -16,6 +17,8 @@ from datetime import datetime
 
 from functools import wraps
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask_socketio import SocketIO
+from werkzeug.security import generate_password_hash, check_password_hash
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
@@ -29,6 +32,7 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / 'templates'))
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 
 def _safe_float(val, default=0.0):
@@ -48,8 +52,19 @@ try:
 except Exception:
     pass
 
-_fallback_key = os.urandom(24).hex()
-app.secret_key = _web_auth_cfg.get('secret_key', _fallback_key)
+# Session 密钥: 优先从配置文件读取, 无配置时生成并持久化到文件避免重启登出
+_secret_file = PROJECT_ROOT / 'data' / '.session_secret'
+try:
+    if _secret_file.exists():
+        app.secret_key = _secret_file.read_text().strip()
+    elif _web_auth_cfg.get('secret_key'):
+        app.secret_key = _web_auth_cfg['secret_key']
+    else:
+        app.secret_key = os.urandom(24).hex()
+        _secret_file.parent.mkdir(parents=True, exist_ok=True)
+        _secret_file.write_text(app.secret_key)
+except Exception:
+    app.secret_key = os.urandom(24).hex()
 
 def _load_web_users():
     """从 web_users.yaml 加载用户列表，失败则回退到 config.yaml 默认值"""
@@ -75,7 +90,21 @@ def _save_web_users(users):
     with open(str(users_file), 'w', encoding='utf-8') as f:
         yaml.dump({'users': users}, f, allow_unicode=True, default_flow_style=False)
 
+def _migrate_passwords(users):
+    """将明文密码自动迁移为 werkzeug 哈希值 (原地修改并保存)"""
+    changed = False
+    for u in users:
+        pw = u.get('password', '')
+        if pw and not pw.startswith('scrypt:'):
+            u['password'] = generate_password_hash(pw)
+            changed = True
+    if changed:
+        _save_web_users(users)
+        logger.info("已迁移 %d 个用户密码为哈希存储",
+                    sum(1 for u in users if u['password'].startswith('scrypt:')))
+
 WEB_USERS = _load_web_users()
+_migrate_passwords(WEB_USERS)
 
 def require_web_auth(f):
     @wraps(f)
@@ -97,6 +126,7 @@ def require_admin(f):
 
 # ── 全局状态 ──
 controller = None
+live_feed = None  # MQTT→WebSocket 实时推送桥接
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -105,7 +135,14 @@ def login():
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
         for u in WEB_USERS:
-            if u['username'] == username and u['password'] == password:
+            stored_pw = u.get('password', '')
+            # 兼容明文密码 (迁移前) 和哈希密码
+            ok = False
+            if stored_pw.startswith('scrypt:'):
+                ok = check_password_hash(stored_pw, password)
+            else:
+                ok = (stored_pw == password)
+            if u['username'] == username and ok:
                 session['user'] = {
                     'username': username,
                     'role': u.get('role', 'user'),
@@ -136,12 +173,22 @@ def list_view():
 @app.route('/api/status')
 @require_web_auth
 def api_status():
-    global controller
-    drones = controller.db.get_active_drones() if controller else []
-    alert_drones = dict(controller.alert_system._drone_level) if controller else {}
+    global controller, live_feed
+    # 优先使用 LiveFeed 内存缓存 (MQTT→WebSocket 模式), 无 MQTT 时回退到 DB
+    if live_feed is not None:
+        cached_drones = live_feed.get_active_drones()
+        if cached_drones:
+            drones = cached_drones
+            alert_drones = {}
+        else:
+            drones = controller.db.get_active_drones() if controller else []
+            alert_drones = controller.alert_system.drone_level if controller else {}
+    else:
+        drones = controller.db.get_active_drones() if controller else []
+        alert_drones = controller.alert_system.drone_level if controller else {}
 
-    # Add power line names, model names to drones
-    if controller:
+    # Add power line names, model names to drones (skip for live_feed cached, already populated)
+    if controller and (live_feed is None or not live_feed.get_active_drones()):
         line_names = {l.line_id: l.name for l in controller.pl_manager.lines}
         for d in drones:
             d['category_name'] = UA_TYPE_NAMES.get(d.get('ua_type', 0), '未知')
@@ -162,6 +209,7 @@ def api_status():
         'drones': drones,
         'logs': logs,
         'now': datetime.now().strftime('%H:%M:%S'),
+        'ws_enabled': live_feed is not None and live_feed.get_mqtt_connected(),
         'current_user': {
             'username': user.get('username', ''),
             'role': user.get('role', 'user'),
@@ -204,6 +252,7 @@ def api_powerlines():
         return jsonify([])
     if request.method == 'GET':
         return jsonify([{
+            'id': l.line_id,
             'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
             'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2,
             'voltage_level': getattr(l, 'voltage_level', ''),
@@ -215,47 +264,46 @@ def api_powerlines():
             return jsonify({'error': '电力线名称不能为空'}), 400
         from core.powerline import PowerLineSegment
         voltage_level = (data.get('voltage_level') or '').strip()
+        # 使用 DB 自增 ID 而非列表索引
+        max_id = max((l.line_id for l in controller.pl_manager.lines), default=0)
+        line_id = max_id + 1
         seg = PowerLineSegment(
             name=name,
             lat1=_safe_float(data.get('lat1')), lon1=_safe_float(data.get('lon1')),
             alt1=_safe_float(data.get('alt1')),
             lat2=_safe_float(data.get('lat2')), lon2=_safe_float(data.get('lon2')),
             alt2=_safe_float(data.get('alt2')),
-            line_id=len(controller.pl_manager.lines) + 1,
+            line_id=line_id,
             voltage_level=voltage_level,
         )
         controller.pl_manager.lines.append(seg)
-        controller.db.load_power_lines([{
-            'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': l.line_id,
-            'voltage_level': getattr(l, 'voltage_level', ''),
-        } for l in controller.pl_manager.lines])
-        controller._save_power_lines_to_yaml()
-        return jsonify({'status': 'ok'})
+        controller._reload_pl_db()
+        return jsonify({'status': 'ok', 'id': line_id})
 
-@app.route('/api/powerlines/<int:idx>', methods=['DELETE', 'PUT'])
+@app.route('/api/powerlines/<int:line_id>', methods=['DELETE', 'PUT'])
 @require_web_auth
-def api_modify_powerline(idx):
+def api_modify_powerline(line_id):
     global controller
     if not controller:
         return jsonify({'error': '系统未启动'}), 503
 
+    # 通过 line_id 查找而非列表索引, 防止并发编辑删错
+    target_idx = None
+    for i, l in enumerate(controller.pl_manager.lines):
+        if l.line_id == line_id:
+            target_idx = i
+            break
+    if target_idx is None:
+        return jsonify({'error': '电力线不存在'}), 404
+
     if request.method == 'DELETE':
-        if idx < len(controller.pl_manager.lines):
-            del controller.pl_manager.lines[idx]
-            controller.db.load_power_lines([{
-                'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-                'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': i+1,
-                'voltage_level': getattr(l, 'voltage_level', ''),
-            } for i, l in enumerate(controller.pl_manager.lines)])
-            controller._save_power_lines_to_yaml()
+        del controller.pl_manager.lines[target_idx]
+        controller._reload_pl_db()
         return jsonify({'status': 'ok'})
 
     if request.method == 'PUT':
-        if idx >= len(controller.pl_manager.lines):
-            return jsonify({'error': '无效的电力线索引'}), 404
         data = request.json or {}
-        line = controller.pl_manager.lines[idx]
+        line = controller.pl_manager.lines[target_idx]
         if 'name' in data:
             line.name = data['name'].strip()
         if 'voltage_level' in data:
@@ -263,12 +311,7 @@ def api_modify_powerline(idx):
         for attr in ['alt1', 'alt2', 'lat1', 'lon1', 'lat2', 'lon2']:
             if attr in data and data[attr] is not None:
                 setattr(line, attr, _safe_float(data[attr]))
-        controller.db.load_power_lines([{
-            'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': i+1,
-            'voltage_level': getattr(l, 'voltage_level', ''),
-        } for i, l in enumerate(controller.pl_manager.lines)])
-        controller._save_power_lines_to_yaml()
+        controller._reload_pl_db()
         return jsonify({'status': 'ok'})
 
 
@@ -343,7 +386,7 @@ def api_users():
         if any(u['username'] == username for u in WEB_USERS):
             return jsonify({'error': '用户名已存在'}), 409
         WEB_USERS.append({
-            'username': username, 'password': password,
+            'username': username, 'password': generate_password_hash(password),
             'role': role, 'station': station,
         })
         _save_web_users(WEB_USERS)
@@ -502,28 +545,25 @@ def api_import_powerlines():
         return jsonify({'error': '没有有效的导入数据'}), 400
 
     from core.powerline import PowerLineSegment
+    max_id = max((l.line_id for l in controller.pl_manager.lines), default=0)
     count = 0
     for item in items:
         if not item.get('name'):
             continue
+        max_id += 1
         seg = PowerLineSegment(
             name=item['name'],
             lat1=_safe_float(item.get('lat1')), lon1=_safe_float(item.get('lon1')),
             alt1=_safe_float(item.get('alt1')),
             lat2=_safe_float(item.get('lat2')), lon2=_safe_float(item.get('lon2')),
             alt2=_safe_float(item.get('alt2')),
-            line_id=len(controller.pl_manager.lines) + 1,
+            line_id=max_id,
             voltage_level=item.get('voltage_level', ''),
         )
         controller.pl_manager.lines.append(seg)
         count += 1
 
-    controller.db.load_power_lines([{
-        'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
-        'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': l.line_id,
-        'voltage_level': getattr(l, 'voltage_level', ''),
-    } for l in controller.pl_manager.lines])
-    controller._save_power_lines_to_yaml()
+    controller._reload_pl_db()
     return jsonify({'status': 'ok', 'imported': count})
 
 
@@ -713,6 +753,29 @@ def api_stats_dashboard():
     })
 
 
+@app.route('/api/airspace')
+def api_airspace():
+    """返回空域区域 (禁飞区/管制空域) 用于地图渲染"""
+    global controller
+    if not controller or not controller.airspace_manager:
+        return jsonify([])
+    try:
+        from core.airspace import check_airspace_violation
+        zones = controller.airspace_manager.fetch()
+        return jsonify([{
+            'zone_id': z.zone_id,
+            'name': z.name,
+            'zone_type': z.zone_type,
+            'vertices': z.vertices,
+            'altitude_floor': z.altitude_floor,
+            'altitude_ceiling': z.altitude_ceiling,
+            'source': z.source,
+        } for z in zones])
+    except Exception as e:
+        logger.warning("获取空域数据失败: %s", e)
+        return jsonify([])
+
+
 @app.route('/api/archive/<drone_id>')
 @require_web_auth
 def api_archive_drone(drone_id):
@@ -758,6 +821,9 @@ class WebController:
         self._loop = None
         self._thread = None
         self._wifi_interface = None
+        self._serial_device = "/dev/ttyUSB0"
+        self._serial_baud = 115200
+        self._lock = threading.Lock()
 
         # 使用共享工厂初始化所有核心组件
         from core.bootstrap import bootstrap_core
@@ -775,6 +841,7 @@ class WebController:
         self.pilot_notifier = core['pilot_notifier']
         self.pipeline = core['pipeline']
         self.backhaul = core['backhaul']
+        self.airspace_manager = core.get('airspace_manager')
         self.thresholds = core['thresholds']
 
         self.backhaul.start()
@@ -817,26 +884,47 @@ class WebController:
         with open(str(self._pl_file), 'w', encoding='utf-8') as f:
             yaml.dump(pl_data, f, allow_unicode=True, default_flow_style=False)
 
+    def _reload_pl_db(self):
+        """将内存中的电力线列表重新加载到 SQLite (用于 CRUD 后的持久化)"""
+        self.db.load_power_lines([{
+            'name': l.name, 'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
+            'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2, 'id': l.line_id,
+            'voltage_level': getattr(l, 'voltage_level', ''),
+        } for l in self.pl_manager.lines])
+        self._save_power_lines_to_yaml()
+
     def _stale_drone_cleanup_loop(self):
-        """后台线程：定期将超时无人机标记为 gone"""
+        """后台线程：定期标记过期无人机 + 清理过期数据 + 清理告警内存"""
         stale_timeout = self._config.get('stale_timeout', 120)
+        iteration = 0
         while not self._stale_cleanup_event.is_set():
             self._stale_cleanup_event.wait(timeout=30)
             if self._stale_cleanup_event.is_set():
                 break
+            iteration += 1
             try:
                 count = self.db.mark_stale_drones_as_gone(stale_timeout)
                 if count > 0:
                     self._log(f"清理 {count} 个过期无人机", "info")
+                # 每隔 1 小时 (120 * 30s) 清理过期数据
+                if iteration % 120 == 0:
+                    self.db.cleanup_stale_data()
+                # 清理告警系统内存中的过期条目
+                active_ids = {d['id'] for d in self.db.get_active_drones()}
+                self.alert_system.cleanup_stale(active_ids)
             except Exception:
                 pass
 
-    def switch_mode(self, mode, wifi_interface=None):
-        """切换接收模式 (不重建 DB)"""
-        self.stop()
-        self.mode = mode
-        self._wifi_interface = wifi_interface
-        self.start()
+    def switch_mode(self, mode, wifi_interface=None,
+                    serial_device="/dev/ttyUSB0", serial_baud=115200):
+        """切换接收模式 (不重建 DB, 线程安全)"""
+        with self._lock:
+            self.stop()
+            self.mode = mode
+            self._wifi_interface = wifi_interface
+            self._serial_device = serial_device
+            self._serial_baud = serial_baud
+            self.start()
 
     def start(self):
         self.running = True
@@ -925,6 +1013,13 @@ class WebController:
                 callback=safe_callback,
                 interface=self._wifi_interface,
             )
+        elif self.mode == 'serial':
+            from receiver.serial import create_serial_receiver
+            self._receiver = create_serial_receiver(
+                callback=safe_callback,
+                device=self._serial_device,
+                baud=self._serial_baud,
+            )
         else:
             self._receiver = BLE_RIDReceiver(
                 callback=safe_callback,
@@ -932,7 +1027,7 @@ class WebController:
             )
 
         async def runner():
-            mode_names = {'ble': 'BLE 蓝牙', 'wifi': 'WiFi'}
+            mode_names = {'ble': 'BLE 蓝牙', 'wifi': 'WiFi', 'serial': '串口'}
             self._log(f"系统启动 ({mode_names.get(self.mode, self.mode)}模式)", "info")
             await self._receiver.start()
 
@@ -974,20 +1069,32 @@ def main():
     parser.add_argument('--port', type=int, default=5000)
     parser.add_argument('--host', default='127.0.0.1')
     args = parser.parse_args()
-    
-    global controller
+
+    global controller, live_feed
     controller = WebController()
     controller.switch_mode('simulated')
+
+    # 初始化 MQTT→WebSocket 实时推送 (可选, 未配置 MQTT 时退化为轮询)
+    mqtt_cfg = controller._config.get("mqtt", {})
+    if mqtt_cfg.get("enabled", False):
+        from core.live_feed import LiveFeed
+        live_feed = LiveFeed(mqtt_cfg, socketio)
+        live_feed.start()
+        logger.info("LiveFeed MQTT→WebSocket 已启用")
+    else:
+        logger.info("MQTT 未启用, 使用传统 AJAX 轮询模式")
 
     logger.info("Drone RID Receiver Web GUI 启动")
     logger.info("浏览器打开: http://%s:%s", args.host, args.port)
     logger.info("按 Ctrl+C 停止")
-    
+
     try:
-        app.run(host=args.host, port=args.port, debug=False)
+        socketio.run(app, host=args.host, port=args.port, debug=False, allow_unsafe_werkzeug=True)
     except KeyboardInterrupt:
         pass
     finally:
+        if live_feed:
+            live_feed.stop()
         if controller:
             controller.shutdown()
 

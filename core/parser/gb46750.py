@@ -190,10 +190,17 @@ _MSG_LENGTHS = {
 
 
 def _looks_like_mac(b: bytes) -> bool:
-    """检查 6 字节是否像有效 MAC (非全零/全FF, unicast)"""
+    """检查 6 字节是否像有效 MAC (非全零/全FF, unicast, OUI 合理)
+
+    避免将 BLE Service Data 头 (counter=0, version=0, MSG_BASIC_ID=0, ...)
+    误判为 WiFi Nanobeacon 的 MAC 前缀。
+    """
     if len(b) < 6:
         return False
-    if b == b'\x00\x00\x00\x00\x00\x00' or b == b'\xff\xff\xff\xff\xff\xff':
+    if b[0:6] in (b'\x00\x00\x00\x00\x00\x00', b'\xff\xff\xff\xff\xff\xff'):
+        return False
+    # IEEE 不分配 OUI 00:00:00, 前 3 字节全零必然是解析数据而非 MAC
+    if b[0:3] == b'\x00\x00\x00':
         return False
     # bit 0 of byte 0 = multicast flag, must be 0 for unicast device
     if b[0] & 0x01:

@@ -56,8 +56,8 @@ def bootstrap_core(config: Optional[dict] = None, *,
 
     # ── 电力线 ──
     pl_manager = PowerLineManager()
+    pl_file = None  # headless 模式下为 None, 由 cloud 同步
     if headless:
-        # 边缘设备: 初始为空，由云同步
         logger.info("Headless 模式: 电力线管理器初始化为空，等待云端同步")
     else:
         pl_file = config.get("power_lines_file", "config/power_lines.yaml")
@@ -119,10 +119,29 @@ def bootstrap_core(config: Optional[dict] = None, *,
     from core.pilot_notify import create_pilot_notifier
     pilot_notifier = create_pilot_notifier(config)
 
-    # ── 北斗 + 数据回传 ──
-    from core.beidou import create_beidou
+    # ── 空域数据源 (禁飞区 / 管制空域) ──
+    airspace_manager = None
+    if config.get("airspace", {}).get("enabled", False):
+        from core.airspace import CompositeAirspaceSource, YAMLAirspaceSource, UOMAirspaceSource
+        airspace_manager = CompositeAirspaceSource()
+        src_cfgs = config.get("airspace", {}).get("sources", [])
+        for src in src_cfgs:
+            src_type = src.get("type", "")
+            if src_type == "yaml":
+                yaml_path = _resolve_path(src.get("path", "config/power_lines.yaml"), base_dir)
+                airspace_manager.add_source(YAMLAirspaceSource(yaml_path))
+            elif src_type == "uom":
+                airspace_manager.add_source(UOMAirspaceSource(
+                    app_id=src.get("app_id", ""),
+                    app_key=src.get("app_key", ""),
+                    base_url=src.get("base_url", "https://uom.caac.gov.cn/api"),
+                    cache_ttl=src.get("cache_ttl", 3600),
+                    cache_path=src.get("cache_path", "data/uom_cache.json"),
+                ))
+        logger.info("空域数据源已启用: %s", airspace_manager.source_name)
+
+    # ── 数据回传 ──
     from core.backhaul import BackhaulManager
-    beidou = create_beidou(config)
     device_name = config.get('backhaul', {}).get('device_name', 'NW-F1')
 
     # MQTT channel (mTLS 认证, 替代 HTTP + JWT)
@@ -147,7 +166,7 @@ def bootstrap_core(config: Optional[dict] = None, *,
         logger.info("MQTT channel 已创建: %s:%d", broker.get('host'), broker.get('port'))
 
     backhaul = BackhaulManager(
-        config, beidou, db,
+        config, db,
         device_name=device_name,
         mqtt_channel=mqtt_channel,
         pl_manager=pl_manager,
@@ -163,6 +182,7 @@ def bootstrap_core(config: Optional[dict] = None, *,
         device_name=device_name,
         raw_archive=raw_archive,
         pilot_notifier=pilot_notifier,
+        airspace_manager=airspace_manager,
     )
 
     return {
@@ -174,7 +194,7 @@ def bootstrap_core(config: Optional[dict] = None, *,
         'trajectory_recorder': trajectory_recorder,
         'raw_archive': raw_archive,
         'pilot_notifier': pilot_notifier,
-        'beidou': beidou,
+        'airspace_manager': airspace_manager,
         'backhaul': backhaul,
         'pipeline': pipeline,
         'thresholds': thresholds,

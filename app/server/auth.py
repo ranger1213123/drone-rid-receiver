@@ -23,9 +23,16 @@ bp = Blueprint("auth", __name__)
 def _get_jwt_secret():
     """优先从 Flask app config 读取，回落环境变量"""
     try:
-        return current_app.config.get("JWT_SECRET_KEY") or os.environ.get("JWT_SECRET_KEY", "dev-secret-change-me")
+        secret = current_app.config.get("JWT_SECRET_KEY") or os.environ.get("JWT_SECRET_KEY", "")
     except RuntimeError:
-        return os.environ.get("JWT_SECRET_KEY", "dev-secret-change-me")
+        secret = os.environ.get("JWT_SECRET_KEY", "")
+    if not secret or secret == "dev-secret-change-me":
+        import logging
+        logging.getLogger(__name__).critical(
+            "JWT_SECRET_KEY 未配置或使用默认值! 生产环境必须设置此环境变量, 否则令牌可被伪造"
+        )
+        secret = secret or "dev-secret-change-me"
+    return secret
 
 
 def _load_device_secrets():
@@ -70,6 +77,15 @@ def issue_token():
             return jsonify({"error": "unknown device"}), 403
         if device_secret != expected:
             return jsonify({"error": "invalid device_secret"}), 403
+
+        # 检查设备证书是否已吊销
+        try:
+            from .cert_manager import get_cert_manager
+            cm = get_cert_manager()
+            if cm and cm.is_device_revoked(device_name):
+                return jsonify({"error": "device certificate revoked"}), 403
+        except Exception:
+            pass  # cert_manager 不可用时不阻断 (如未初始化)
 
         expire_seconds = int(os.environ.get("JWT_EXPIRE_SECONDS", "86400"))
         now = int(time.time())

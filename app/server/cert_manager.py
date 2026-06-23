@@ -161,9 +161,27 @@ class CertManager:
             "serial": cert_serial_hex,
         }
 
-    def revoke_device_cert(self, device_name: str):
-        """标记设备证书已吊销 (当前仅记录日志, CRL 后续实现)"""
-        logger.info("设备证书已吊销: device=%s (CRL 待实现)", device_name)
+    def revoke_device_cert(self, device_name: str) -> bool:
+        """吊销设备证书 — 标记 revoked 并清除 client_cert"""
+        from .models import get_session, DeviceSecret
+        sess = get_session()
+        d = sess.get(DeviceSecret, device_name)
+        if not d:
+            logger.warning("设备不存在, 无法吊销: %s", device_name)
+            return False
+        d.revoked = True
+        d.revoked_at = datetime.now(timezone.utc)
+        d.client_cert = None  # 清除已泄露的证书
+        sess.commit()
+        logger.warning("设备证书已吊销: device=%s serial=%s", device_name, d.cert_serial or "N/A")
+        return True
+
+    def is_device_revoked(self, device_name: str) -> bool:
+        """检查设备证书是否已吊销"""
+        from .models import get_session, DeviceSecret
+        sess = get_session()
+        d = sess.get(DeviceSecret, device_name)
+        return d is not None and d.revoked
 
     def get_device_cert_info(self, device_name: str) -> Optional[dict]:
         """查询已签发证书信息 (从 DeviceSecret 表)"""

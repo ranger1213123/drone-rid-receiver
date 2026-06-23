@@ -144,8 +144,8 @@ def _parse_astm_pack(data: bytes, mac_address: str = "", rssi: int = 0) -> Parse
     from .gb46750 import _looks_like_mac
     if len(data) >= 10 and _looks_like_mac(data[0:6]) and data[6] <= 7:
         offset = 7
-    # BLE: [Counter(1-7)][Version][Messages]
-    elif len(data) >= 2 and 1 <= data[0] <= 7:
+    # BLE: [Counter(0-7)][Version][Messages]  (counter=0 is valid first message)
+    elif len(data) >= 2 and 0 <= data[0] <= 7:
         offset = 2
     # WiFi Beacon IE: [Messages] 直接
     else:

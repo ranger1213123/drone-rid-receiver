@@ -19,6 +19,7 @@ from .models import (
     get_settings, get_setting, set_setting,
     add_audit_log, get_audit_logs,
     get_device_secrets, upsert_device_secret, delete_device_secret,
+    get_personnel_by_station, get_all_personnel, upsert_personnel, delete_personnel,
 )
 from .auth import require_auth
 from logging_config import get_logger
@@ -324,6 +325,45 @@ def api_users():
     return jsonify({"status": "ok" if ok else "not found"})
 
 
+# ── Personnel (站点负责人) ──
+
+@bp.route("/api/personnel", methods=["GET", "POST", "DELETE"])
+@require_web_auth
+def api_personnel():
+    if request.method == "GET":
+        station_name = request.args.get("station", "").strip() or None
+        station_filter = _user_station()
+        if station_filter:
+            station_name = station_filter
+        return jsonify(get_all_personnel(station_name=station_name))
+
+    if session["user"].get("role") != "admin":
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    data = request.json or {}
+
+    if request.method == "POST":
+        station_name = (data.get("station_name") or "").strip()
+        name = (data.get("name") or "").strip()
+        phone = (data.get("phone") or "").strip()
+        if not station_name or not phone:
+            return jsonify({"error": "站点名称和联系电话不能为空"}), 400
+        upsert_personnel(station_name=station_name, name=name, phone=phone)
+        add_audit_log(session["user"]["username"], "INSERT", "station_personnel", None,
+                      f"新增站点人员: {station_name}/{name}/{phone}")
+        return jsonify({"status": "ok"})
+
+    # DELETE
+    personnel_id = data.get("id")
+    if not personnel_id:
+        return jsonify({"error": "缺少 id 参数"}), 400
+    ok = delete_personnel(int(personnel_id))
+    if ok:
+        add_audit_log(session["user"]["username"], "DELETE", "station_personnel",
+                      personnel_id, f"删除站点人员 id={personnel_id}")
+    return jsonify({"status": "ok" if ok else "not found"})
+
+
 # ── Alerts ──
 
 @bp.route("/api/alerts/history")
@@ -596,3 +636,22 @@ def api_delete_device(device_name):
         add_audit_log(session["user"]["username"], "DELETE", "device_secrets", None,
                       f"注销设备: {device_name}")
     return jsonify({"status": "ok" if ok else "not found"})
+
+
+@bp.route("/api/devices/<device_name>/revoke", methods=["POST"])
+@require_admin
+def api_revoke_device(device_name):
+    """吊销设备证书"""
+    try:
+        from .cert_manager import get_cert_manager
+        cm = get_cert_manager()
+        if not cm:
+            return jsonify({"error": "证书管理器未初始化"}), 503
+        ok = cm.revoke_device_cert(device_name)
+        if ok:
+            add_audit_log(session["user"]["username"], "REVOKE", "device_secrets", None,
+                          f"吊销设备证书: {device_name}")
+            return jsonify({"status": "ok"})
+        return jsonify({"error": "设备不存在"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

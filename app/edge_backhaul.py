@@ -21,7 +21,6 @@ from core.service_common import (
 
 setup_syspath()
 from logging_config import get_logger
-from core.beidou import create_beidou
 from core.backhaul import BackhaulManager
 
 logger = get_logger("backhaul")
@@ -82,12 +81,9 @@ def main():
         )
         logger.info("MQTT channel 已创建: %s:%d", broker.get("host"), broker.get("port"))
 
-    # 北斗
-    beidou = create_beidou(config)
-
     # 回传管理器
     backhaul = BackhaulManager(
-        config, beidou, db,
+        config, db,
         device_name=device_name,
         mqtt_channel=mqtt_channel,
     )

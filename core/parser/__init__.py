@@ -28,6 +28,7 @@ from .types import (
     LOC_STATUS_TIMESTAMP_VALID,
     BasicIDMessage, LocationMessage, SelfIDMessage,
     SystemMessage, OperatorIDMessage, ParsedRID,
+    ReceiverType,
     parse_basic_id, parse_self_id,
 )
 
@@ -111,10 +112,55 @@ def parse_rid_pack(
     return proto.parse_message_pack(data, mac_address, rssi)
 
 
+def create_receiver(receiver_type: "ReceiverType", wifi_interface: str = None,
+                    serial_device: str = "/dev/ttyUSB0", serial_baud: int = 115200,
+                    drone_count: int = 6, update_interval: float = 1.0):
+    """接收器工厂 — 根据 ReceiverType 创建对应的接收器实例
+
+    返回的接收器具有 set_callback() 和 start()/stop() 方法。
+    BLE/WiFi 依赖缺失时回退到模拟接收器。
+    """
+    if receiver_type == ReceiverType.SIMULATED:
+        from receiver.simulated import create_simulated_receiver
+        return create_simulated_receiver(callback=None, drone_count=drone_count,
+                                         update_interval=update_interval)
+    elif receiver_type == ReceiverType.WIFI:
+        try:
+            from receiver.wifi import create_wifi_receiver
+            return create_wifi_receiver(callback=None, interface=wifi_interface)
+        except (ImportError, OSError) as e:
+            from logging_config import get_logger
+            get_logger(__name__).warning("WiFi 接收器不可用 (%s), 回退到模拟模式", e)
+            from receiver.simulated import create_simulated_receiver
+            return create_simulated_receiver(callback=None, drone_count=drone_count,
+                                             update_interval=update_interval)
+    elif receiver_type == ReceiverType.SERIAL:
+        try:
+            from receiver.serial import create_serial_receiver
+            return create_serial_receiver(callback=None, device=serial_device, baud=serial_baud)
+        except (ImportError, OSError) as e:
+            from logging_config import get_logger
+            get_logger(__name__).warning("串口接收器不可用 (%s), 回退到模拟模式", e)
+            from receiver.simulated import create_simulated_receiver
+            return create_simulated_receiver(callback=None, drone_count=drone_count,
+                                             update_interval=update_interval)
+    else:  # BLE / AUTO
+        try:
+            from receiver.ble import BLE_RIDReceiver
+            return BLE_RIDReceiver(callback=None, scan_duration=5.0)
+        except ImportError as e:
+            from logging_config import get_logger
+            get_logger(__name__).warning("BLE 接收器不可用 (%s), 回退到模拟模式", e)
+            from receiver.simulated import create_simulated_receiver
+            return create_simulated_receiver(callback=None, drone_count=drone_count,
+                                             update_interval=update_interval)
+
+
 __all__ = [
     # types
     "BasicIDMessage", "LocationMessage", "SelfIDMessage",
     "SystemMessage", "OperatorIDMessage", "ParsedRID",
+    "ReceiverType",
     # constants
     "ODID_SERVICE_UUID",
     "MSG_BASIC_ID", "MSG_LOCATION", "MSG_AUTH", "MSG_SELF_ID",
@@ -128,4 +174,6 @@ __all__ = [
     "parse_rid_pack",
     # protocol management
     "RIDProtocol", "get_active_protocol", "set_active_protocol", "configure_protocol",
+    # receiver factory
+    "create_receiver",
 ]

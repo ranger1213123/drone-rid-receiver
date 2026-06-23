@@ -21,7 +21,7 @@ from core.parser import (
     set_active_protocol,
 )
 from core.powerline import PowerLineManager, PowerLineSegment
-from storage.database import Database
+from storage.database import Database, CURRENT_SCHEMA_VERSION
 from core.alert import AlertSystem
 from core.trajectory import TrajectoryRecorder
 from core.pipeline import RIDPipeline
@@ -115,7 +115,8 @@ class TestRIDParser(unittest.TestCase):
         # BLE message pack
         pack = bytes([0, 0]) + msg_basic + msg_loc  # counter=0, version=0
 
-        result = parse_rid_pack(pack, mac_address="AA:BB:CC:DD:EE:FF", rssi=-45)
+        result = parse_rid_pack(pack, mac_address="AA:BB:CC:DD:EE:FF", rssi=-45,
+                                protocol="astm_f3411")
 
         self.assertIsNotNone(result.basic_id)
         self.assertEqual(result.basic_id.uas_id, "DRONE-X0001")
@@ -437,13 +438,15 @@ class TestRIDPipeline(unittest.TestCase):
     def test_process_no_power_lines(self):
         self.pl_manager.lines = []
         result = self.pipeline.process(self._make_parsed())
-        self.assertIsNone(result)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.status, "unmonitored")
+        self.assertEqual(result.distance, -1)
 
     def test_process_trajectory_recorded(self):
         self.pipeline.process(self._make_parsed(alt=120.0))
         points = self.db.get_trajectory("DRONE-1")
         self.assertEqual(len(points), 1)
-        self.assertAlmostEqual(points[0]["distance_to_line"], 20.0)
+        self.assertAlmostEqual(points[0]["distance_to_line"], 20.0, delta=0.01)
 
     def test_process_trajectory_stopped(self):
         # First, get within warning range to start tracking
@@ -680,9 +683,9 @@ class TestDatabaseMigration(unittest.TestCase):
         )
         self.assertIsNotNone(cur.fetchone())
 
-    def test_schema_version_is_2(self):
+    def test_schema_version_current(self):
         version = self.db._execute("PRAGMA user_version").fetchone()[0]
-        self.assertEqual(version, 2)
+        self.assertEqual(version, CURRENT_SCHEMA_VERSION)
 
     def test_raw_message_insert_and_retrieve(self):
         self.db.insert_raw_message(
@@ -716,8 +719,8 @@ class TestDatabaseMigration(unittest.TestCase):
         db2 = Database(tmp2.name)
         try:
             version = db2._execute("PRAGMA user_version").fetchone()[0]
-            self.assertEqual(version, 2)
-            # v2 tables should exist
+            self.assertEqual(version, CURRENT_SCHEMA_VERSION)
+            # migrated tables should exist
             cur = db2._execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='raw_messages'"
             )

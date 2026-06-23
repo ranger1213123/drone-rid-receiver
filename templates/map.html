@@ -6,6 +6,7 @@
 <title>Drone RID — 无人机监控</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <style>
 /* ── Design Tokens ── */
 :root{
@@ -527,6 +528,7 @@ body.sta-mode .nat-only{display:none!important}
           <button class="btn-sm" onclick="openHistModal()" style="text-align:left">历史告警</button>
           <button class="btn-sm" onclick="openAudModal()" style="text-align:left">审计日志</button>
           <button class="btn-sm sta-only" id="bufToggleBtn" onclick="toggleBufferZones()" style="text-align:left">显示阈值圈</button>
+          <button class="btn-sm" id="airspaceToggleBtn" onclick="toggleAirspace()" style="text-align:left">显示空域</button>
           <button class="btn-sm" onclick="window.location='/list'" style="text-align:left">查看列表视图</button>
         </div>
       </div>
@@ -848,6 +850,8 @@ var stationMarkers = {};
 var activeTrajDrone = null;
 var bufZoneLayers = [];
 var bufZonesVisible = false;
+var airspaceLayers = [];
+var airspaceVisible = true;
 var nationalMode = true;
 
 var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#bbb'};
@@ -1158,6 +1162,40 @@ function loadPowerLines(){
   });
 }
 
+// ═══════════ Airspace Zones ═══════════
+var airspaceZoneColors = {
+  no_fly: '#e74c3c',     // 红色 — 禁飞区
+  restricted: '#f39c12',  // 橙色 — 限制区
+  warning: '#f1c40f',     // 黄色 — 警告区
+  power_line: '#3498db',  // 蓝色 — 电力线保护区
+};
+function loadAirspace(){
+  fetch('/api/airspace').then(function(r){return r.json()}).then(function(zones){
+    airspaceLayers.forEach(function(l){map.removeLayer(l)});
+    airspaceLayers=[];
+    if(!zones||!zones.length) return;
+    zones.forEach(function(z){
+      var color=airspaceZoneColors[z.zone_type]||'#9b59b6';
+      var poly=L.polygon(z.vertices,{
+        color:color, weight:2, fillColor:color, fillOpacity:0.12, opacity:airspaceVisible?0.7:0,
+        dashArray:'6,8',
+      }).addTo(map);
+      poly.bindTooltip(
+        '<b>'+z.name+'</b> ('+z.zone_type+')<br>高度: '+z.altitude_floor+'m ~ '+z.altitude_ceiling+'m<br>来源: '+z.source,
+        {direction:'center'}
+      );
+      if(!airspaceVisible) poly.setStyle({opacity:0,fillOpacity:0});
+      airspaceLayers.push(poly);
+    });
+  }).catch(function(){});
+}
+function toggleAirspace(){
+  airspaceVisible=!airspaceVisible;
+  airspaceLayers.forEach(function(p){
+    p.setStyle({opacity:airspaceVisible?0.7:0,fillOpacity:airspaceVisible?0.12:0});
+  });
+}
+
 // ═══════════ Trajectory ═══════════
 function toggleTrajectory(droneId){
   if(activeTrajDrone===droneId){removeTrajectory(droneId);activeTrajDrone=null;}
@@ -1246,27 +1284,27 @@ function refreshPlModalList(){
   fetch('/api/powerlines').then(function(r){return r.json()}).then(function(lines){
     var div=document.getElementById('plModalList');
     if(!lines.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无电力线</div>';return}
-    div.innerHTML=lines.map(function(l,i){
-      var vl=l.voltage_level||'';
-      return '<div class="pl-entry" id="plEntry'+i+'">'
+    div.innerHTML=lines.map(function(l){
+      var lid=l.id; var vl=l.voltage_level||'';
+      return '<div class="pl-entry" id="plEntry'+lid+'">'
         +'<span style="flex:1;min-width:0">'
-        +'<b id="plEditName'+i+'">'+l.name+'</b>'
-        +(vl?' <span id="plEditVl'+i+'" style="color:var(--blue);font-size:10px">'+vl+'</span>':'')
+        +'<b id="plEditName'+lid+'">'+l.name+'</b>'
+        +(vl?' <span id="plEditVl'+lid+'" style="color:var(--blue);font-size:10px">'+vl+'</span>':'')
         +' <span style="color:var(--muted);font-size:10px">('+l.lat1.toFixed(4)+','+l.lon1.toFixed(4)+') → ('+l.lat2.toFixed(4)+','+l.lon2.toFixed(4)+') alt:'+l.alt1.toFixed(0)+'m</span>'
         +'</span>'
-        +'<span class="pl-del" onclick="editPowerLine('+i+')" style="color:var(--blue);margin-right:4px">✎</span>'
-        +'<span class="pl-del" onclick="delPowerLine('+i+')">×</span></div>';
+        +'<span class="pl-del" onclick="editPowerLine('+lid+')" style="color:var(--blue);margin-right:4px">✎</span>'
+        +'<span class="pl-del" onclick="delPowerLine('+lid+')">×</span></div>';
     }).join('');
   });
 }
 
-var _editingPlIdx=-1;
-function editPowerLine(idx){
-  if(_editingPlIdx>=0) return; // one edit at a time
-  _editingPlIdx=idx;
+var _editingPlId=-1;
+function editPowerLine(lineId){
+  if(_editingPlId>=0) return; // one edit at a time
+  _editingPlId=lineId;
   fetch('/api/powerlines').then(function(r){return r.json()}).then(function(lines){
-    var l=lines[idx]; if(!l) return;
-    var entry=document.getElementById('plEntry'+idx);
+    var l=lines.find(function(x){return x.id===lineId}); if(!l) return;
+    var entry=document.getElementById('plEntry'+lineId);
     var vlOptions=['','10kV','35kV','66kV','110kV','220kV','330kV','500kV','750kV','±800kV','1000kV']
       .map(function(v){return '<option value="'+v+'"'+(v===(l.voltage_level||'')?' selected':'')+'>'+(v||'无')+(v?' — '+({10:'5.5',35:'6.5',66:'7.0',110:'7.0',220:'8.5',330:'9.5',500:'14.0',750:'19.5','±800':'21.0',1000:'27.0'}[v.replace('kV','').replace('±','').replace('800','')]||'')+'m':'')+'</option>'
       }).join('');
@@ -1276,24 +1314,24 @@ function editPowerLine(idx){
       +'<input id="plEditInpAlt1" type="number" step="0.1" value="'+l.alt1+'" style="width:55px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点1海拔">'
       +'<input id="plEditInpAlt2" type="number" step="0.1" value="'+l.alt2+'" style="width:55px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点2海拔">'
       +'</span>'
-      +'<span class="pl-del" onclick="savePowerLine('+idx+')" style="color:var(--green);margin-right:4px">✓</span>'
+      +'<span class="pl-del" onclick="savePowerLine('+lineId+')" style="color:var(--green);margin-right:4px">✓</span>'
       +'<span class="pl-del" onclick="cancelEditPl()">✗</span>';
   });
 }
 function cancelEditPl(){
-  _editingPlIdx=-1;
+  _editingPlId=-1;
   refreshPlModalList();
 }
-function savePowerLine(idx){
+function savePowerLine(lineId){
   var data={
     name:document.getElementById('plEditInpName').value,
     voltage_level:document.getElementById('plEditInpVl').value,
     alt1:parseFloat(document.getElementById('plEditInpAlt1').value)||0,
     alt2:parseFloat(document.getElementById('plEditInpAlt2').value)||0
   };
-  fetch('/api/powerlines/'+idx,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  fetch('/api/powerlines/'+lineId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(function(r){return r.json()}).then(function(){
-      _editingPlIdx=-1;
+      _editingPlId=-1;
       refreshPlModalList();
       loadPowerLines();
     }).catch(catchErr('保存电力线失败'));
@@ -1320,8 +1358,8 @@ function addPowerLine(){
     }).catch(catchErr('添加电力线失败'));
 }
 
-function delPowerLine(idx){
-  fetch('/api/powerlines/'+idx,{method:'DELETE'}).then(function(r){return r.json()}).then(function(){
+function delPowerLine(lineId){
+  fetch('/api/powerlines/'+lineId,{method:'DELETE'}).then(function(r){return r.json()}).then(function(){
     refreshPlModalList();
     loadPowerLines();
   }).catch(catchErr('删除电力线失败'));
@@ -1866,10 +1904,107 @@ document.addEventListener('click',function f(){
   if(window.Notification&&Notification.permission==='default') Notification.requestPermission();
 },{once:true});
 
+// ═══════════ WebSocket real-time push (with polling fallback) ═══════════
+var socket=null;
+var wsEnabled=false;
+
+function initSocket(){
+  socket=io({transports:['websocket','polling'],reconnectionDelay:3000,reconnectionDelayMax:10000});
+  socket.on('connect',function(){
+    wsEnabled=true;
+    console.log('WS connected');
+  });
+  socket.on('disconnect',function(){
+    wsEnabled=false;
+    console.log('WS disconnected, fallback to polling');
+  });
+  socket.on('drone_update',function(d){
+    if(!d||!d.drone_id) return;
+    // Update cached drone
+    var found=false;
+    if(!cachedDrones) cachedDrones=[];
+    for(var i=0;i<cachedDrones.length;i++){
+      if(cachedDrones[i].id===d.drone_id){
+        cachedDrones[i].last_lat=d.lat;
+        cachedDrones[i].last_lon=d.lon;
+        cachedDrones[i].last_alt=d.alt;
+        cachedDrones[i].min_distance=d.distance;
+        cachedDrones[i].line_name=d.line;
+        cachedDrones[i].status=d.status;
+        found=true; break;
+      }
+    }
+    if(!found){
+      cachedDrones.push({id:d.drone_id,last_lat:d.lat,last_lon:d.lon,last_alt:d.alt,min_distance:d.distance,line_name:d.line,status:d.status});
+    }
+    // Throttle UI updates to ~1/sec per drone
+    var key='_ws_upd_'+d.drone_id;
+    if(!updateAll[key]||Date.now()-updateAll[key]>1000){
+      updateAll[key]=Date.now();
+      updateMarkersFromCache();
+    }
+  });
+  socket.on('alert_update',function(a){
+    if(!a) return;
+    if(a.level==='critical'||a.level==='severe'){
+      playAlertBeep(a.level);
+      if(window.Notification&&Notification.permission==='granted'){
+        new Notification('['+(a.level==='critical'?'危险':'严重')+'] '+a.drone_id,{body:'距离 '+a.line_name+' '+a.distance.toFixed(0)+'m',tag:a.drone_id});
+      }
+    }
+  });
+}
+
+// Lightweight marker update from cache (no fetch)
+function updateMarkersFromCache(){
+  var d=cachedDrones||[];
+  var seen={};
+  d.forEach(function(dr){
+    if(dr.last_lat==null||dr.last_lon==null)return;
+    var id=dr.id||'?';seen[id]=true;
+    var lat=dr.last_lat,lon=dr.last_lon;
+    var s=dr.status||'active';
+    var color=markerColor(s),radius=markerRadius(s);
+    if(droneMarkers[id]){
+      droneMarkers[id].setLatLng([lat,lon]);
+      droneMarkers[id].setStyle({color:color,fillColor:color});
+      droneMarkers[id].setRadius(radius);
+      droneMarkers[id].unbindPopup();
+      droneMarkers[id].bindPopup(popupContent(dr));
+    }else{
+      var m=L.circleMarker([lat,lon],{radius:radius,color:color,fillColor:color,fillOpacity:.55,weight:2.5}).addTo(map);
+      m.bindPopup(popupContent(dr));droneMarkers[id]=m;
+    }
+  });
+  Object.keys(droneMarkers).forEach(function(k){if(!seen[k]){map.removeLayer(droneMarkers[k]);delete droneMarkers[k]}});
+}
+
+// Full poll fallback: runs every 5s when WS is active (light sync), 2s when offline
+function pollFallback(){
+  if(wsEnabled){
+    // Lightweight sync: only update stats/backhaul, markers handled by WS
+    fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+      document.getElementById('footerTime').textContent='更新 '+d.now+' [WS]';
+      updateComms(d.backhaul,'comm');
+    });
+  }else{
+    updateAll();
+  }
+}
+
+// Dynamic polling: checks wsEnabled each cycle instead of freezing at init
+function schedulePoll(){
+  pollFallback();
+  setTimeout(schedulePoll, wsEnabled ? 5000 : 2000);
+}
+
 // ═══════════ Init ═══════════
+initSocket();
 updateAll();
-setInterval(updateAll,2000);
+schedulePoll();
+loadAirspace();
 setInterval(function(){if(!nationalMode) loadPowerLines();},60000);
+setInterval(loadAirspace, 600000); // 空域数据每 10 分钟刷新
 </script>
 </body>
 </html>

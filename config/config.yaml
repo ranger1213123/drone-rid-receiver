@@ -1,3 +1,6 @@
+# 电力线坐标系统: wgs84 (默认) 或 gcj02 (国测局/火星坐标系)
+# 若为 gcj02, 加载时自动转换为 wgs84 以对齐无人机 GPS 坐标
+coordinate_system: wgs84
 protocol: gb46750
 ble:
   scan_duration: 5

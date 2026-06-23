@@ -48,12 +48,13 @@ def api_status():
             "offline": total_devices - online_devices,
             "list": devices,
         },
-        "drones": {
+        "drones": drones,  # 数组, 与边缘 API 格式一致
+        "drone_count": active_drones,
+        "drone_stats": {
             "total": active_drones,
             "critical": crit,
             "severe": sev,
             "warning": warn,
-            "list": drones,
         },
         "alerts": [{
             "time": a["timestamp"][:19] if a["timestamp"] else "",

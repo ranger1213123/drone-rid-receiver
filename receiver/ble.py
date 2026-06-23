@@ -87,7 +87,10 @@ class BLE_RIDReceiver(RIDReceiver):
                 self._seen_drones.add(parsed.drone_id)
                 logger.info("发现无人机: %s (MAC: %s, RSSI: %d)",
                             parsed.drone_id, device.address[:17], rssi)
-            self.callback(parsed)
+            try:
+                self.callback(parsed)
+            except Exception:
+                pass  # 回调异常不影响扫描器
 
     async def start(self):
         """启动 BLE 持续扫描"""

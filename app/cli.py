@@ -142,6 +142,9 @@ class RIDController:
 
         try:
             await receiver.start()
+            # 保持运行直到 shutdown (串口/模拟模式的 start 立即返回)
+            while self._running:
+                await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             pass
         finally:
@@ -174,9 +177,9 @@ def main():
     )
     parser.add_argument(
         "--mode", "-m",
-        choices=["ble", "wifi", "simulated"],
+        choices=["ble", "wifi", "simulated", "serial"],
         default="simulated",
-        help="接收模式: simulated (模拟演示) / ble (真实BLE) / wifi (WiFi Beacon)"
+        help="接收模式: simulated (模拟演示) / ble (真实BLE) / wifi (WiFi Beacon) / serial (ESP32串口)"
     )
     parser.add_argument(
         "--scan-duration",
@@ -188,6 +191,17 @@ def main():
         "--wifi-interface", "-i",
         default=None,
         help="WiFi 网卡接口名称 (如 Wi-Fi, wlan0)"
+    )
+    parser.add_argument(
+        "--serial-device",
+        default="/dev/ttyUSB0",
+        help="串口设备路径 (默认: /dev/ttyUSB0)"
+    )
+    parser.add_argument(
+        "--serial-baud",
+        type=int,
+        default=115200,
+        help="串口波特率 (默认: 115200)"
     )
     args = parser.parse_args()
 
@@ -220,6 +234,13 @@ def main():
         receiver = create_wifi_receiver(
             callback=safe_callback,
             interface=args.wifi_interface,
+        )
+    elif args.mode == "serial":
+        from receiver.serial import create_serial_receiver
+        receiver = create_serial_receiver(
+            callback=safe_callback,
+            device=args.serial_device,
+            baud=args.serial_baud,
         )
     else:
         receiver = BLE_RIDReceiver(

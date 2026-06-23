@@ -8,11 +8,14 @@ import json
 from dataclasses import dataclass
 from typing import Optional, TYPE_CHECKING
 
+from logging_config import get_logger
 from storage.database import Database
 from core.powerline import PowerLineManager, PowerLineSegment
 from core.alert import AlertSystem
 from core.trajectory import TrajectoryRecorder
 from core.parser import ParsedRID, get_active_protocol
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from core.raw_archive import RawArchiveManager
@@ -116,7 +119,30 @@ class RIDPipeline:
         )
 
         if nearest_line is None:
-            return None
+            # 无电力线数据时不丢弃无人机位置 — 仍入库, 标记为 "unmonitored"
+            self.db.upsert_drone(
+                drone_id=drone_id,
+                lat=loc.latitude,
+                lon=loc.longitude,
+                alt=loc.altitude_geodetic,
+                speed=loc.speed_horizontal,
+                heading=getattr(loc, 'track_angle', 0) or 0,
+                ua_type=ua_type,
+                takeoff_lat=takeoff_lat,
+                takeoff_lon=takeoff_lon,
+                operator_lat=op_lat if op_lat != 0 else None,
+                operator_lon=op_lon if op_lon != 0 else None,
+            )
+            return PipelineResult(
+                drone_id=drone_id,
+                latitude=loc.latitude,
+                longitude=loc.longitude,
+                altitude=loc.altitude_geodetic,
+                nearest_line=None,
+                distance=-1,
+                status="unmonitored",
+                alert_level=None,
+            )
 
         # 3. 判断状态
         status = "active"
@@ -126,6 +152,22 @@ class RIDPipeline:
             status = "severe"
         elif distance <= self.thresholds.get("warning", 200):
             status = "warning"
+
+        # 3a. 空域检查 (禁飞区 / 管制空域)
+        in_airspace = None
+        if self.airspace_manager:
+            try:
+                from core.airspace import check_airspace_violation
+                zones = self.airspace_manager.fetch()
+                if zones:
+                    in_airspace = check_airspace_violation(
+                        loc.latitude, loc.longitude, loc.altitude_geodetic, zones
+                    )
+                    if in_airspace:
+                        logger.info("无人机 %s 位于空域 [%s] (%s)",
+                                    drone_id, in_airspace.name, in_airspace.zone_type)
+            except Exception as e:
+                logger.warning("空域检查失败: %s", e)
 
         self.db.update_drone_distance(
             drone_id=drone_id,
@@ -179,6 +221,10 @@ class RIDPipeline:
                 "altitude": loc.altitude_geodetic,
                 "distance_to_line": distance,
                 "nearest_line": nearest_line.name, "status": status,
+                "drone_model": drone_model,
+                "ua_type": ua_type,
+                "takeoff_lat": takeoff_lat, "takeoff_lon": takeoff_lon,
+                "operator_lat": op_lat, "operator_lon": op_lon,
                 "timestamp": now,
             }
             self.db.insert_outbox(report_payload, "/api/report", topic_suffix="report")

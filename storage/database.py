@@ -20,7 +20,7 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 # 当前数据库 schema 版本
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 7
 
 # SQLITE_BUSY 重试配置
 MAX_RETRIES = 3
@@ -38,6 +38,7 @@ class Database:
         self._apply_pragmas()
         self._init_tables()
         self._check_schema_version()
+        self._check_integrity()
 
     def _apply_pragmas(self):
         self._execute("PRAGMA journal_mode=WAL")
@@ -94,6 +95,10 @@ class Database:
             self._migrate_v3_to_v4()
         if version < 5:
             self._migrate_v4_to_v5()
+        if version < 6:
+            self._migrate_v5_to_v6()
+        if version < 7:
+            self._migrate_v6_to_v7()
 
     def _migrate_v0_to_v2(self):
         logger.info("数据库 schema 初始化至 v%d", CURRENT_SCHEMA_VERSION)
@@ -240,6 +245,40 @@ class Database:
         self._commit()
         logger.info("数据库 schema 迁移完成 v5")
 
+    def _migrate_v5_to_v6(self):
+        """v6: power_lines 表新增 sag 列 (悬链线最大垂度)"""
+        logger.info("数据库 schema 迁移 v5 → v6")
+        try:
+            self._execute("ALTER TABLE power_lines ADD COLUMN sag REAL DEFAULT 0.0")
+        except sqlite3.OperationalError:
+            pass  # 列已存在
+        self._execute("PRAGMA user_version = 6")
+        self._commit()
+        logger.info("数据库 schema 迁移完成 v6")
+
+    def _migrate_v6_to_v7(self):
+        """v7: 性能索引 + 定时清理支持"""
+        logger.info("数据库 schema 迁移 v6 → v7")
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_drones_last_seen ON drones(last_seen)",
+            "CREATE INDEX IF NOT EXISTS idx_drones_status ON drones(status)",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_level ON alerts(level)",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_drone_level ON alerts(drone_id, level)",
+            "CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_trajectories_timestamp ON trajectories(timestamp)",
+            "CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status)",
+            "CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at)",
+            "CREATE INDEX IF NOT EXISTS idx_raw_packets_received ON raw_packets(received_at)",
+        ]
+        for sql in indexes:
+            try:
+                self._execute(sql)
+            except sqlite3.OperationalError:
+                logger.debug("跳过索引 (列/表不存在): %s", sql.split("ON ")[-1] if "ON " in sql else sql)
+        self._execute("PRAGMA user_version = 7")
+        self._commit()
+        logger.info("数据库 schema 迁移完成 v7")
+
     def _init_tables(self):
         """创建数据库表"""
         self._executescript("""
@@ -323,57 +362,48 @@ class Database:
                      ua_type: int = 0, takeoff_lat: float = None,
                      takeoff_lon: float = None, operator_lat: float = None,
                      operator_lon: float = None):
-        """插入或更新无人机状态"""
+        """插入或更新无人机状态 (原子 UPSERT, 消除 TOCTOU 竞态)"""
         now = datetime.now(timezone.utc).isoformat()
-        cur = self._execute(
-            "SELECT id FROM drones WHERE id = ?", (drone_id,)
-        )
-        if cur.fetchone():
-            self._execute("""
-                UPDATE drones
-                SET last_seen = ?, last_lat = ?, last_lon = ?, last_alt = ?,
-                    last_speed = ?, last_heading = ?, ua_type = ?
-                WHERE id = ?
-            """, (now, lat, lon, alt, speed, heading, ua_type, drone_id))
-            # 起飞位仅在首次获取时写入
-            if takeoff_lat is not None and takeoff_lon is not None:
-                self._execute("""
-                    UPDATE drones SET takeoff_lat = ?, takeoff_lon = ?
-                    WHERE id = ? AND takeoff_lat IS NULL
-                """, (takeoff_lat, takeoff_lon, drone_id))
-            if operator_lat is not None and operator_lon is not None:
-                self._execute("""
-                    UPDATE drones SET operator_lat = ?, operator_lon = ?
-                    WHERE id = ? AND operator_lat IS NULL
-                """, (operator_lat, operator_lon, drone_id))
-        else:
-            self._execute("""
-                INSERT INTO drones (id, first_seen, last_seen,
-                    last_lat, last_lon, last_alt, last_speed, last_heading,
-                    ua_type, takeoff_lat, takeoff_lon, operator_lat, operator_lon, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
-            """, (drone_id, now, now, lat, lon, alt, speed, heading,
-                  ua_type, takeoff_lat, takeoff_lon, operator_lat, operator_lon))
+        self._execute("""
+            INSERT INTO drones (id, first_seen, last_seen,
+                last_lat, last_lon, last_alt, last_speed, last_heading,
+                ua_type, takeoff_lat, takeoff_lon, operator_lat, operator_lon, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+            ON CONFLICT(id) DO UPDATE SET
+                last_seen = excluded.last_seen,
+                last_lat = excluded.last_lat,
+                last_lon = excluded.last_lon,
+                last_alt = excluded.last_alt,
+                last_speed = excluded.last_speed,
+                last_heading = excluded.last_heading,
+                ua_type = excluded.ua_type,
+                takeoff_lat = COALESCE(drones.takeoff_lat, excluded.takeoff_lat),
+                takeoff_lon = COALESCE(drones.takeoff_lon, excluded.takeoff_lon),
+                operator_lat = COALESCE(drones.operator_lat, excluded.operator_lat),
+                operator_lon = COALESCE(drones.operator_lon, excluded.operator_lon)
+        """, (drone_id, now, now, lat, lon, alt, speed, heading,
+              ua_type, takeoff_lat, takeoff_lon, operator_lat, operator_lon))
         self._commit()
 
     def update_drone_distance(self, drone_id: str, distance: float,
                                line_id: int, status: str):
-        """更新无人机最小距离和状态"""
-        cur = self._execute(
-            "SELECT min_distance FROM drones WHERE id = ?", (drone_id,)
-        )
-        row = cur.fetchone()
-        if row:
-            min_dist = (
-                distance if row["min_distance"] is None
-                else min(row["min_distance"], distance)
-            )
-            self._execute("""
-                UPDATE drones
-                SET min_distance = ?, nearest_line_id = ?, status = ?
-                WHERE id = ?
-            """, (min_dist, line_id, status, drone_id))
-            self._commit()
+        """更新无人机最小距离和状态 (原子 MIN 比较)"""
+        self._execute("""
+            INSERT INTO drones (id, first_seen, last_seen, min_distance, nearest_line_id, status)
+            VALUES (?, datetime('now'), datetime('now'), ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                min_distance = CASE
+                    WHEN drones.min_distance IS NULL THEN excluded.min_distance
+                    ELSE MIN(drones.min_distance, excluded.min_distance)
+                END,
+                nearest_line_id = excluded.nearest_line_id,
+                status = CASE
+                    WHEN drones.status = 'critical' AND excluded.status != 'critical' THEN 'critical'
+                    WHEN drones.status = 'severe' AND excluded.status NOT IN ('critical','severe') THEN 'severe'
+                    ELSE excluded.status
+                END
+        """, (drone_id, distance, line_id, status))
+        self._commit()
 
     def get_active_drones(self) -> List[Dict]:
         """获取所有活跃无人机"""
@@ -412,11 +442,12 @@ class Database:
         self._execute("DELETE FROM sqlite_sequence WHERE name='power_lines'")
         for i, line in enumerate(lines, 1):
             self._execute("""
-                INSERT INTO power_lines (id, name, lat1, lon1, alt1, lat2, lon2, alt2, voltage_level)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO power_lines (id, name, lat1, lon1, alt1, lat2, lon2, alt2, voltage_level, sag)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (i, line["name"], line["lat1"], line["lon1"], line["alt1"],
                   line["lat2"], line["lon2"], line["alt2"],
-                  line.get("voltage_level", "")))
+                  line.get("voltage_level", ""),
+                  line.get("sag", 0.0)))
         self._commit()
 
     def get_power_lines(self) -> List[Dict]:
@@ -648,28 +679,70 @@ class Database:
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
 
+    def claim_pending_outbox(self, limit: int = 50) -> List[Dict]:
+        """原子认领待发送消息: pending → sending, 防止多消费者重复发送"""
+        self._execute("BEGIN IMMEDIATE")
+        try:
+            self.conn.row_factory = sqlite3.Row
+            rows = self._execute("""
+                SELECT * FROM outbox
+                WHERE status = 'pending'
+                ORDER BY priority DESC, created_at ASC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            if rows:
+                ids = [r["id"] for r in rows]
+                placeholders = ",".join("?" * len(ids))
+                self._execute(
+                    f"UPDATE outbox SET status='sending' WHERE id IN ({placeholders}) AND status='pending'",
+                    ids,
+                )
+            self._commit()
+            return [dict(r) for r in rows]
+        except Exception:
+            self.conn.rollback()
+            raise
+
     def mark_outbox_sent(self, msg_id: int):
-        self._execute("UPDATE outbox SET status = 'sent' WHERE id = ?", (msg_id,))
+        self._execute(
+            "UPDATE outbox SET status='sent' WHERE id=? AND status='sending'", (msg_id,)
+        )
         self._commit()
 
     def mark_outbox_failed(self, msg_id: int, error: str):
-        """简化版 — 仅记录错误, 不再计算指数退避。MQTT 重连后由 backhaul drain 循环自然重试"""
-        cur = self._execute(
-            "SELECT retry_count, max_retries FROM outbox WHERE id = ?", (msg_id,)
-        )
-        row = cur.fetchone()
-        if not row:
-            return
-        retry_count = row[0] + 1
-        max_retries = row[1] or 10
-        if retry_count >= max_retries:
-            self.mark_outbox_dead(msg_id)
-            return
-        self._execute("""
+        """失败回退: sending → pending, 原子递增 retry_count。超过上限则标记 dead"""
+        # 原子递增 retry_count + 状态回退, 避免 SELECT-then-UPDATE 竞态
+        cur = self._execute("""
             UPDATE outbox
-            SET retry_count = ?, last_error = ?, status = 'pending'
-            WHERE id = ?
-        """, (retry_count, error, msg_id))
+            SET retry_count = retry_count + 1,
+                last_error = ?,
+                status = CASE WHEN retry_count + 1 >= max_retries THEN 'dead' ELSE 'pending' END
+            WHERE id = ? AND status = 'sending'
+            RETURNING retry_count, max_retries
+        """, (error, msg_id))
+        row = cur.fetchone()
+        # 如果 RETURNING 不支持 (旧版 SQLite), 回退到查询
+        if not row:
+            cur2 = self._execute(
+                "SELECT retry_count, max_retries, status FROM outbox WHERE id = ?", (msg_id,)
+            )
+            row2 = cur2.fetchone()
+            if not row2:
+                return
+            if row2[2] == "dead":
+                return  # 原子 UPDATE 已标记 dead
+            if row2[2] == "sending":
+                # 旧版 SQLite 不支持 RETURNING, 手动回退
+                retry_count = row2[0] + 1
+                max_retries = row2[1] or 10
+                if retry_count >= max_retries:
+                    self.mark_outbox_dead(msg_id)
+                    return
+                self._execute(
+                    "UPDATE outbox SET retry_count=?, last_error=?, status='pending' WHERE id=?",
+                    (retry_count, error, msg_id),
+                )
+        self._commit()
         self._commit()
 
     def mark_outbox_dead(self, msg_id: int):
@@ -679,10 +752,10 @@ class Database:
         self._commit()
 
     def drain_outbox_on_start(self):
-        """重启时将 pending 消息重置为立即可重试"""
+        """重启时重置: sending → pending (崩溃恢复), 清除 pending 的延迟重试"""
         self._execute("""
-            UPDATE outbox SET next_retry_at = NULL
-            WHERE status = 'pending'
+            UPDATE outbox SET next_retry_at = NULL, status = 'pending'
+            WHERE status IN ('pending', 'sending')
         """)
         self._commit()
 
@@ -715,9 +788,33 @@ class Database:
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
 
+    def claim_unprocessed_packets(self, limit: int = 50) -> List[Dict]:
+        """原子认领未处理报文: SELECT + UPDATE 在同一事务中, 防止多消费者重复处理"""
+        self._execute("BEGIN IMMEDIATE")
+        try:
+            self.conn.row_factory = sqlite3.Row
+            rows = self._execute("""
+                SELECT * FROM raw_packets
+                WHERE processed = 0
+                ORDER BY id ASC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            if rows:
+                ids = [r["id"] for r in rows]
+                placeholders = ",".join("?" * len(ids))
+                self._execute(
+                    f"UPDATE raw_packets SET processed=1 WHERE id IN ({placeholders}) AND processed=0",
+                    ids,
+                )
+            self._commit()
+            return [dict(r) for r in rows]
+        except Exception:
+            self.conn.rollback()
+            raise
+
     def mark_packet_processed(self, packet_id: int):
         self._execute(
-            "UPDATE raw_packets SET processed = 1 WHERE id = ?", (packet_id,)
+            "UPDATE raw_packets SET processed=1 WHERE id=? AND processed=0", (packet_id,)
         )
         self._commit()
 
@@ -729,6 +826,83 @@ class Database:
             )
         """, (keep_count,))
         self._commit()
+
+    def _check_integrity(self):
+        """启动时数据库完整性检查"""
+        try:
+            result = self._execute("PRAGMA integrity_check").fetchone()
+            if result and result[0] != "ok":
+                logger.error("数据库完整性检查失败: %s", result[0])
+            else:
+                logger.debug("数据库完整性检查通过")
+        except Exception as e:
+            logger.error("数据库完整性检查异常: %s", e)
+
+    def check_integrity(self) -> bool:
+        """外部调用: 快速检查数据库是否完好"""
+        try:
+            result = self._execute("PRAGMA quick_check").fetchone()
+            return result and result[0] == "ok"
+        except Exception:
+            return False
+
+    def dead_letter_count(self) -> int:
+        """返回 outbox 死信数量 (超过重试上限的消息)"""
+        row = self._execute(
+            "SELECT COUNT(*) FROM outbox WHERE status='dead'"
+        ).fetchone()
+        return row[0] if row else 0
+
+    def dead_letter_summary(self) -> list:
+        """返回最近 20 条死信摘要, 用于通知"""
+        rows = self._execute(
+            "SELECT id, target_path, topic_suffix, retry_count, last_error, created_at "
+            "FROM outbox WHERE status='dead' ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def cleanup_stale_data(self, drone_days: int = 30, alert_days: int = 90,
+                           trajectory_days: int = 90, outbox_days: int = 7):
+        """定时清理过期数据 (由定期任务调用)"""
+        import datetime as _dt
+        drone_cut = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=drone_days)).isoformat()
+        alert_cut = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=alert_days)).isoformat()
+        traj_cut = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=trajectory_days)).isoformat()
+        outbox_cut = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=outbox_days)).isoformat()
+        raw_keep = 10000
+
+        self._execute("BEGIN IMMEDIATE")
+        try:
+            # gone 无人机超期删除
+            self._execute(
+                "DELETE FROM drones WHERE status='gone' AND last_seen < ?", (drone_cut,)
+            )
+            # 旧告警
+            self._execute(
+                "DELETE FROM alerts WHERE timestamp < ?", (alert_cut,)
+            )
+            # 旧轨迹
+            self._execute(
+                "DELETE FROM trajectories WHERE timestamp < ?", (traj_cut,)
+            )
+            # 旧 outbox (sent/dead)
+            self._execute(
+                "DELETE FROM outbox WHERE status IN ('sent','dead') AND created_at < ?", (outbox_cut,)
+            )
+            # 旧原始报文
+            self._execute(
+                "DELETE FROM raw_packets WHERE id NOT IN ("
+                "SELECT id FROM raw_packets ORDER BY id DESC LIMIT ?"
+                ")", (raw_keep,)
+            )
+            # 旧审计日志
+            self._execute(
+                "DELETE FROM audit_log WHERE timestamp < ?", (alert_cut,)
+            )
+            self._commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     # ──────────────────── 配置版本号 (边缘侧 config_sync) ────────────────────
 

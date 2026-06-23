@@ -188,7 +188,7 @@ class MainWindow(tk.Tk):
         self.mode_var = tk.StringVar(value="ble")
         mode_combo = ttk.Combobox(
             mode_frame, textvariable=self.mode_var,
-            values=["ble", "wifi"], state="readonly",
+            values=["ble", "wifi", "serial"], state="readonly",
             width=8, font=("Microsoft YaHei", 9)
         )
         mode_combo.pack(side=tk.LEFT, padx=5)
@@ -452,6 +452,18 @@ class MainWindow(tk.Tk):
             except Exception as e:
                 self.after(0, lambda: self._log_alert(
                     f"[错误] WiFi 接收器初始化失败: {e}", "critical"
+                ))
+                self.after(0, self._stop_scanning)
+                return
+        elif mode == "serial":
+            try:
+                from receiver.serial import create_serial_receiver
+                self.receiver = create_serial_receiver(
+                    callback=self._on_rid_data,
+                )
+            except Exception as e:
+                self.after(0, lambda: self._log_alert(
+                    f"[错误] 串口接收器初始化失败: {e}", "critical"
                 ))
                 self.after(0, self._stop_scanning)
                 return

@@ -1,0 +1,6 @@
+stations:
+  - name: NW-F1
+    location: "杭州市富阳区-杆塔#12"
+    lat: 30.0
+    lon: 120.0
+    alt: 50.0

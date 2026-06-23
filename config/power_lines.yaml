@@ -1,5 +1,9 @@
 # 电力线配置文件 — 演示数据 (杭州附近)
 # 每条线段: 名称 + 两个端点经纬度和海拔
+# sag: 档距中点最大垂度 (m), 未指定时由电压等级+档距自动估算
+# coordinate_system: wgs84 (默认) 或 gcj02 (国测局坐标系, 加载时自动转换)
+auto_estimate_sag: true
+coordinate_system: wgs84
 power_lines:
   - name: "杭富高压线A-北段"
     lat1: 30.0000
@@ -8,6 +12,8 @@ power_lines:
     lat2: 30.0050
     lon2: 120.0030
     alt2: 115.0
+    voltage_level: "220kV"
+    sag: 12.5
 
   - name: "杭富高压线A-南段"
     lat1: 30.0050
@@ -16,6 +22,8 @@ power_lines:
     lat2: 30.0100
     lon2: 120.0080
     alt2: 120.0
+    voltage_level: "220kV"
+    sag: 10.0
 
   - name: "富春江跨江线"
     lat1: 29.9980
@@ -24,6 +32,8 @@ power_lines:
     lat2: 30.0030
     lon2: 120.0050
     alt2: 85.0
+    voltage_level: "500kV"
+    # 跨江大档距, 未指定 sag → 按 500kV×7%=自动估算
 
   - name: "城区配电A线"
     lat1: 30.0020
@@ -32,3 +42,5 @@ power_lines:
     lat2: 30.0080
     lon2: 120.0070
     alt2: 55.0
+    voltage_level: "10kV"
+    # 短档距配电线路, sag 很小可忽略

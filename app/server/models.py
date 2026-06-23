@@ -144,6 +144,8 @@ class DeviceSecret(Base):
     client_cert = Column(Text, nullable=True)
     cert_serial = Column(String, nullable=True)
     cert_issued_at = Column(DateTime, nullable=True)
+    revoked = Column(Boolean, default=False)
+    revoked_at = Column(DateTime, nullable=True)
     station = Column(String, default="")
     created_at = Column(DateTime)
 
@@ -696,6 +698,15 @@ def upsert_personnel(station_name: str, name: str, phone: str):
     else:
         sess.add(StationPersonnel(station_name=station_name, name=name, phone=phone))
     sess.commit()
+
+
+def get_all_personnel(station_name: str = None) -> list:
+    sess = get_session()
+    q = sess.query(StationPersonnel)
+    if station_name:
+        q = q.filter(StationPersonnel.station_name == station_name)
+    return [{"id": r.id, "station_name": r.station_name,
+             "name": r.name, "phone": r.phone} for r in q.all()]
 
 
 def delete_personnel(personnel_id: int) -> bool:

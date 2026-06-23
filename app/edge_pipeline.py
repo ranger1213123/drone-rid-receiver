@@ -91,7 +91,8 @@ def main():
 
     running = setup_signal_handlers()
     while running[0]:
-        packets = receiver_db.get_unprocessed_packets(limit=50)
+        # 原子认领: SELECT + UPDATE 在同一事务中, 防止多 consumer 重复处理
+        packets = receiver_db.claim_unprocessed_packets(limit=50)
         for pkt in packets:
             try:
                 payload = pkt["payload"]
@@ -102,10 +103,8 @@ def main():
 
                 if parsed:
                     pipeline.process(parsed)
-                receiver_db.mark_packet_processed(pkt["id"])
             except Exception as e:
                 logger.error("管道处理失败 (pkt=%d): %s", pkt["id"], e)
-                receiver_db.mark_packet_processed(pkt["id"])
 
         if not packets:
             time.sleep(0.1)

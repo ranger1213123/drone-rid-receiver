@@ -46,7 +46,7 @@ class TestProtocolManagement(unittest.TestCase):
         astm_oui = get_active_protocol().wifi_oui
         set_active_protocol("gb46750")
         self.assertNotEqual(gb_oui, astm_oui)
-        self.assertEqual(gb_oui, bytes([0xBC, 0xFB, 0xFA]))
+        self.assertEqual(gb_oui, bytes([0xFA, 0x0B, 0xBC]))
 
     def tearDown(self):
         set_active_protocol("gb46750")
