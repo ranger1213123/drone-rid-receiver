@@ -570,61 +570,6 @@ class TestSMSGateway(unittest.TestCase):
         self.assertIsInstance(result, bool)
 
 
-class TestAirspace(unittest.TestCase):
-    """空域数据源测试"""
-
-    def test_point_in_polygon_inside(self):
-        from core.airspace import _point_in_polygon
-        square = [(0, 0), (0, 10), (10, 10), (10, 0)]
-        self.assertTrue(_point_in_polygon(5, 5, square))
-
-    def test_point_in_polygon_outside(self):
-        from core.airspace import _point_in_polygon
-        square = [(0, 0), (0, 10), (10, 10), (10, 0)]
-        self.assertFalse(_point_in_polygon(15, 15, square))
-
-    def test_point_in_polygon_edge(self):
-        from core.airspace import _point_in_polygon
-        triangle = [(0, 0), (10, 0), (5, 10)]
-        # Point near center
-        self.assertTrue(_point_in_polygon(5, 5, triangle))
-        # Point outside
-        self.assertFalse(_point_in_polygon(0, 10, triangle))
-
-    def test_composite_source_merges(self):
-        from core.airspace import AirspaceZone, AirspaceSource, CompositeAirspaceSource
-
-        class MockSource(AirspaceSource):
-            @property
-            def source_name(self):
-                return "mock"
-            def fetch(self):
-                return [AirspaceZone("z1", "Zone1", "no_fly", [(0,0),(1,1)], 0, 100, "mock")]
-
-        comp = CompositeAirspaceSource([MockSource(), MockSource()])
-        zones = comp.fetch()
-        self.assertEqual(len(zones), 2)
-
-    def test_check_violation(self):
-        from core.airspace import AirspaceZone, check_airspace_violation
-        zones = [
-            AirspaceZone("z1", "Zone1", "no_fly",
-                        [(0, 0), (0, 10), (10, 10), (10, 0)],
-                        0, 200, "test"),
-        ]
-        hit = check_airspace_violation(5, 5, 100, zones)
-        self.assertIsNotNone(hit)
-        self.assertEqual(hit.zone_id, "z1")
-
-    def test_check_violation_altitude_out_of_range(self):
-        from core.airspace import AirspaceZone, check_airspace_violation
-        zones = [
-            AirspaceZone("z1", "Zone1", "no_fly",
-                        [(0, 0), (0, 10), (10, 10), (10, 0)],
-                        0, 200, "test"),
-        ]
-        hit = check_airspace_violation(5, 5, 500, zones)
-        self.assertIsNone(hit)
 
 
 class TestPilotNotify(unittest.TestCase):

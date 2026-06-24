@@ -109,14 +109,6 @@ anti_flapping:
   enabled: false
   debounce_in: 3
   debounce_out: 10
-airspace:
-  enabled: false
-  sources:
-  - type: yaml
-    path: config/power_lines.yaml
-  - type: uom
-    base_url: https://uom.caac.gov.cn/api
-    app_id: ''
     app_key: ''
     cache_ttl: 3600
     cache_path: data/uom_cache.json

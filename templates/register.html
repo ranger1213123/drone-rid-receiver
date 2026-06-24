@@ -9,78 +9,70 @@
 
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
-  background:#0b1120; color:#e2e8f0; min-height:100vh;
+  background:#f0f2f5; color:#1a1d23; min-height:100vh;
   display:flex; align-items:center; justify-content:center;
-  -webkit-font-smoothing:antialiased; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
 }
 
 body::before{
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
-    linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
+    linear-gradient(rgba(0,0,0,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,0,0,.02) 1px,transparent 1px);
   background-size:60px 60px;
-}
-body::after{
-  content:''; position:fixed; width:700px; height:700px;
-  border-radius:50%; border:1px solid rgba(37,99,235,.08);
-  top:50%; left:50%; transform:translate(-50%,-50%);
-  box-shadow:0 0 200px rgba(37,99,235,.04),inset 0 0 200px rgba(37,99,235,.03);
-  z-index:0; pointer-events:none;
 }
 
 .container{
   position:relative; z-index:1;
-  background:rgba(15,23,42,.9); border:1px solid rgba(255,255,255,.06);
-  border-radius:16px; overflow:hidden;
-  box-shadow:0 0 0 1px rgba(255,255,255,.03),0 24px 80px rgba(0,0,0,.5);
+  background:#fff; border:1px solid #e0e3e8;
+  border-radius:16px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 20px rgba(0,0,0,.06);
   width:440px; max-width:94vw; padding:40px 44px;
 }
 
-h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;text-align:center}
-.sub{font-size:11px;color:#64748b;margin-bottom:28px;text-align:center}
+h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;text-align:center;color:#1a1d23}
+.sub{font-size:11px;color:#6b7280;margin-bottom:28px;text-align:center}
 
 .field{margin-bottom:16px}
 .field label{
-  display:block; font-size:10px; font-weight:600; color:#94a3b8;
+  display:block; font-size:10px; font-weight:600; color:#6b7280;
   text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px;
 }
 .field input,.field select{
-  width:100%; padding:10px 14px; background:rgba(255,255,255,.03);
-  border:1px solid rgba(255,255,255,.08); border-radius:8px;
-  color:#e2e8f0; font-size:13px; outline:none;
+  width:100%; padding:10px 14px; background:#f9fafb;
+  border:1px solid #e0e3e8; border-radius:8px;
+  color:#1a1d23; font-size:13px; outline:none;
   transition:border-color .2s,box-shadow .2s;
 }
 .field input:focus,.field select:focus{
-  border-color:rgba(37,99,235,.5);
+  border-color:#2563eb;
   box-shadow:0 0 0 3px rgba(37,99,235,.1);
 }
-.field input::placeholder{color:#475569}
-.field select{appearance:none;cursor:pointer}
-.field select option{background:#1e293b;color:#e2e8f0}
+.field input::placeholder{color:#9ca3af}
+.field select{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 
 .submit-btn{
   width:100%; padding:10px; border-radius:8px; font-size:13px; font-weight:600;
   cursor:pointer; border:none; color:#fff; letter-spacing:0.3px;
-  background:linear-gradient(135deg,#2563eb,#1d4ed8);
+  background:#2563eb;
   transition:all .2s; margin-top:4px;
 }
-.submit-btn:hover{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 4px 16px rgba(37,99,235,.3)}
+.submit-btn:hover{background:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.25)}
 .submit-btn:disabled{opacity:0.5;cursor:not-allowed}
 
 .error-msg{
-  background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.2);
-  color:#f87171; font-size:11px; padding:8px 12px; border-radius:6px;
+  background:#fef2f2; border:1px solid #fecaca;
+  color:#dc2626; font-size:11px; padding:8px 12px; border-radius:6px;
   margin-bottom:18px; text-align:center;
 }
 .success-msg{
-  background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.2);
-  color:#4ade80; font-size:11px; padding:8px 12px; border-radius:6px;
+  background:#f0fdf4; border:1px solid #bbf7d0;
+  color:#16a34a; font-size:11px; padding:8px 12px; border-radius:6px;
   margin-bottom:18px; text-align:center;
 }
 
-.footnote{font-size:10px;color:#475569;text-align:center;margin-top:20px}
-.footnote a{color:#60a5fa;text-decoration:none}
+.footnote{font-size:10px;color:#9ca3af;text-align:center;margin-top:20px}
+.footnote a{color:#2563eb;text-decoration:none}
 .footnote a:hover{text-decoration:underline}
 
 #stationField{display:block}
@@ -129,7 +121,7 @@ h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;text-a
 
 <script>
 var tenantStations = [];
-onScopeChange();  // 初始化: 默认 scope=station, 显示站点选择
+onScopeChange();
 
 function autoFormatKey(input) {
   var val = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -141,7 +133,6 @@ function autoFormatKey(input) {
 
 document.getElementById('licenseKey').addEventListener('input', function(){
   autoFormatKey(this);
-  // 密钥输入后加载该租户的站点列表
   var formatted = this.value.trim();
   if (formatted.length >= 14) loadTenantStations(formatted);
 });

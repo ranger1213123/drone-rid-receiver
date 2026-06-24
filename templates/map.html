@@ -96,10 +96,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .ctrl-row button.danger{background:var(--red); color:#fff; border-color:var(--red)}
 .ctrl-row button:disabled{opacity:.45; cursor:default}
 
-/* ═══════════ Status dot ═══════════ */
 @keyframes dotPulse{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.4)}50%{box-shadow:0 0 0 6px rgba(22,163,74,0)}}
-.st-dot{width:8px;height:8px;border-radius:50%;background:var(--red);transition:background .2s;display:inline-block;margin-right:6px}
-.st-dot.live{background:var(--green);animation:dotPulse 2s infinite}
 
 /* ═══════════ Bottom stats ═══════════ */
 .bt-stat{display:flex;align-items:center;gap:10px;padding:6px 16px;border-radius:var(--radius-sm);min-width:80px}
@@ -237,6 +234,14 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .btn-map:hover{background:#f9fafb;border-color:#b0b4bc}
 .btn-map.accent{background:var(--blue);color:#fff;border-color:var(--blue)}
 .btn-map.accent:hover{background:#1d4ed8}
+/* view toggle */
+.view-toggle{display:flex;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)}
+.view-toggle button{
+  padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;border:none;
+  background:var(--surface);color:var(--muted);transition:all var(--transition);
+}
+.view-toggle button.active{background:var(--blue);color:#fff}
+.view-toggle button:not(.active):hover{background:var(--bg)}
 
 #toggleLeftBtn, #toggleRightBtn{
   position:absolute; top:14px; z-index:801;
@@ -306,28 +311,6 @@ body.sta-mode .nat-only{display:none!important}
 .modal-actions button.danger{background:var(--red);color:#fff;border-color:var(--red)}
 .modal-actions button.danger:hover{background:#b91c1c}
 
-/* ═══════════ Draw mode ═══════════ */
-#map.draw-mode{cursor:crosshair!important}
-.draw-point-icon{
-  width:16px;height:16px;border-radius:50%;background:var(--blue);
-  border:3px solid #fff;box-shadow:0 0 0 2px var(--blue),0 2px 8px rgba(0,0,0,.3);
-  font-size:9px;color:#fff;font-weight:700;text-align:center;line-height:10px;
-}
-.draw-form-overlay{
-  display:none;position:absolute;z-index:900;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-  padding:12px 16px;box-shadow:var(--shadow-md);min-width:240px;
-}
-.draw-form-overlay input,.draw-form-overlay select{
-  width:100%;padding:5px 8px;margin:4px 0;background:var(--bg);
-  border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;
-}
-.draw-form-overlay .btn-row{display:flex;gap:6px;margin-top:8px}
-.draw-form-overlay .btn-row button{
-  flex:1;padding:5px;border-radius:var(--radius-sm);font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--border);
-}
-.draw-form-overlay .btn-row button.primary{background:var(--green);color:#fff;border-color:var(--green)}
-
 /* Station marker pulse */
 @keyframes stationPulse{
   0%,100%{box-shadow:0 0 0 0 rgba(37,99,235,.5);border-color:var(--blue)}
@@ -373,7 +356,6 @@ body.sta-mode .nat-only{display:none!important}
     <!-- Always visible -->
     <div class="brand-head">
       <div class="title">
-        <span class="st-dot stop" id="statusDot"></span>
         Drone RID Monitor
       </div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -385,8 +367,7 @@ body.sta-mode .nat-only{display:none!important}
       <select id="modeSelect">
         <option value="simulated">模拟演示</option><option value="ble">BLE 蓝牙</option><option value="wifi">WiFi</option>
       </select>
-      <button class="primary" onclick="startScan()" id="btnStart">▶</button>
-      <button class="danger" onclick="stopScan()" id="btnStop" disabled>■</button>
+
       <button class="btn-sm" onclick="openPlModal()" title="管理电力线">⚙</button>
     </div>
 
@@ -457,7 +438,7 @@ body.sta-mode .nat-only{display:none!important}
     </div>
 
     <div style="margin-top:auto;padding:6px 14px;font-size:10px;color:var(--muted);border-top:1px solid var(--border);flex-shrink:0">
-      <span id="footerStatus">已停止</span>
+
     </div>
   </div>
 
@@ -465,30 +446,10 @@ body.sta-mode .nat-only{display:none!important}
   <div id="mapWrap">
     <div id="map"></div>
     <div id="mapOverlays">
-      <button class="btn-map" id="btnDrawMode" onclick="toggleDrawMode()">绘制电力线</button>
       <button class="btn-map" onclick="exportDronesCsv()">导出无人机</button>
-      <button class="btn-map" onclick="window.location='/list'">列表视图</button>
-    </div>
-    <div class="draw-form-overlay" id="drawForm">
-      <div style="font-size:11px;font-weight:600;margin-bottom:4px">新增电力线</div>
-      <input id="drawPlName" placeholder="名称 (如 杭富线110kV#03)">
-      <select id="drawPlVoltage">
-        <option value="">电压等级 (可选)</option>
-        <option value="10kV">10kV — 5.5m</option>
-        <option value="35kV">35kV — 6.5m</option>
-        <option value="110kV">110kV — 7.0m</option>
-        <option value="220kV">220kV — 8.5m</option>
-        <option value="500kV">500kV — 14.0m</option>
-        <option value="750kV">750kV — 19.5m</option>
-        <option value="±800kV">±800kV — 21.0m</option>
-        <option value="1000kV">1000kV — 27.0m</option>
-      </select>
-      <label style="font-size:10px;color:var(--muted);margin:2px 0">
-        端点海拔 <input id="drawPlAlt" type="number" step="0.1" placeholder="自动填 0" style="width:80px;display:inline">
-      </label>
-      <div class="btn-row">
-        <button class="primary" onclick="confirmDraw()">确认</button>
-        <button onclick="cancelDraw()">取消</button>
+      <div class="view-toggle" style="box-shadow:var(--shadow)">
+        <button onclick="window.location='/list'">列表</button>
+        <button class="active">地图</button>
       </div>
     </div>
   </div>
@@ -531,8 +492,8 @@ body.sta-mode .nat-only{display:none!important}
           <button class="btn-sm" onclick="openAudModal()" style="text-align:left">审计日志</button>
           <button class="btn-sm sta-only" id="personnelBtn" onclick="openPersonnelModal()" style="text-align:left">告警联系人</button>
           <button class="btn-sm sta-only" id="bufToggleBtn" onclick="toggleBufferZones()" style="text-align:left">显示阈值圈</button>
-          <button class="btn-sm" id="airspaceToggleBtn" onclick="toggleAirspace()" style="text-align:left">显示空域</button>
-          <button class="btn-sm" onclick="window.location='/list'" style="text-align:left">查看列表视图</button>
+
+
           <button class="btn-sm" onclick="openPwdModal()" style="text-align:left">修改密码</button>
           <button class="btn-sm" style="text-align:left"><a href="/logout" style="color:inherit;text-decoration:none">退出登录</a></button>
         </div>
@@ -905,8 +866,6 @@ var stationMarkers = {};
 var activeTrajDrone = null;
 var bufZoneLayers = [];
 var bufZonesVisible = false;
-var airspaceLayers = [];
-var airspaceVisible = true;
 var nationalMode = true;
 
 var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#bbb'};
@@ -1220,40 +1179,6 @@ function loadPowerLines(){
   });
 }
 
-// ═══════════ Airspace Zones ═══════════
-var airspaceZoneColors = {
-  no_fly: '#e74c3c',     // 红色 — 禁飞区
-  restricted: '#f39c12',  // 橙色 — 限制区
-  warning: '#f1c40f',     // 黄色 — 警告区
-  power_line: '#3498db',  // 蓝色 — 电力线保护区
-};
-function loadAirspace(){
-  fetch('/api/airspace').then(function(r){return r.json()}).then(function(zones){
-    airspaceLayers.forEach(function(l){map.removeLayer(l)});
-    airspaceLayers=[];
-    if(!zones||!zones.length) return;
-    zones.forEach(function(z){
-      var color=airspaceZoneColors[z.zone_type]||'#9b59b6';
-      var poly=L.polygon(z.vertices,{
-        color:color, weight:2, fillColor:color, fillOpacity:0.12, opacity:airspaceVisible?0.7:0,
-        dashArray:'6,8',
-      }).addTo(map);
-      poly.bindTooltip(
-        '<b>'+z.name+'</b> ('+z.zone_type+')<br>高度: '+z.altitude_floor+'m ~ '+z.altitude_ceiling+'m<br>来源: '+z.source,
-        {direction:'center'}
-      );
-      if(!airspaceVisible) poly.setStyle({opacity:0,fillOpacity:0});
-      airspaceLayers.push(poly);
-    });
-  }).catch(function(){});
-}
-function toggleAirspace(){
-  airspaceVisible=!airspaceVisible;
-  airspaceLayers.forEach(function(p){
-    p.setStyle({opacity:airspaceVisible?0.7:0,fillOpacity:airspaceVisible?0.12:0});
-  });
-}
-
 // ═══════════ Trajectory ═══════════
 function toggleTrajectory(droneId){
   if(activeTrajDrone===droneId){removeTrajectory(droneId);activeTrajDrone=null;}
@@ -1418,81 +1343,6 @@ function delPowerLine(lineId){
     loadPowerLines();
   }).catch(catchErr('删除电力线失败'));
 }
-// ═══════════ Map Draw Mode — 点击绘制电力线 ═══════════
-var drawMode=false, drawPoints=[], drawMarkers=[], drawLine=null;
-function toggleDrawMode(){
-  drawMode=!drawMode;
-  var btn=document.getElementById('btnDrawMode');
-  var mapEl=document.getElementById('map');
-  if(drawMode){
-    btn.textContent='绘制中... (点两个端点)';btn.style.background='var(--green)';btn.style.color='#fff';btn.style.borderColor='var(--green)';
-    mapEl.classList.add('draw-mode');
-    drawPoints=[];drawMarkers=[];if(drawLine){map.removeLayer(drawLine);drawLine=null}
-  }else{
-    btn.textContent='绘制电力线';btn.style.background='';btn.style.color='';btn.style.borderColor='';
-    mapEl.classList.remove('draw-mode');
-    cleanupDrawMarkers();
-  }
-}
-function cleanupDrawMarkers(){
-  drawMarkers.forEach(function(m){map.removeLayer(m)});drawMarkers=[];
-  if(drawLine){map.removeLayer(drawLine);drawLine=null}
-  drawPoints=[];
-  document.getElementById('drawForm').style.display='none';
-}
-function cancelDraw(){
-  drawMode=false;
-  cleanupDrawMarkers();
-  var btn=document.getElementById('btnDrawMode');
-  btn.textContent='绘制电力线';btn.style.background='';btn.style.color='';btn.style.borderColor='';
-  document.getElementById('map').classList.remove('draw-mode');
-}
-map.on('click',function(e){
-  if(!drawMode||drawPoints.length>=2) return;
-  var pt=[e.latlng.lat,e.latlng.lng];
-  drawPoints.push(pt);
-  // Add marker
-  var icon=L.divIcon({className:'draw-point-icon',iconSize:[16,16],iconAnchor:[8,8],html:String(drawPoints.length)});
-  var m=L.marker(pt,{icon:icon}).addTo(map);
-  m.getPopup=function(){return null}; // suppress default popup
-  drawMarkers.push(m);
-  // Draw dashed line between 2 points
-  if(drawPoints.length===2){
-    drawLine=L.polyline(drawPoints,{color:'#2563eb',weight:3,dashArray:'6,4',opacity:.8}).addTo(map);
-    // Show form
-    var form=document.getElementById('drawForm');
-    var pt2=map.latLngToContainerPoint(e.latlng);
-    form.style.display='block';
-    form.style.left=Math.min(pt2.x+12,map.getSize().x-260)+'px';
-    form.style.top=Math.min(pt2.y+12,map.getSize().y-220)+'px';
-    document.getElementById('drawPlName').focus();
-  }
-});
-function confirmDraw(){
-  var name=document.getElementById('drawPlName').value.trim();
-  if(!name){alert('请输入电力线名称');return}
-  if(drawPoints.length!==2) return;
-  var alt=parseFloat(document.getElementById('drawPlAlt').value)||0;
-  var data={
-    name:name,
-    voltage_level:document.getElementById('drawPlVoltage').value,
-    lat1:drawPoints[0][0],lon1:drawPoints[0][1],alt1:alt,
-    lat2:drawPoints[1][0],lon2:drawPoints[1][1],alt2:alt
-  };
-  fetch('/api/powerlines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-    .then(function(r){return r.json()}).then(function(){
-      document.getElementById('drawPlName').value='';
-      document.getElementById('drawPlVoltage').value='';
-      document.getElementById('drawPlAlt').value='';
-      document.getElementById('drawForm').style.display='none';
-      loadPowerLines();
-      cancelDraw();
-      // Also refresh pl modal if open
-      if(document.getElementById('plModal').classList.contains('show')) refreshPlModalList();
-    }).catch(catchErr('绘制电力线失败'));
-}
-// ═══════════ End Draw Mode ═══════════
-
 // ═══════════ Station Management Modal ═══════════
 function openStModal(){
   document.getElementById('stModal').classList.add('show');
@@ -1995,13 +1845,6 @@ var prevAlertLevels={};
 
 function updateAll(){
   fetch('/api/status').then(function(r){return r.json()}).then(function(d){
-    var running=d.running;
-    var dot=document.getElementById('statusDot');
-    dot.className='st-dot'+(running?' live':'stop');
-    document.getElementById('footerStatus').textContent=running?'运行中 ('+d.mode.toUpperCase()+')':'已停止';
-    document.getElementById('btnStart').disabled=running;
-    document.getElementById('btnStop').disabled=!running;
-
     // Update user info
     if(d.current_user){
       currentUser=d.current_user;
@@ -2154,13 +1997,6 @@ function updateAll(){
 updateAll._userInit=false;
 updateAll._lastStats=0;
 
-// ═══════════ Scan controls ═══════════
-function startScan(){
-  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({mode:document.getElementById('modeSelect').value})}).then(function(r){return r.json()});
-}
-function stopScan(){fetch('/api/stop',{method:'POST'}).then(function(r){return r.json()})}
-
 // ═══════════ Notification permission ═══════════
 document.addEventListener('click',function f(){
   if(window.Notification&&Notification.permission==='default') Notification.requestPermission();
@@ -2300,9 +2136,7 @@ function schedulePoll(){
 initSocket();
 updateAll();
 schedulePoll();
-loadAirspace();
 setInterval(function(){if(!nationalMode) loadPowerLines();},60000);
-setInterval(loadAirspace, 600000); // 空域数据每 10 分钟刷新
 </script>
 </body>
 </html>

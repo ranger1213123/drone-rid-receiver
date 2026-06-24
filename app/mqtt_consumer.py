@@ -833,6 +833,24 @@ class MqttConsumer:
         )
         session.execute(stmt)
 
+        # 写入位置历史 (轨迹)
+        from app.server.models import DronePosition
+        now = datetime.now(timezone.utc)
+        positions = []
+        for d in merged.values():
+            positions.append(DronePosition(
+                drone_id=d['id'],
+                device_name=d.get('device_name', ''),
+                lat=d.get('last_lat', 0) or 0,
+                lon=d.get('last_lon', 0) or 0,
+                alt=d.get('last_alt', 0) or 0,
+                distance_to_line=d.get('min_distance'),
+                nearest_line=d.get('nearest_line', ''),
+                timestamp=d.get('last_seen', now),
+            ))
+        if positions:
+            session.add_all(positions)
+
     def _batch_write_status(self, session, updates: list):
         """更新无人机距离/线路/状态"""
         for device_name, drone_id, distance, line_name, status in updates:

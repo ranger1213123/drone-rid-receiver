@@ -20,8 +20,6 @@ logger = get_logger(__name__)
 if TYPE_CHECKING:
     from core.raw_archive import RawArchiveManager
     from core.pilot_notify import PilotNotifier
-    from core.airspace import CompositeAirspaceSource
-
 
 @dataclass
 class PipelineResult:
@@ -48,7 +46,6 @@ class RIDPipeline:
         thresholds: dict,
         device_name: str = "",
         raw_archive: "RawArchiveManager" = None,
-        airspace_manager: "CompositeAirspaceSource" = None,
         pilot_notifier: "PilotNotifier" = None,
     ):
         self.db = db
@@ -58,7 +55,6 @@ class RIDPipeline:
         self.thresholds = thresholds
         self.device_name = device_name
         self.raw_archive = raw_archive
-        self.airspace_manager = airspace_manager
         self.pilot_notifier = pilot_notifier
 
     def process(self, parsed: ParsedRID) -> Optional[PipelineResult]:
@@ -152,22 +148,6 @@ class RIDPipeline:
             status = "severe"
         elif distance <= self.thresholds.get("warning", 200):
             status = "warning"
-
-        # 3a. 空域检查 (禁飞区 / 管制空域)
-        in_airspace = None
-        if self.airspace_manager:
-            try:
-                from core.airspace import check_airspace_violation
-                zones = self.airspace_manager.fetch()
-                if zones:
-                    in_airspace = check_airspace_violation(
-                        loc.latitude, loc.longitude, loc.altitude_geodetic, zones
-                    )
-                    if in_airspace:
-                        logger.info("无人机 %s 位于空域 [%s] (%s)",
-                                    drone_id, in_airspace.name, in_airspace.zone_type)
-            except Exception as e:
-                logger.warning("空域检查失败: %s", e)
 
         self.db.update_drone_distance(
             drone_id=drone_id,

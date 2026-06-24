@@ -85,6 +85,25 @@ class Drone(Base):
     )
 
 
+class DronePosition(Base):
+    """无人机位置历史 — 用于轨迹回放"""
+    __tablename__ = "drone_positions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    drone_id = Column(String, nullable=False, index=True)
+    device_name = Column(String)
+    lat = Column(Float)
+    lon = Column(Float)
+    alt = Column(Float)
+    distance_to_line = Column(Float, nullable=True)
+    nearest_line = Column(String, default="")
+    timestamp = Column(DateTime, nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_dp_drone_time", "drone_id", "timestamp"),
+    )
+
+
 class Alert(Base):
     __tablename__ = "alerts"
 
@@ -356,6 +375,59 @@ def get_all_drones() -> list:
         }
         for d in drones
     ]
+
+
+def get_trajectory_summaries(drone_id: str = None,
+                            date_from: str = None, date_to: str = None) -> dict:
+    """返回轨迹摘要，支持按无人机ID和日期范围筛选"""
+    sess = get_session()
+    q = sess.query(DronePosition)
+    if drone_id:
+        q = q.filter(DronePosition.drone_id.ilike(f"%{drone_id}%"))
+    if date_from:
+        q = q.filter(DronePosition.timestamp >= date_from)
+    if date_to:
+        q = q.filter(DronePosition.timestamp <= date_to)
+    dids = [r[0] for r in q.with_entities(DronePosition.drone_id).distinct().all()]
+    result = {}
+    for did in dids:
+        dq = sess.query(DronePosition).filter(DronePosition.drone_id == did)
+        if date_from:
+            dq = dq.filter(DronePosition.timestamp >= date_from)
+        if date_to:
+            dq = dq.filter(DronePosition.timestamp <= date_to)
+        first_pos = dq.order_by(DronePosition.timestamp.asc()).first()
+        last_pos = dq.order_by(DronePosition.timestamp.desc()).first()
+        count = dq.count()
+        min_d = min(
+            (p.distance_to_line for p in [first_pos, last_pos] if p and p.distance_to_line is not None),
+            default=0
+        )
+        if first_pos and last_pos:
+            result[did] = {
+                'count': count,
+                'min_dist': min_d,
+                'first': first_pos.timestamp.isoformat()[:19] if first_pos.timestamp else '',
+                'last': last_pos.timestamp.isoformat()[:19] if last_pos.timestamp else '',
+                'device_name': first_pos.device_name or '',
+            }
+    return result
+
+
+def get_trajectory_points(drone_id: str, limit: int = 500) -> list:
+    """返回指定无人机轨迹坐标点"""
+    sess = get_session()
+    points = sess.query(DronePosition).filter(
+        DronePosition.drone_id == drone_id
+    ).order_by(DronePosition.timestamp.desc()).limit(limit).all()
+    return [{
+        'lat': p.lat,
+        'lon': p.lon,
+        'alt': p.alt,
+        'distance': p.distance_to_line,
+        'nearest_line': p.nearest_line or '',
+        'time': p.timestamp.isoformat()[:19] if p.timestamp else '',
+    } for p in points]
 
 
 def get_recent_alerts(limit: int = 100, level: str = None, since: str = None,

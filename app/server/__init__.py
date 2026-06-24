@@ -63,6 +63,7 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     from .api_heartbeat import bp as heartbeat_bp
     from .api_status import bp as status_bp
     from .api_web import bp as web_bp
+    from .api_trajectory import bp as trajectory_bp
     from .dashboard import bp as dashboard_bp
 
     app.register_blueprint(auth_bp)
@@ -70,6 +71,7 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     app.register_blueprint(heartbeat_bp)
     app.register_blueprint(status_bp)
     app.register_blueprint(web_bp)
+    app.register_blueprint(trajectory_bp)
     app.register_blueprint(dashboard_bp)
 
     # Web session secret key

@@ -87,7 +87,7 @@ def issue_token():
         except Exception:
             pass  # cert_manager 不可用时不阻断 (如未初始化)
 
-        expire_seconds = int(os.environ.get("JWT_EXPIRE_SECONDS", "86400"))
+        expire_seconds = int(os.environ.get("JWT_EXPIRE_SECONDS", "259200"))
         now = int(time.time())
         payload = {
             "sub": device_name,

@@ -9,54 +9,44 @@
 
 body{
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
-  background:#0b1120; color:#e2e8f0; min-height:100vh;
+  background:#f0f2f5; color:#1a1d23; min-height:100vh;
   display:flex; align-items:center; justify-content:center;
   -webkit-font-smoothing:antialiased;
-  overflow:hidden;
 }
 
-/* Subtle grid overlay */
+/* Subtle background pattern */
 body::before{
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
-    linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
+    linear-gradient(rgba(0,0,0,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,0,0,.02) 1px,transparent 1px);
   background-size:60px 60px;
-}
-
-/* Topography ring in background */
-body::after{
-  content:''; position:fixed; width:700px; height:700px;
-  border-radius:50%; border:1px solid rgba(37,99,235,.08);
-  top:50%; left:50%; transform:translate(-50%,-50%);
-  box-shadow:0 0 200px rgba(37,99,235,.04),inset 0 0 200px rgba(37,99,235,.03);
-  z-index:0; pointer-events:none;
 }
 
 .container{
   position:relative; z-index:1; display:flex;
-  background:rgba(15,23,42,.9); border:1px solid rgba(255,255,255,.06);
+  background:#fff; border:1px solid #e0e3e8;
   border-radius:16px; overflow:hidden;
-  box-shadow:0 0 0 1px rgba(255,255,255,.03),0 24px 80px rgba(0,0,0,.5);
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.06);
   width:780px; max-width:94vw; min-height:440px;
 }
 
 /* Left branding panel */
 .brand-panel{
-  width:320px; background:linear-gradient(160deg,rgba(37,99,235,.15),rgba(15,23,42,.8));
+  width:320px; background:linear-gradient(160deg,#eff6ff,#f8fafc);
   display:flex; flex-direction:column; justify-content:center; align-items:center;
-  padding:40px 28px; text-align:center; border-right:1px solid rgba(255,255,255,.04);
+  padding:40px 28px; text-align:center; border-right:1px solid #e8ecf1;
 }
 .brand-panel .shield{
   width:64px; height:64px; margin-bottom:20px; position:relative;
 }
 .brand-panel .shield svg{width:100%;height:100%}
-.brand-panel h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:6px}
-.brand-panel .sub{font-size:11px;color:#64748b;line-height:1.6}
+.brand-panel h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:6px;color:#1a1d23}
+.brand-panel .sub{font-size:11px;color:#6b7280;line-height:1.6}
 .brand-panel .dot-row{display:flex;gap:8px;margin-top:24px}
 .brand-panel .dot-row span{
   width:6px;height:6px;border-radius:50%;
-  background:rgba(255,255,255,.2);transition:background .3s;
+  background:rgba(0,0,0,.1);transition:background .3s;
 }
 .brand-panel .dot-row span:nth-child(1){background:#22c55e}
 .brand-panel .dot-row span:nth-child(3){background:#eab308}
@@ -67,45 +57,47 @@ body::after{
   flex:1; display:flex; flex-direction:column; justify-content:center;
   padding:40px 44px;
 }
-.form-panel h3{font-size:13px;font-weight:600;margin-bottom:4px;letter-spacing:0.5px}
-.form-panel .hint{font-size:11px;color:#64748b;margin-bottom:24px}
+.form-panel h3{font-size:14px;font-weight:600;margin-bottom:2px;letter-spacing:-0.2px;color:#1a1d23}
+.form-panel .hint{font-size:11px;color:#6b7280;margin-bottom:24px}
 
 .field{margin-bottom:16px}
 .field label{
-  display:block; font-size:10px; font-weight:600; color:#94a3b8;
+  display:block; font-size:10px; font-weight:600; color:#6b7280;
   text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px;
 }
 .field input{
-  width:100%; padding:10px 14px; background:rgba(255,255,255,.03);
-  border:1px solid rgba(255,255,255,.08); border-radius:8px;
-  color:#e2e8f0; font-size:13px; outline:none;
+  width:100%; padding:10px 14px; background:#f9fafb;
+  border:1px solid #e0e3e8; border-radius:8px;
+  color:#1a1d23; font-size:13px; outline:none;
   transition:border-color .2s,box-shadow .2s;
 }
 .field input:focus{
-  border-color:rgba(37,99,235,.5);
+  border-color:#2563eb;
   box-shadow:0 0 0 3px rgba(37,99,235,.1);
 }
-.field input::placeholder{color:#475569}
+.field input::placeholder{color:#9ca3af}
 
 .submit-btn{
   width:100%; padding:10px; border-radius:8px; font-size:13px; font-weight:600;
   cursor:pointer; border:none; color:#fff; letter-spacing:0.3px;
-  background:linear-gradient(135deg,#2563eb,#1d4ed8);
+  background:#2563eb;
   transition:all .2s; margin-top:4px;
 }
-.submit-btn:hover{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 4px 16px rgba(37,99,235,.3)}
+.submit-btn:hover{background:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.25)}
 
 .error-msg{
-  background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.2);
-  color:#f87171; font-size:11px; padding:8px 12px; border-radius:6px;
+  background:#fef2f2; border:1px solid #fecaca;
+  color:#dc2626; font-size:11px; padding:8px 12px; border-radius:6px;
   margin-bottom:18px; text-align:center;
 }
 
-.footnote{font-size:10px;color:#475569;text-align:center;margin-top:20px}
+.footnote{font-size:10px;color:#9ca3af;text-align:center;margin-top:20px}
+.footnote a{color:#2563eb;text-decoration:none}
+.footnote a:hover{text-decoration:underline}
 
 @media(max-width:600px){
   .container{flex-direction:column;width:100%}
-  .brand-panel{width:100%;padding:24px 20px;border-right:none;border-bottom:1px solid rgba(255,255,255,.04)}
+  .brand-panel{width:100%;padding:24px 20px;border-right:none;border-bottom:1px solid #e8ecf1}
   .brand-panel .shield{width:40px;height:40px;margin-bottom:10px}
   .brand-panel h2{font-size:15px}
   .brand-panel .dot-row{margin-top:12px}
@@ -119,9 +111,9 @@ body::after{
   <div class="brand-panel">
     <div class="shield">
       <svg viewBox="0 0 64 64" fill="none">
-        <path d="M32 4L54 14v20c0 14-10 22-22 26-12-4-22-12-22-26V14L32 4z" stroke="#3b82f6" stroke-width="2.5" stroke-linejoin="round"/>
-        <path d="M32 4L10 14v20c0 14 10 22 22 26 12-4 22-12 22-26V14L32 4z" fill="rgba(37,99,235,.15)"/>
-        <path d="M24 32l6 6 10-12" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M32 4L54 14v20c0 14-10 22-22 26-12-4-22-12-22-26V14L32 4z" stroke="#2563eb" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M32 4L10 14v20c0 14 10 22 22 26 12-4 22-12 22-26V14L32 4z" fill="rgba(37,99,235,.12)"/>
+        <path d="M24 32l6 6 10-12" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
     <h2>Drone RID Monitor</h2>
@@ -150,7 +142,7 @@ body::after{
     </form>
 
     <div class="footnote">
-      没有账号？<a href="/register" style="color:#60a5fa;text-decoration:none">注册</a>
+      没有账号？<a href="/register">注册</a>
       &middot; 杆塔端监控系统 &middot; v3.3
     </div>
   </div>
