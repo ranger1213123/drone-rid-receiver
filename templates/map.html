@@ -533,6 +533,18 @@ body.sta-mode .nat-only{display:none!important}
           <button class="btn-sm sta-only" id="bufToggleBtn" onclick="toggleBufferZones()" style="text-align:left">显示阈值圈</button>
           <button class="btn-sm" id="airspaceToggleBtn" onclick="toggleAirspace()" style="text-align:left">显示空域</button>
           <button class="btn-sm" onclick="window.location='/list'" style="text-align:left">查看列表视图</button>
+          <button class="btn-sm" onclick="openPwdModal()" style="text-align:left">修改密码</button>
+          <button class="btn-sm" style="text-align:left"><a href="/logout" style="color:inherit;text-decoration:none">退出登录</a></button>
+        </div>
+      </div>
+
+      <div class="side-section nat-only" id="tenantInfoSection" style="display:none">
+        <div class="side-head" onclick="toggleSection('secTenant',this)">
+          <span>我的租户</span>
+          <span class="chevron open" id="secTenantChev">▶</span>
+        </div>
+        <div class="side-body" id="secTenant" style="font-size:11px;padding:8px 14px">
+          <div id="tenantInfoContent" style="color:var(--muted)">加载中...</div>
         </div>
       </div>
 
@@ -824,6 +836,19 @@ body.sta-mode .nat-only{display:none!important}
   </div>
 </div>
 
+<!-- Change password modal -->
+<div class="modal-overlay" id="pwdModal">
+  <div class="modal-dialog" style="max-width:380px">
+    <h3>修改密码</h3>
+    <div class="row"><label>原密码</label><input type="password" id="oldPassword" placeholder="输入当前密码"></div>
+    <div class="row"><label>新密码</label><input type="password" id="newPassword" placeholder="至少6位新密码"></div>
+    <div class="modal-actions">
+      <button class="primary" onclick="changePassword()">确认修改</button>
+      <button onclick="closePwdModal()">取消</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 // ═══════════ Toast notification ═══════════
@@ -862,12 +887,10 @@ function catchErr(msg){
 // ═══════════ Map ═══════════
 var map = L.map('map', {attributionControl: false, zoomControl: false, preferCanvas: true}).setView([35, 105], 4.5);
 L.control.zoom({position:'bottomright'}).addTo(map);
-var TK='e43d9110ba6c59f0eb286d5eb43ba674';
-var t=function(l){return'https://t{s}.tianditu.gov.cn/'+l+'_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER='+l+'&STYLE=default&TILEMATRIXSET=w&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=tiles&tk='+TK};
 var baseLayers={
-  '标准地图': L.layerGroup([L.tileLayer(t('vec'),{subdomains:'01234567',maxZoom:18}),L.tileLayer(t('cva'),{subdomains:'01234567',maxZoom:18})]),
-  '卫星影像': L.layerGroup([L.tileLayer(t('img'),{subdomains:'01234567',maxZoom:18}),L.tileLayer(t('cia'),{subdomains:'01234567',maxZoom:18})]),
-  '地形图': L.layerGroup([L.tileLayer(t('ter'),{subdomains:'01234567',maxZoom:18}),L.tileLayer(t('cta'),{subdomains:'01234567',maxZoom:18})])
+  '标准地图': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}),
+  '卫星影像': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Esri,Maxar,Earthstar Geographics'}),
+  '地形图': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; OpenTopoMap'})
 };
 baseLayers['标准地图'].addTo(map);
 
@@ -895,6 +918,22 @@ var cachedDashboard = null;
 var cachedDrones = [];
 var currentUser = {username:'', role:'user', station:'', tenant_id:null, scope:'station', assigned_station:''};
 var currentStationDevice = null;  // 当前进入的站点 device_name，用于过滤无人机
+var csrfToken = '';
+
+// 获取 CSRF token
+fetch('/api/csrf-token').then(function(r){return r.json()}).then(function(d){csrfToken=d.token});
+
+// Override fetch to auto-inject CSRF token on mutating requests
+var _origFetch = window.fetch;
+window.fetch = function(url, opts){
+  opts = opts || {};
+  var method = (opts.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && csrfToken) {
+    opts.headers = opts.headers || {};
+    if (!opts.headers['X-CSRF-Token']) opts.headers['X-CSRF-Token'] = csrfToken;
+  }
+  return _origFetch(url, opts);
+};
 
 // ═══════════ Mode switching ═══════════
 function enterStationView(station){
@@ -907,6 +946,17 @@ function enterStationView(station){
   document.getElementById('staViewTitle').textContent=name+(loc?' — '+loc:'');
   // 记录当前站点的 device_name 用于过滤无人机
   currentStationDevice = station.device_name || station.name || null;
+  // Station user locked: hide back button
+  var backBtn=document.querySelector('.back-btn');
+  if(backBtn && currentUser.role==='user' && currentUser.scope==='station'){
+    backBtn.style.display='none';
+  }
+  // Show personnel button (any authenticated user)
+  var persBtn=document.getElementById('personnelBtn');
+  if(persBtn) persBtn.style.display='inline-block';
+  // Update personnel station label
+  var label=document.getElementById('personnelStationLabel');
+  if(label) label.textContent=name;
   loadPowerLines();
   updateAll();  // 立即刷新数据，避免等待下一次轮询
   var lat = station.lat!=null ? station.lat : (station.position?station.position.lat:0);
@@ -914,31 +964,6 @@ function enterStationView(station){
   if(lat && lon){
     map.flyTo([lat, lon], 14, {duration:1});
   }
-}
-
-function returnToNational(){
-  // Regular users: go back to their station view
-  if(currentUser.role!=='admin' && currentUser.role!=='tenant_admin'){
-    if(cachedDashboard) enterStationView(cachedDashboard.station);
-    return;
-  }
-  nationalMode = true;
-  currentStationDevice = null;
-  document.body.className = 'nat-mode';
-  // Clear station-mode layers
-  Object.keys(droneMarkers).forEach(function(k){map.removeLayer(droneMarkers[k]);});
-  droneMarkers = {};
-  Object.keys(trajPolylines).forEach(function(k){removeTrajectory(k);});
-  plPolylines.forEach(function(p){map.removeLayer(p)});
-  plLabels.forEach(function(l){map.removeLayer(l)});
-  plPolylines = []; plLabels = [];
-  clearBufferZones(); bufZonesVisible = false;
-  var btn=document.getElementById('bufToggleBtn');
-  btn.textContent='显示阈值圈'; btn.style.background='';
-  activeTrajDrone = null;
-  map.flyTo([35, 105], 4.5, {duration:.8});
-  // Refresh station markers
-  if(cachedDashboard) updateStationMarkers(cachedDashboard.stations);
 }
 
 // ═══════════ Sidebar toggle ═══════════
@@ -1531,7 +1556,7 @@ function refreshUsrModalList(){
       var roleLabel={admin:'管理员',tenant_admin:'租户管理员',user:'操作员'}[u.role]||'操作员';
       var stationLabel=u.assigned_station||u.station||'全部站点';
       var scopeLabel=u.scope==='tenant'?'(全局)':'';
-      return '<div class="pl-entry"><span><b>'+u.username+'</b> <span style="color:var(--muted);font-size:10px">'+roleLabel+' · '+stationLabel+' '+scopeLabel+'</span></span><span class="pl-del" onclick="delUser(\''+u.username+'\')">×</span></div>';
+      return '<div class="pl-entry"><span><b>'+u.username+'</b> <span style="color:var(--muted);font-size:10px">'+roleLabel+' · '+stationLabel+' '+scopeLabel+'</span></span><span style="display:flex;gap:4px">'+(currentUser.role==='admin'?'<span class="pl-del" style="background:var(--blue);margin-right:2px" onclick="resetUserPassword(\''+u.username+'\')" title="重置密码">🔑</span>':'')+'<span class="pl-del" onclick="delUser(\''+u.username+'\')">×</span></span></div>';
     }).join('');
   });
 }
@@ -1818,6 +1843,98 @@ function refreshAudit(){
   }).catch(catchErr('加载审计日志失败'));
 }
 
+// ═══════════ Change Password ═══════════
+function openPwdModal(){document.getElementById('pwdModal').style.display='flex'}
+function closePwdModal(){document.getElementById('pwdModal').style.display='none';document.getElementById('oldPassword').value='';document.getElementById('newPassword').value=''}
+function changePassword(){
+  var oldPw=document.getElementById('oldPassword').value;
+  var newPw=document.getElementById('newPassword').value.trim();
+  if(!oldPw||!newPw){showToast('请填写原密码和新密码','warn');return}
+  if(newPw.length<6){showToast('新密码至少6位','warn');return}
+  fetch('/api/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:oldPw,new_password:newPw})})
+    .then(function(r){return r.json()}).then(function(res){
+      if(res.error){showToast(res.error,'error');return}
+      showToast('密码修改成功','ok');
+      closePwdModal();
+    }).catch(catchErr('修改密码失败'));
+}
+
+// ═══════════ Admin Reset User Password ═══════════
+function resetUserPassword(username){
+  var newPw=prompt('为 '+username+' 设置新密码 (至少6位):');
+  if(!newPw||newPw.length<6){showToast('密码至少6位','warn');return}
+  fetch('/api/users/'+encodeURIComponent(username)+'/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:newPw})})
+    .then(function(r){return r.json()}).then(function(res){
+      if(res.error){showToast(res.error,'error');return}
+      showToast('密码已重置','ok');
+    }).catch(catchErr('重置密码失败'));
+}
+
+// ═══════════ Tenant Info ═══════════
+function refreshTenantInfo(){
+  var sec=document.getElementById('tenantInfoSection');
+  if(currentUser.role!=='tenant_admin'&&currentUser.role!=='user'){sec.style.display='none';return}
+  if(!currentUser.tenant_id){sec.style.display='none';return}
+  fetch('/api/tenant/info').then(function(r){return r.json()}).then(function(t){
+    if(!t){sec.style.display='none';return}
+    sec.style.display='block';
+    var html='<div style="margin-bottom:4px"><b>'+t.name+'</b></div>';
+    html+='<div>用户: '+t.current_users+'/'+t.max_users+'</div>';
+    if(t.license_key) html+='<div style="font-size:10px;color:var(--blue);margin-top:2px">密钥: '+t.license_key+'</div>';
+    if(t.stations&&t.stations.length){
+      html+='<div style="margin-top:4px">站点: '+t.stations.map(function(s){return s.name}).join(', ')+'</div>';
+    }
+    document.getElementById('tenantInfoContent').innerHTML=html;
+  }).catch(function(){sec.style.display='none'});
+}
+
+// ═══════════ RBAC: hide admin-only audit button for non-admin ═══════════
+function applyRBACVisibility(){
+  var isAdmin=currentUser.role==='admin';
+  var isTenantAdmin=currentUser.role==='tenant_admin';
+  // nat-only buttons: stations + users for admin/tenant_admin
+  document.querySelectorAll('#addStationBtn,#stMgrBtn2,#usrMgrBtn').forEach(function(b){
+    b.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
+  });
+  // admin-only
+  document.getElementById('cfgMgrBtn').style.display=isAdmin?'inline-block':'none';
+  document.getElementById('licMgrBtn').style.display=isAdmin?'inline-block':'none';
+  // audit log: admin only
+  var audBtn=document.querySelector('[onclick="openAudModal()"]');
+  if(audBtn) audBtn.style.display=isAdmin?'inline-block':'none';
+  // refresh tenant info
+  refreshTenantInfo();
+}
+
+// ═══════════ Station lock for station_user ═══════════
+function returnToNational(){
+  if(currentUser.role==='user' && currentUser.scope==='station'){
+    // Station user: locked to their assigned station, cannot enter national view
+    if(cachedDashboard) enterStationView(cachedDashboard.station);
+    return;
+  }
+  if(currentUser.role!=='admin' && currentUser.role!=='tenant_admin'){
+    if(cachedDashboard) enterStationView(cachedDashboard.station);
+    return;
+  }
+  nationalMode = true;
+  currentStationDevice = null;
+  document.body.className = 'nat-mode';
+  // Clear station-mode layers
+  Object.keys(droneMarkers).forEach(function(k){map.removeLayer(droneMarkers[k]);});
+  droneMarkers = {};
+  Object.keys(trajPolylines).forEach(function(k){removeTrajectory(k);});
+  plPolylines.forEach(function(p){map.removeLayer(p)});
+  plLabels.forEach(function(l){map.removeLayer(l)});
+  plPolylines = []; plLabels = [];
+  clearBufferZones(); bufZonesVisible = false;
+  var btn=document.getElementById('bufToggleBtn');
+  btn.textContent='显示阈值圈'; btn.style.background='';
+  activeTrajDrone = null;
+  map.flyTo([35, 105], 4.5, {duration:.8});
+  if(cachedDashboard) updateStationMarkers(cachedDashboard.stations);
+}
+
 // ═══════════ Buffer zone toggle ═══════════
 function toggleBufferZones(){
   bufZonesVisible=!bufZonesVisible;
@@ -2009,23 +2126,19 @@ function updateAll(){
       renderNationalStationCards(s.stations);
       updateStationMarkers(s.stations);
 
-      // Show/hide admin-only station management buttons
-      var isAdmin=currentUser.role==='admin';
-      var isTenantAdmin=currentUser.role==='tenant_admin';
-      document.querySelectorAll('#addStationBtn,#stMgrBtn2,#usrMgrBtn').forEach(function(b){
-        b.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
-      });
-      document.getElementById('cfgMgrBtn').style.display=isAdmin?'inline-block':'none';
-      document.getElementById('licMgrBtn').style.display=isAdmin?'inline-block':'none';
+      // RBAC button visibility
+      applyRBACVisibility();
 
-      // First-time: regular user auto-enters station view (wait for user info)
+      // First-time: station_user auto-enters locked station view
       if(!updateAll._userInit && currentUser.username){
         updateAll._userInit=true;
-        if(currentUser.role==='user'){
-          // station_user: auto-enter assigned station
+        if(currentUser.role==='user' && currentUser.scope==='station'){
           var stName = currentUser.assigned_station || currentUser.station;
           var userStation = (s.stations||[]).find(function(st){return st.name===stName}) || s.station;
           enterStationView(userStation);
+          // Lock: hide national mode toggle button
+          var natBtns=document.querySelectorAll('.nat-only');
+          natBtns.forEach(function(b){b.style.display='none'});
         }
       }
 

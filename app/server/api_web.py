@@ -5,6 +5,9 @@ Session-based 鉴权 (admin/operator)，数据库持久化
 import csv
 import io
 import os
+import secrets
+import time
+import threading
 from datetime import datetime
 from functools import wraps
 
@@ -25,6 +28,7 @@ from .models import (
 )
 from .auth import require_auth
 from logging_config import get_logger
+from werkzeug.security import generate_password_hash, check_password_hash
 
 bp = Blueprint("api_web", __name__)
 logger = get_logger(__name__)
@@ -37,6 +41,42 @@ def _safe_float(val, default=0.0):
         return default
 
 
+# ── Rate Limiting ──
+
+_rate_limit_store: dict = {}  # key → [(timestamp, ...)]
+_rate_limit_lock = threading.Lock()
+
+def _rate_limit(key: str, max_requests: int, window_sec: int) -> bool:
+    """简单滑动窗口限流，返回 True 表示允许"""
+    now = time.time()
+    with _rate_limit_lock:
+        timestamps = [t for t in _rate_limit_store.get(key, []) if now - t < window_sec]
+        if len(timestamps) >= max_requests:
+            _rate_limit_store[key] = timestamps
+            return False
+        timestamps.append(now)
+        _rate_limit_store[key] = timestamps
+        return True
+
+
+# ── CSRF Token ──
+
+def _get_csrf_token():
+    """生成或获取 session CSRF token"""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+
+def _check_csrf():
+    """验证 CSRF token。GET/HEAD/OPTIONS 跳过"""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return True
+    token = request.headers.get("X-CSRF-Token") or (request.json or {}).get("_csrf_token", "")
+    expected = session.get("_csrf_token", "")
+    return secrets.compare_digest(token, expected) if (token and expected) else True
+
+
 # ── Auth decorators ──
 
 def require_web_auth(f):
@@ -44,6 +84,8 @@ def require_web_auth(f):
     def decorated(*args, **kwargs):
         if "user" not in session:
             return jsonify({"error": "未登录"}), 401
+        if not _check_csrf():
+            return jsonify({"error": "CSRF 验证失败"}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -443,6 +485,100 @@ def api_users():
     return jsonify({"status": "ok" if ok else "not found"})
 
 
+# ── Password Management ──
+
+@bp.route("/api/password", methods=["PUT"])
+@require_web_auth
+def api_change_password():
+    """当前用户修改自己的密码"""
+    data = request.json or {}
+    old_pw = data.get("old_password", "")
+    new_pw = (data.get("new_password") or "").strip()
+    if len(new_pw) < 6:
+        return jsonify({"error": "新密码至少 6 位"}), 400
+
+    u = session["user"]
+    from .models import get_session, WebUser
+    sess = get_session()
+    try:
+        user = sess.get(WebUser, u["username"])
+        if not user:
+            return jsonify({"error": "用户不存在"}), 404
+        if not check_password_hash(user.password_hash, old_pw):
+            return jsonify({"error": "原密码错误"}), 403
+        user.password_hash = generate_password_hash(new_pw)
+        sess.commit()
+        add_audit_log(u["username"], "CHANGE_PASSWORD", "web_users", None, "修改密码")
+        return jsonify({"status": "ok", "message": "密码已更新"})
+    finally:
+        sess.close()
+
+
+@bp.route("/api/users/<username>/reset-password", methods=["POST"])
+@require_web_auth
+def api_reset_user_password(username):
+    """管理员重置用户密码"""
+    u = session["user"]
+    if u.get("role") != "admin":
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    data = request.json or {}
+    new_pw = (data.get("new_password") or "").strip()
+    if len(new_pw) < 6:
+        return jsonify({"error": "新密码至少 6 位"}), 400
+
+    from .models import get_session, WebUser
+    sess = get_session()
+    try:
+        target = sess.get(WebUser, username)
+        if not target:
+            return jsonify({"error": "用户不存在"}), 404
+        target.password_hash = generate_password_hash(new_pw)
+        sess.commit()
+        add_audit_log(u["username"], "RESET_PASSWORD", "web_users", None,
+                      f"重置用户 {username} 的密码")
+        return jsonify({"status": "ok", "message": f"已重置 {username} 的密码"})
+    finally:
+        sess.close()
+
+
+# ── Tenant Self-Service ──
+
+@bp.route("/api/tenant/info")
+@require_web_auth
+def api_tenant_info():
+    """返回当前用户所属租户信息 (tenant_admin/user 用)"""
+    u = session["user"]
+    tid = u.get("tenant_id")
+    if not tid:
+        return jsonify(None)
+    from .models import get_tenant_by_id, count_users_in_tenant, get_tenant_stations
+    try:
+        tenant = get_tenant_by_id(tid)
+    except Exception:
+        return jsonify(None)
+    if not tenant:
+        return jsonify(None)
+    stations = get_tenant_stations(tid)
+    return jsonify({
+        "id": tenant.id,
+        "name": tenant.name,
+        "license_key": tenant.license_key if u.get("role") == "tenant_admin" else None,
+        "max_users": tenant.max_users,
+        "current_users": count_users_in_tenant(tid),
+        "contact": tenant.contact or "",
+        "is_active": tenant.is_active,
+        "stations": [{"name": s.name, "location": s.location or ""} for s in stations],
+    })
+
+
+# ── CSRF Token ──
+
+@bp.route("/api/csrf-token")
+def api_csrf_token():
+    return jsonify({"token": _get_csrf_token()})
+
+
 # ── Personnel (站点负责人) ──
 
 @bp.route("/api/personnel", methods=["GET", "POST", "DELETE"])
@@ -635,6 +771,10 @@ def api_drones_export():
 @bp.route("/api/register", methods=["POST"])
 def api_register():
     """客户用密钥自助注册用户"""
+    ip = request.remote_addr or "127.0.0.1"
+    if not _rate_limit(f"register:{ip}", max_requests=3, window_sec=600):
+        return jsonify({"error": "注册尝试次数过多，请 10 分钟后再试"}), 429
+
     data = request.json or {}
     raw_key = (data.get("license_key") or "").strip().upper()
     username = (data.get("username") or "").strip()

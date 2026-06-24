@@ -8,6 +8,7 @@ MQTT 启用时通过 WebSocket (Socket.IO) 实时推送无人机位置, 替代 A
 
 import json
 import os
+import secrets
 import sys
 import threading
 import time
@@ -33,6 +34,25 @@ from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
 
 app = Flask(__name__, template_folder=str(PROJECT_ROOT / 'templates'))
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+# 注册服务器蓝图 — 统一 web.py(边缘/模拟) 和 server.py(云端) 的路由
+try:
+    from app.server.api_web import bp as api_web_bp
+    from app.server.api_status import bp as status_bp
+    from app.server.api_auth import bp as auth_bp
+    from app.server.api_report import bp as report_bp
+    from app.server.api_heartbeat import bp as heartbeat_bp
+    from app.server.dashboard import bp as dashboard_bp
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(report_bp)
+    app.register_blueprint(heartbeat_bp)
+    app.register_blueprint(status_bp)
+    app.register_blueprint(api_web_bp)
+    app.register_blueprint(dashboard_bp)
+    # Session secret key
+    app.secret_key = os.environ.get("WEB_SECRET_KEY", secrets.token_hex(32))
+except ImportError:
+    pass  # server blueprints not available, use standalone mode
 
 
 def _safe_float(val, default=0.0):
@@ -134,9 +154,9 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        # 1. 先查 YAML 用户 (本地开发)
         for u in WEB_USERS:
             stored_pw = u.get('password', '')
-            # 兼容明文密码 (迁移前) 和哈希密码
             ok = False
             if stored_pw.startswith('scrypt:'):
                 ok = check_password_hash(stored_pw, password)
@@ -147,8 +167,39 @@ def login():
                     'username': username,
                     'role': u.get('role', 'user'),
                     'station': u.get('station', ''),
+                    'tenant_id': u.get('tenant_id'),
+                    'scope': u.get('scope', 'station'),
+                    'assigned_station': u.get('assigned_station', ''),
                 }
                 return redirect(url_for('index'))
+        # 2. 回退到 ORM 用户 (云服务器)
+        try:
+            from app.server.models import verify_web_user
+            user = verify_web_user(username, password)
+            if user:
+                # 同步回 YAML 以便下次登录
+                global WEB_USERS
+                WEB_USERS.append({
+                    'username': user['username'],
+                    'password': generate_password_hash(password),
+                    'role': user.get('role', 'user'),
+                    'station': user.get('assigned_station', ''),
+                    'tenant_id': user.get('tenant_id'),
+                    'scope': user.get('scope', 'station'),
+                    'assigned_station': user.get('assigned_station', ''),
+                })
+                _save_web_users(WEB_USERS)
+                session['user'] = {
+                    'username': user['username'],
+                    'role': user.get('role', 'user'),
+                    'station': user.get('assigned_station', ''),
+                    'tenant_id': user.get('tenant_id'),
+                    'scope': user.get('scope', 'station'),
+                    'assigned_station': user.get('assigned_station', ''),
+                }
+                return redirect(url_for('index'))
+        except Exception as e:
+            logger.warning("ORM 登录回退失败: %s", e)
         error = '用户名或密码错误'
     return render_template('login.html', error=error)
 
@@ -157,6 +208,114 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
+
+
+@app.route('/register', methods=['GET'])
+def register_page():
+    return render_template('register.html')
+
+
+@app.route('/api/register/stations')
+def api_register_stations():
+    """根据密钥返回该租户的站点列表"""
+    key = (request.args.get('key') or '').strip().upper()
+    if not key:
+        return jsonify([])
+    # 标准化密钥格式: 去掉所有非字母数字字符，按4位分组
+    clean = key.replace('-', '').upper()
+    if len(clean) >= 16:
+        key = '-'.join(clean[i:i+4] for i in range(0, 16, 4))
+    try:
+        from app.server.models import get_tenant_by_key, get_tenant_stations
+        tenant = get_tenant_by_key(key)
+        if tenant and tenant.is_active:
+            stations = get_tenant_stations(tenant.id)
+            return jsonify([{'name': s.name, 'location': s.location or ''} for s in stations])
+    except Exception as e:
+        logger.warning("查询租户站点失败: %s", e)
+    return jsonify([])
+
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    """客户用密钥自助注册用户账号"""
+    data = request.json or {}
+    license_key = (data.get('license_key') or '').strip().upper()
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '')
+    scope = (data.get('scope') or 'station').strip()
+    assigned_station = (data.get('station') or '').strip()
+
+    # 1. 输入校验
+    if not license_key or not username or not password:
+        return jsonify({"error": "请填写所有必填字段"}), 400
+    if len(username) < 2 or len(username) > 32:
+        return jsonify({"error": "用户名需 2-32 位"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "密码至少 6 位"}), 400
+
+    # 2. 验密钥
+    try:
+        from app.server.models import get_tenant_by_key, count_users_in_tenant, get_tenant_stations, get_session
+        clean = license_key.replace('-', '').upper()
+        if len(clean) >= 16:
+            license_key = '-'.join(clean[i:i+4] for i in range(0, 16, 4))
+        tenant = get_tenant_by_key(license_key)
+        if not tenant or not tenant.is_active:
+            return jsonify({"error": "密钥无效或已停用"}), 403
+
+        # 3. 检查用户数上限
+        if count_users_in_tenant(tenant.id) >= tenant.max_users:
+            return jsonify({"error": f"该密钥最多注册 {tenant.max_users} 人，已满"}), 403
+
+        # 4. 验证站点归属
+        if scope == 'station':
+            if not assigned_station:
+                return jsonify({"error": "请选择所属站点"}), 400
+            tenant_stations = get_tenant_stations(tenant.id)
+            station_names = [s.name for s in tenant_stations]
+            if assigned_station not in station_names:
+                return jsonify({"error": "该站点不属于您的客户"}), 403
+    except Exception as e:
+        logger.error("注册验证失败: %s", e)
+        return jsonify({"error": "系统错误，请稍后重试"}), 500
+
+    # 5. 检查用户名是否已存在
+    global WEB_USERS
+    for u in WEB_USERS:
+        if u.get('username') == username:
+            return jsonify({"error": "用户名已被占用"}), 409
+
+    # 6. 创建用户 (保存到 YAML)
+    new_user = {
+        'username': username,
+        'password': generate_password_hash(password),
+        'role': 'user',
+        'station': assigned_station if scope == 'station' else '',
+        'tenant_id': tenant.id,
+        'scope': scope,
+        'assigned_station': assigned_station,
+    }
+    WEB_USERS.append(new_user)
+    _save_web_users(WEB_USERS)
+
+    # 7. 同时创建 ORM 用户 (供 server.py 认证使用)
+    try:
+        from app.server.models import upsert_web_user
+        upsert_web_user(
+            username=username,
+            password=password,
+            role='user',
+            tenant_id=tenant.id,
+            scope=scope,
+            assigned_station=assigned_station,
+        )
+    except Exception as e:
+        logger.warning("ORM 用户创建失败 (非关键): %s", e)
+
+    logger.info("新用户注册: %s (tenant=%s, scope=%s, station=%s)",
+                username, tenant.name, scope, assigned_station)
+    return jsonify({"status": "ok", "message": "注册成功"})
 
 
 @app.route('/')
