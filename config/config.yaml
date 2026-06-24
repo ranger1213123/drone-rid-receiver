@@ -2,6 +2,12 @@
 # 若为 gcj02, 加载时自动转换为 wgs84 以对齐无人机 GPS 坐标
 coordinate_system: wgs84
 protocol: gb46750
+# ── 串口 (ESP32 UART) ──
+serial:
+  auto_scan: true
+  device: ""
+  baud: 115200
+  probe_timeout: 2.0
 ble:
   scan_duration: 5
   scan_interval: 1

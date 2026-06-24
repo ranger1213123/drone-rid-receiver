@@ -20,6 +20,8 @@ from .models import (
     add_audit_log, get_audit_logs,
     get_device_secrets, upsert_device_secret, delete_device_secret,
     get_personnel_by_station, get_all_personnel, upsert_personnel, delete_personnel,
+    create_tenant, get_tenants, get_tenant_by_key, update_tenant, delete_tenant,
+    count_users_in_tenant, get_tenant_stations, get_user_stations,
 )
 from .auth import require_auth
 from logging_config import get_logger
@@ -57,12 +59,54 @@ def require_admin(f):
     return decorated
 
 
-def _user_station():
-    """当前用户的站点名 (operator 被限定到站点)"""
+def _user_scope():
+    """返回 (tenant_id, permitted_stations: list | None)
+    admin → (None, None) 无限制
+    tenant_admin → (tenant_id, [...]) 租户全部站点
+    user → (tenant_id, [assigned_station]) 单个站点
+    """
     u = session.get("user", {})
     if u.get("role") == "admin":
-        return None  # admin 看全部
-    return u.get("station", "") or None
+        return None, None
+    stations = get_user_stations(u.get("username", ""))
+    return u.get("tenant_id"), stations
+
+
+def require_tenant_admin(f):
+    """租户管理员或全局管理员"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"error": "未登录"}), 401
+        u = session["user"]
+        if u.get("role") == "admin":
+            return f(*args, **kwargs)
+        if u.get("role") != "tenant_admin":
+            return jsonify({"error": "权限不足"}), 403
+        if not u.get("tenant_id"):
+            return jsonify({"error": "未关联租户"}), 403
+        kwargs["_tenant_id"] = u["tenant_id"]
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _get_permitted_device_set():
+    """返回当前用户有权访问的 device_name 集合。admin 返回 None (全部)"""
+    tenant_id, permitted = _user_scope()
+    if permitted is None:
+        return None
+    all_stations = get_stations()
+    return {s["device_name"] for s in all_stations if s["name"] in permitted and s.get("device_name")}
+
+
+def _check_device_permission(device_name):
+    """验证当前用户是否有权访问指定设备。返回 (ok, response, status)"""
+    if not device_name:
+        return True, None, None
+    permitted = _get_permitted_device_set()
+    if permitted is not None and device_name not in permitted:
+        return False, jsonify({"error": "设备不属于您的租户"}), 403
+    return True, None, None
 
 
 # ── Power Lines ──
@@ -74,6 +118,15 @@ def api_powerlines():
         # 可选 ?device_name=X 过滤
         dev = request.args.get("device_name", "").strip() or None
         lines = get_power_lines(device_name=dev)
+        # 租户过滤: 只显示有权限站点下的电力线
+        tenant_id, permitted = _user_scope()
+        if permitted is not None:
+            permitted_devices = set()
+            all_stations = get_stations()
+            for s in all_stations:
+                if s["name"] in permitted and s.get("device_name"):
+                    permitted_devices.add(s["device_name"])
+            lines = [l for l in lines if (l.get("device_name") or "") in permitted_devices or l.get("device_name") is None]
         return jsonify(lines)
 
     # POST — 新增
@@ -81,6 +134,11 @@ def api_powerlines():
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "电力线名称不能为空"}), 400
+    # tenant 隔离: 验证 device_name 归属
+    dev = (data.get("device_name") or "").strip() or None
+    ok, err_resp, err_status = _check_device_permission(dev)
+    if not ok:
+        return err_resp, err_status
 
     pl_id = upsert_power_line({
         "name": name,
@@ -91,7 +149,7 @@ def api_powerlines():
         "lon2": _safe_float(data.get("lon2")),
         "alt2": _safe_float(data.get("alt2")),
         "voltage_level": (data.get("voltage_level") or "").strip(),
-        "device_name": (data.get("device_name") or "").strip() or None,
+        "device_name": dev,
     })
     add_audit_log(session["user"]["username"], "INSERT", "power_lines", pl_id,
                   f"新增电力线: {name}")
@@ -101,9 +159,25 @@ def api_powerlines():
 @bp.route("/api/powerlines/<int:pl_id>", methods=["PUT", "DELETE"])
 @require_web_auth
 def api_modify_powerline(pl_id):
+    pl = get_power_lines()
+    target = next((l for l in pl if l["id"] == pl_id), None)
+    if not target:
+        if request.method == "DELETE":
+            return jsonify({"error": "电力线不存在"}), 404
+        # PUT may create new if upsert, check device permission
+        data = request.json or {}
+        dev = (data.get("device_name") or "").strip() or None
+        ok, err_resp, err_status = _check_device_permission(dev)
+        if not ok:
+            return err_resp, err_status
+
+    # tenant 隔离: 验证已有电力线归属
+    if target:
+        ok, err_resp, err_status = _check_device_permission(target.get("device_name") or "")
+        if not ok:
+            return err_resp, err_status
+
     if request.method == "DELETE":
-        pl = get_power_lines()
-        target = next((l for l in pl if l["id"] == pl_id), None)
         ok = delete_power_line(pl_id)
         if ok:
             add_audit_log(session["user"]["username"], "DELETE", "power_lines", pl_id,
@@ -113,6 +187,12 @@ def api_modify_powerline(pl_id):
 
     # PUT — 编辑
     data = request.json or {}
+    # 如果要修改 device_name，验证新 target
+    new_dev = (data.get("device_name") or "").strip() or None
+    if new_dev != (target.get("device_name") or ""):
+        ok, err_resp, err_status = _check_device_permission(new_dev)
+        if not ok:
+            return err_resp, err_status
     upsert_power_line({
         "id": pl_id,
         "name": (data.get("name") or "").strip(),
@@ -123,7 +203,7 @@ def api_modify_powerline(pl_id):
         "lon2": _safe_float(data.get("lon2")),
         "alt2": _safe_float(data.get("alt2")),
         "voltage_level": (data.get("voltage_level") or "").strip(),
-        "device_name": (data.get("device_name") or "").strip() or None,
+        "device_name": new_dev,
     })
     add_audit_log(session["user"]["username"], "UPDATE", "power_lines", pl_id,
                   f"编辑电力线: {data.get('name', pl_id)}")
@@ -131,9 +211,9 @@ def api_modify_powerline(pl_id):
 
 
 @bp.route("/api/powerlines/import", methods=["POST"])
-@require_web_auth
+@require_admin
 def api_import_powerlines():
-    """批量导入电力线 — JSON 数组或 CSV 文本"""
+    """批量导入电力线 — JSON 数组或 CSV 文本 (仅限 admin)"""
     data = request.json or {}
     items = data.get("items", [])
     csv_text = data.get("csv", "").strip()
@@ -189,7 +269,7 @@ def api_powerlines_sync():
 
 
 @bp.route("/api/powerlines/push", methods=["POST"])
-@require_web_auth
+@require_admin
 def api_push_powerlines():
     """管理员推送电力线配置到边缘设备 (通过 MQTT Consumer)"""
     data = request.json or {}
@@ -238,18 +318,26 @@ def api_push_powerlines():
 def api_stations():
     if request.method == "GET":
         stations = get_stations()
-        station_filter = _user_station()
-        if station_filter:
-            stations = [s for s in stations if s["name"] == station_filter]
+        tenant_id, permitted = _user_scope()
+        if permitted is not None:
+            stations = [s for s in stations if s["name"] in permitted]
         return jsonify(stations)
 
     if request.method == "POST":
-        if session["user"].get("role") != "admin":
-            return jsonify({"error": "需要管理员权限"}), 403
+        u = session["user"]
+        if u.get("role") not in ("admin", "tenant_admin"):
+            return jsonify({"error": "需要管理员或租户管理员权限"}), 403
         data = request.json or {}
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "站点名称不能为空"}), 400
+        # tenant_admin 自动绑定租户, admin 可选指定
+        if u.get("role") == "tenant_admin":
+            tid = u.get("tenant_id")
+        else:
+            tid = data.get("tenant_id")
+            if tid is not None:
+                tid = int(tid)
         upsert_station(
             name=name,
             location=(data.get("location") or "").strip(),
@@ -257,21 +345,29 @@ def api_stations():
             lon=_safe_float(data.get("lon")),
             alt=_safe_float(data.get("alt")),
             device_name=(data.get("device_name") or "").strip() or None,
+            tenant_id=tid,
         )
-        add_audit_log(session["user"]["username"], "INSERT", "stations", None,
+        add_audit_log(u["username"], "INSERT", "stations", None,
                       f"新增站点: {name}")
         return jsonify({"status": "ok"})
 
     # DELETE
-    if session["user"].get("role") != "admin":
-        return jsonify({"error": "需要管理员权限"}), 403
+    u = session["user"]
+    if u.get("role") not in ("admin", "tenant_admin"):
+        return jsonify({"error": "需要管理员或租户管理员权限"}), 403
     data = request.json or {}
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"error": "缺少 name 参数"}), 400
+    # tenant_admin 只能删除自己租户的站点
+    if u.get("role") == "tenant_admin":
+        stations = get_stations()
+        target = next((s for s in stations if s["name"] == name), None)
+        if not target or target.get("tenant_id") != u.get("tenant_id"):
+            return jsonify({"error": "站点不存在或不属于您的租户"}), 403
     ok = delete_station(name)
     if ok:
-        add_audit_log(session["user"]["username"], "DELETE", "stations", None,
+        add_audit_log(u["username"], "DELETE", "stations", None,
                       f"删除站点: {name}")
     return jsonify({"status": "ok" if ok else "not found"})
 
@@ -283,13 +379,19 @@ def api_stations():
 def api_users():
     if request.method == "GET":
         users = get_web_users()
-        station_filter = _user_station()
-        if station_filter:
-            users = [u for u in users if u["station"] == station_filter or u["role"] == "admin"]
+        tenant_id, permitted = _user_scope()
+        if permitted is not None:
+            # tenant_admin 看租户内用户, station_user 只看自己
+            if tenant_id:
+                users = [u for u in users if u.get("tenant_id") == tenant_id
+                         or u.get("role") == "admin"]
+            else:
+                users = [u for u in users if u["username"] == session["user"]["username"]]
         return jsonify(users)
 
-    if session["user"].get("role") != "admin":
-        return jsonify({"error": "需要管理员权限"}), 403
+    u = session["user"]
+    if u.get("role") not in ("admin", "tenant_admin"):
+        return jsonify({"error": "需要管理员或租户管理员权限"}), 403
 
     if request.method == "POST":
         data = request.json or {}
@@ -299,12 +401,20 @@ def api_users():
         station = (data.get("station") or "").strip()
         if not username or not password:
             return jsonify({"error": "用户名和密码不能为空"}), 400
-        # 检查是否已存在
+        # tenant_admin 只能创建 user, 不能创建 admin
+        if u.get("role") == "tenant_admin":
+            if role not in ("user", "tenant_admin"):
+                return jsonify({"error": "租户管理员只能创建 user 或 tenant_admin 角色"}), 403
         existing = get_web_users()
         if any(u["username"] == username for u in existing):
             return jsonify({"error": "用户名已存在"}), 409
-        upsert_web_user(username, password, role, station)
-        add_audit_log(session["user"]["username"], "INSERT", "web_users", None,
+        # tenant_admin 创建的用户自动绑定同一租户
+        tid = u.get("tenant_id") if u.get("role") == "tenant_admin" else None
+        scope = "tenant" if role == "tenant_admin" else "station"
+        upsert_web_user(username, password, role, station,
+                        tenant_id=tid, scope=scope,
+                        assigned_station=station)
+        add_audit_log(u["username"], "INSERT", "web_users", None,
                       f"新增用户: {username}")
         return jsonify({"status": "ok"})
 
@@ -316,11 +426,19 @@ def api_users():
     existing = get_web_users()
     admins = [u for u in existing if u.get("role") == "admin"]
     target = next((u for u in existing if u["username"] == username), None)
-    if target and target.get("role") == "admin" and len(admins) <= 1:
+    if not target:
+        return jsonify({"status": "not found"})
+    if target.get("role") == "admin" and len(admins) <= 1:
         return jsonify({"error": "不能删除最后一个管理员账户"}), 400
+    # tenant_admin 只能删除自己租户下的非 admin
+    if u.get("role") == "tenant_admin":
+        if target.get("tenant_id") != u.get("tenant_id"):
+            return jsonify({"error": "用户不属于您的租户"}), 403
+        if target.get("role") == "admin":
+            return jsonify({"error": "不能删除管理员账户"}), 403
     ok = delete_web_user(username)
     if ok:
-        add_audit_log(session["user"]["username"], "DELETE", "web_users", None,
+        add_audit_log(u["username"], "DELETE", "web_users", None,
                       f"删除用户: {username}")
     return jsonify({"status": "ok" if ok else "not found"})
 
@@ -332,13 +450,17 @@ def api_users():
 def api_personnel():
     if request.method == "GET":
         station_name = request.args.get("station", "").strip() or None
-        station_filter = _user_station()
-        if station_filter:
-            station_name = station_filter
+        tenant_id, permitted = _user_scope()
+        if permitted is not None:
+            # 用户只能看自己权限内站点的人员
+            if station_name and station_name not in permitted:
+                return jsonify([])
+            personnel = get_all_personnel(station_name=station_name)
+            personnel = [p for p in personnel if p.get("station_name") in permitted]
+            return jsonify(personnel)
         return jsonify(get_all_personnel(station_name=station_name))
 
-    if session["user"].get("role") != "admin":
-        return jsonify({"error": "需要管理员权限"}), 403
+    u = session["user"]
 
     data = request.json or {}
 
@@ -348,8 +470,15 @@ def api_personnel():
         phone = (data.get("phone") or "").strip()
         if not station_name or not phone:
             return jsonify({"error": "站点名称和联系电话不能为空"}), 400
+
+        # 权限校验: 只能给自己有权站点添加人员
+        if u.get("role") != "admin":
+            tenant_id, permitted = _user_scope()
+            if permitted is not None and station_name not in permitted:
+                return jsonify({"error": "站点不存在或不属于您的权限范围"}), 403
+
         upsert_personnel(station_name=station_name, name=name, phone=phone)
-        add_audit_log(session["user"]["username"], "INSERT", "station_personnel", None,
+        add_audit_log(u["username"], "INSERT", "station_personnel", None,
                       f"新增站点人员: {station_name}/{name}/{phone}")
         return jsonify({"status": "ok"})
 
@@ -357,9 +486,20 @@ def api_personnel():
     personnel_id = data.get("id")
     if not personnel_id:
         return jsonify({"error": "缺少 id 参数"}), 400
+
+    # 权限校验: 只能删除自己权限范围内站点的人员
+    if u.get("role") != "admin":
+        all_p = get_all_personnel()
+        target_p = next((p for p in all_p if p.get("id") == int(personnel_id)), None)
+        if not target_p:
+            return jsonify({"error": "人员不存在"}), 404
+        tenant_id, permitted = _user_scope()
+        if permitted is not None and target_p.get("station_name") not in permitted:
+            return jsonify({"error": "人员不属于您的权限范围"}), 403
+
     ok = delete_personnel(int(personnel_id))
     if ok:
-        add_audit_log(session["user"]["username"], "DELETE", "station_personnel",
+        add_audit_log(u["username"], "DELETE", "station_personnel",
                       personnel_id, f"删除站点人员 id={personnel_id}")
     return jsonify({"status": "ok" if ok else "not found"})
 
@@ -381,20 +521,28 @@ def api_alerts_history():
     elif ack == "1":
         acknowledged = 1
 
-    # operator 只看自己站点的设备
-    station_filter = _user_station()
-    if station_filter:
-        # 查该站点的 device_name
-        stations = get_stations()
-        station_devs = [s["device_name"] for s in stations if s["name"] == station_filter and s["device_name"]]
-        if station_devs:
-            device_name = station_devs[0] if not device_name else device_name
+    # 租户/站点过滤
+    tenant_id, permitted = _user_scope()
+    if permitted is not None:
+        all_stations = get_stations()
+        permitted_devices = [s["device_name"] for s in all_stations
+                            if s["name"] in permitted and s.get("device_name")]
+        if device_name:
+            if device_name not in permitted_devices:
+                return jsonify([])
+        else:
+            # 用多个 device_name 过滤 — SQLite 不支持 IN 多值高效查询,
+            # 直接用全部数据 + Python 过滤 (alert 量小)
+            pass
 
     limit = min(int(request.args.get("limit", 100)), 1000)
     alerts = get_recent_alerts(
         limit=limit, level=level, since=since, to_date=to_date,
         drone_id=drone_id, device_name=device_name, acknowledged=acknowledged,
     )
+    # 租户过滤: 只显示有权限站点设备的告警
+    if permitted is not None and not device_name:
+        alerts = [a for a in alerts if a.get("device_name") in permitted_devices]
     return jsonify(alerts)
 
 
@@ -402,6 +550,18 @@ def api_alerts_history():
 @require_web_auth
 def api_acknowledge_alert(alert_id):
     user = session.get("user", {})
+    # tenant 隔离: 验证告警属于用户租户
+    if user.get("role") != "admin":
+        from .models import get_session, Alert
+        sess = get_session()
+        try:
+            alert = sess.get(Alert, alert_id)
+            if alert and alert.device_name:
+                ok, err_resp, err_status = _check_device_permission(alert.device_name)
+                if not ok:
+                    return err_resp, err_status
+        finally:
+            sess.close()
     note = (request.json or {}).get("note", "").strip()
     ok = acknowledge_alert(alert_id, user.get("username", "system"), note)
     if ok:
@@ -416,6 +576,10 @@ def api_alerts_export():
     level = request.args.get("level", "").strip() or None
     since = request.args.get("since", "").strip() or None
     rows = get_recent_alerts(limit=5000, level=level, since=since)
+    # tenant 过滤
+    permitted = _get_permitted_device_set()
+    if permitted is not None:
+        rows = [r for r in rows if r.get("device_name") in permitted]
     si = io.StringIO()
     w = csv.writer(si)
     w.writerow(["ID", "时间", "无人机ID", "等级", "距离(m)", "电力线", "消息", "已确认", "确认人", "确认时间"])
@@ -439,6 +603,10 @@ def api_alerts_export():
 @require_web_auth
 def api_drones_export():
     drones = get_all_drones()
+    # tenant 过滤
+    permitted = _get_permitted_device_set()
+    if permitted is not None:
+        drones = [d for d in drones if d.get("device_name") in permitted]
     si = io.StringIO()
     w = csv.writer(si)
     w.writerow(["无人机ID", "来源设备", "纬度", "经度", "海拔(m)", "速度(m/s)", "航向", "状态", "最近距离(m)", "最近电力线", "最后更新"])
@@ -460,6 +628,125 @@ def api_drones_export():
     resp.headers["Content-Type"] = "text/csv; charset=utf-8-sig"
     resp.headers["Content-Disposition"] = "attachment; filename=drones_export.csv"
     return resp
+
+
+# ── 注册 & 密钥管理 ──
+
+@bp.route("/api/register", methods=["POST"])
+def api_register():
+    """客户用密钥自助注册用户"""
+    data = request.json or {}
+    raw_key = (data.get("license_key") or "").strip().upper()
+    username = (data.get("username") or "").strip()
+    password = data.get("password", "")
+    scope = data.get("scope", "station")
+    assigned_station = (data.get("station") or "").strip()
+
+    if not raw_key or not username or not password:
+        return jsonify({"error": "密钥、用户名和密码不能为空"}), 400
+    if len(username) < 2 or len(username) > 32:
+        return jsonify({"error": "用户名长度 2-32"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "密码长度至少 6 位"}), 400
+    if scope not in ("tenant", "station"):
+        return jsonify({"error": "scope 必须是 tenant 或 station"}), 400
+
+    # 统一转为 XXXX-XXXX-XXXX-XXXX 格式
+    clean = raw_key.replace("-", "").replace(" ", "")
+    if len(clean) >= 16:
+        clean = clean[:16]
+    normalized_key = "-".join([clean[i:i+4] for i in range(0, len(clean), 4)])
+
+    tenant = get_tenant_by_key(normalized_key)
+    if not tenant or not tenant.is_active:
+        return jsonify({"error": "密钥无效或已停用"}), 403
+
+    if count_users_in_tenant(tenant.id) >= tenant.max_users:
+        return jsonify({"error": f"该密钥最多注册 {tenant.max_users} 人, 已满"}), 403
+
+    existing = get_web_users()
+    if any(u["username"] == username for u in existing):
+        return jsonify({"error": "用户名已存在"}), 409
+
+    role = "tenant_admin" if scope == "tenant" else "user"
+
+    if scope == "station":
+        if not assigned_station:
+            return jsonify({"error": "请选择所属站点"}), 400
+        tenant_stations = get_tenant_stations(tenant.id)
+        if assigned_station not in [s["name"] for s in tenant_stations]:
+            return jsonify({"error": "该站点不属于您的客户"}), 403
+
+    upsert_web_user(username, password, role=role,
+                    tenant_id=tenant.id, scope=scope,
+                    assigned_station=assigned_station)
+    add_audit_log(username, "REGISTER", "web_users", None,
+                  f"密钥注册: {username} → tenant={tenant.name} scope={scope}")
+    return jsonify({"status": "ok", "message": "注册成功"})
+
+
+@bp.route("/api/register/stations")
+def api_register_stations():
+    """公开: 查密钥对应的可用站点 (注册页用) — 兼容有/无横线两种格式"""
+    raw = (request.args.get("key") or "").strip().upper()
+    if not raw:
+        return jsonify([])
+    # 统一转为 XXXX-XXXX-XXXX-XXXX 格式后再查询
+    clean = raw.replace("-", "").replace(" ", "")
+    if len(clean) >= 16:
+        clean = clean[:16]
+    formatted = "-".join([clean[i:i+4] for i in range(0, len(clean), 4)])
+    tenant = get_tenant_by_key(formatted)
+    if not tenant or not tenant.is_active:
+        return jsonify([])
+    return jsonify(get_tenant_stations(tenant.id))
+
+
+@bp.route("/api/licenses", methods=["GET", "POST", "PUT", "DELETE"])
+@require_admin
+def api_licenses():
+    """管理员管理租户密钥"""
+    if request.method == "GET":
+        return jsonify(get_tenants())
+
+    if request.method == "POST":
+        data = request.json or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "客户名称不能为空"}), 400
+        t = create_tenant(
+            name=name,
+            max_users=int(data.get("max_users", 3)),
+            contact=(data.get("contact") or "").strip(),
+            created_by=session["user"]["username"],
+        )
+        add_audit_log(session["user"]["username"], "INSERT", "tenants", t["id"],
+                      f"创建租户: {name} 密钥={t['license_key']}")
+        return jsonify(t)
+
+    # PUT / DELETE
+    data = request.json or {}
+    tenant_id = data.get("id")
+    if not tenant_id:
+        return jsonify({"error": "缺少 id 参数"}), 400
+
+    if request.method == "DELETE":
+        ok = delete_tenant(tenant_id)
+        if ok:
+            add_audit_log(session["user"]["username"], "DELETE", "tenants", tenant_id,
+                          f"停用租户 id={tenant_id}")
+        return jsonify({"status": "ok" if ok else "not found"})
+
+    # PUT
+    ok = update_tenant(tenant_id,
+                       name=data.get("name"),
+                       max_users=data.get("max_users"),
+                       is_active=data.get("is_active"),
+                       contact=data.get("contact"))
+    if ok:
+        add_audit_log(session["user"]["username"], "UPDATE", "tenants", tenant_id,
+                      f"更新租户 id={tenant_id}")
+    return jsonify({"status": "ok" if ok else "not found"})
 
 
 # ── Settings ──
@@ -524,13 +811,11 @@ def api_stats_dashboard():
         devices = get_devices()
         drones = get_all_drones()
 
-        station_filter = _user_station()
-        if station_filter:
-            stations = [s for s in stations if s["name"] == station_filter]
-            devices = [d for d in devices if any(
-                s["device_name"] == d["name"] for s in stations
-            )]
-            station_devs = [s["device_name"] for s in stations if s["device_name"]]
+        tenant_id, permitted = _user_scope()
+        if permitted is not None:
+            stations = [s for s in stations if s["name"] in permitted]
+            station_devs = set(s["device_name"] for s in stations if s.get("device_name"))
+            devices = [d for d in devices if d["name"] in station_devs]
             drones = [d for d in drones if d["device_name"] in station_devs]
 
         return jsonify({
@@ -540,14 +825,7 @@ def api_stats_dashboard():
                 "device_name": "cloud",
                 "device_location": "云服务器",
                 "position": {"lat": 0, "lon": 0, "alt": 0},
-                "active_channel": "cloud",
-                "primary_online": True,
-                "beidou_online": False,
-                "beidou_signal": 0,
-                "queue_size": 0,
-                "http_sent": 0,
-                "beidou_sent": 0,
-                "last_send": "--",
+                "mqtt_online": True,
                 "pl_count": len(get_power_lines()),
                 "drone_count": len(drones),
             },

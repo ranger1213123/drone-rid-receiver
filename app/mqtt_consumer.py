@@ -27,6 +27,59 @@ from typing import Optional
 
 import paho.mqtt.client as mqtt
 
+from core.powerline import PowerLineManager
+from core.cloud_alert import CloudAlertProcessor
+from core.sms_gateway import create_sms_gateway
+
+from prometheus_client import Counter, Gauge, Histogram, generate_latest, CollectorRegistry
+
+# ── Prometheus 指标 ──
+METRICS_REGISTRY = CollectorRegistry()
+
+messages_total = Counter(
+    'drone_rid_messages_total', 'MQTT 消息总数',
+    ['topic_type'], registry=METRICS_REGISTRY,
+)
+alerts_generated = Counter(
+    'drone_rid_alerts_total', '云告警生成总数',
+    ['level'], registry=METRICS_REGISTRY,
+)
+flushes_total = Counter(
+    'drone_rid_flushes_total', '批量写入次数',
+    registry=METRICS_REGISTRY,
+)
+write_errors_total = Counter(
+    'drone_rid_write_errors_total', '批量写入失败次数',
+    registry=METRICS_REGISTRY,
+)
+buffer_devices = Gauge(
+    'drone_rid_buffer_devices', 'buffer 中设备数',
+    registry=METRICS_REGISTRY,
+)
+buffer_drones = Gauge(
+    'drone_rid_buffer_drones', 'buffer 中无人机数',
+    registry=METRICS_REGISTRY,
+)
+buffer_alerts = Gauge(
+    'drone_rid_buffer_alerts', 'buffer 中告警数',
+    registry=METRICS_REGISTRY,
+)
+flush_latency = Histogram(
+    'drone_rid_flush_latency_seconds', 'flush 耗时 (秒)',
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+    registry=METRICS_REGISTRY,
+)
+batch_write_latency = Histogram(
+    'drone_rid_batch_write_seconds', 'DB 批量写入耗时 (秒)',
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+    registry=METRICS_REGISTRY,
+)
+pl_loaded = Gauge(
+    'drone_rid_power_lines_loaded', '已加载电力线数量',
+    registry=METRICS_REGISTRY,
+)
+pl_loaded.set(0)
+
 # ── 简单 HTTP 健康检查 (不依赖 Flask) ──
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -48,6 +101,11 @@ class HealthHandler(BaseHTTPRequestHandler):
                 status["buffer_size"] = self.consumer_ref.buffer_size()
                 status["last_flush"] = self.consumer_ref.last_flush_time
             self._json(200, status)
+        elif self.path == "/metrics":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(generate_latest(METRICS_REGISTRY))
         else:
             self.send_response(404)
             self.end_headers()
@@ -111,9 +169,27 @@ class MqttConsumer:
         self._buffer_lock = threading.Lock()
         self.last_flush_time = ""
 
+        # 云端距离计算 + 告警
+        self.pl_manager = PowerLineManager()
+        self._pl_loaded = False
+        self.alert_processor = CloudAlertProcessor(
+            thresholds={"warning": 200, "severe": 100, "critical": 50},
+            cooldown=30.0,
+        )
+
         self._client: Optional[mqtt.Client] = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
+
+        # device → tenant 映射 (lazy load from DB)
+        self._device_tenant: dict = {}
+        self._device_tenant_loaded = False
+
+        # SMS 通知网关 (lazy init)
+        self._sms_gateway = None
+        self._sms_gateway_initialized = False
+        self._sms_cooldown: dict = {}   # (station_name, drone_id, level) → timestamp
+        self._sms_cooldown_sec = 300    # 同站点同无人机同等级 5 分钟内不重复发短信
 
     # ── 生命周期 ──
 
@@ -139,6 +215,9 @@ class MqttConsumer:
 
         self._client.connect(self._broker_host, self._broker_port, keepalive=60)
         self._client.loop_start()
+
+        # 预加载电力线 (避免首次 _buffer_raw 时在锁内查询 DB)
+        self._ensure_pl_loaded()
 
         # 定时 flush 线程
         self._thread = threading.Thread(target=self._flush_loop, daemon=True)
@@ -168,6 +247,7 @@ class MqttConsumer:
             client.subscribe("$share/consumer/drone/+/alert", qos=2)
             client.subscribe("$share/consumer/drone/+/heartbeat", qos=0)
             client.subscribe("$share/consumer/drone/+/status", qos=1)
+            client.subscribe("$share/consumer/drone/+/raw", qos=1)   # DevelopLink SDRTU 透传
             client.subscribe("drone/+/config_sync", qos=1)  # 非共享，每个 consumer 都可回复
         else:
             logger.warning("MQTT 连接失败: rc=%d", rc)
@@ -204,11 +284,156 @@ class MqttConsumer:
                 self._buffer_status(device_name, payload)
             elif msg_type == "config_sync":
                 self._handle_config_sync(device_name, payload)
+            elif msg_type == "raw":
+                self._buffer_raw(device_name, payload)
+
+        # 指标: 按 topic 类型计数 + buffer 容量
+        messages_total.labels(topic_type=msg_type).inc()
+        buffer_devices.set(len(self._buffer['devices']))
+        buffer_drones.set(len(self._buffer['drones']))
+        buffer_alerts.set(len(self._buffer['alerts']))
 
         if self._buffer_size() >= self._batch_size:
             self._flush()
 
     # ── Buffer 逻辑 ──
+
+    def _ensure_device_tenant_map(self):
+        """懒加载 device_name → {tenant_id, station_name} 映射"""
+        if self._device_tenant_loaded:
+            return
+        try:
+            from app.server.models import get_session, Station
+            sess = get_session()
+            try:
+                stations = sess.query(Station).filter(
+                    Station.device_name.isnot(None),
+                    Station.device_name != "",
+                ).all()
+                for s in stations:
+                    self._device_tenant[s.device_name] = {
+                        "tenant_id": s.tenant_id,
+                        "station_name": s.name,
+                    }
+                self._device_tenant_loaded = True
+                logger.info("Device→Tenant 映射已加载: %d 条", len(self._device_tenant))
+            finally:
+                sess.close()
+        except Exception as e:
+            logger.warning("加载 Device→Tenant 映射失败: %s", e)
+
+    def _get_device_tenant_info(self, device_name: str) -> dict:
+        """获取设备的 tenant_id 和 station_name"""
+        self._ensure_device_tenant_map()
+        return self._device_tenant.get(device_name, {})
+
+    # ── SMS 通知 ──
+
+    def _ensure_sms_gateway(self):
+        """懒加载 SMS 网关，检查 DB 中 sms_enabled 开关"""
+        if self._sms_gateway_initialized:
+            return
+        self._sms_gateway_initialized = True
+        try:
+            from app.server.models import get_setting
+            sms_enabled = get_setting("sms_enabled", "false").lower() == "true"
+        except Exception:
+            sms_enabled = os.environ.get("SMS_ENABLED", "").lower() == "true"
+
+        if not sms_enabled:
+            logger.info("SMS 通知未启用 (sms_enabled=false)")
+            return
+
+        config = {
+            "backhaul": {
+                "sms": {
+                    "enabled": True,
+                    "provider": os.environ.get("SMS_PROVIDER", "simulated"),
+                    "rate_limit_per_hour": int(os.environ.get("SMS_RATE_LIMIT_PER_HOUR", "10")),
+                    "alibaba": {
+                        "access_key": os.environ.get("SMS_ALIBABA_ACCESS_KEY", ""),
+                        "access_secret": os.environ.get("SMS_ALIBABA_ACCESS_SECRET", ""),
+                        "sign_name": os.environ.get("SMS_ALIBABA_SIGN_NAME", ""),
+                        "template_code": os.environ.get("SMS_ALIBABA_TEMPLATE_CODE", ""),
+                    },
+                }
+            }
+        }
+        try:
+            self._sms_gateway = create_sms_gateway(config)
+            logger.info("SMS 网关已初始化: provider=%s", config["backhaul"]["sms"]["provider"])
+        except Exception as e:
+            logger.error("SMS 网关初始化失败: %s", e)
+
+    def _notify_station_personnel(self, station_name: str, alert: dict):
+        """向站点负责人发送告警短信"""
+        if not station_name:
+            return
+
+        self._ensure_sms_gateway()
+        if self._sms_gateway is None:
+            return
+
+        drone_id = alert.get("drone_id", "")
+        level = alert.get("level", "warning")
+        distance = alert.get("distance", 0)
+        line_name = alert.get("line_name", "")
+
+        # SMS 去重: 同站点 + 同无人机 + 同等级在冷却期内不重复
+        cooldown_key = (station_name, drone_id, level)
+        now = time.time()
+        last = self._sms_cooldown.get(cooldown_key, 0)
+        if now - last < self._sms_cooldown_sec:
+            return
+        self._sms_cooldown[cooldown_key] = now
+
+        try:
+            from app.server.models import get_personnel_by_station
+            personnel = get_personnel_by_station(station_name)
+        except Exception as e:
+            logger.warning("查询站点人员失败: station=%s, err=%s", station_name, e)
+            return
+
+        if not personnel:
+            return
+
+        phones = [p["phone"] for p in personnel if p.get("phone")]
+        if not phones:
+            return
+
+        level_text = {"warning": "⚠️ 警告", "severe": "🚨 严重", "critical": "🔴 危急"}.get(level, level)
+        message = (
+            f"【无人机告警】{level_text}: 无人机 {drone_id} 接近 {line_name}，"
+            f"距离 {distance:.0f}m，请立即处置。"
+        )
+
+        try:
+            self._sms_gateway.send(phones, message)
+            logger.info("SMS 通知已发送: station=%s phones=%d drone=%s level=%s",
+                        station_name, len(phones), drone_id, level)
+        except Exception as e:
+            logger.error("SMS 发送失败: station=%s err=%s", station_name, e)
+
+    def _notify_alerts_sms(self, alerts: list):
+        """对一批告警按设备解析站点后发送 SMS"""
+        self._ensure_device_tenant_map()
+
+        # 周期性清理过期 SMS 冷却记录
+        now = time.time()
+        stale = [k for k, v in self._sms_cooldown.items() if now - v > self._sms_cooldown_sec * 2]
+        for k in stale:
+            self._sms_cooldown.pop(k, None)
+
+        for alert in alerts:
+            device_name = alert.get("device_name", "")
+            ti = self._device_tenant.get(device_name, {})
+            station_name = ti.get("station_name", "")
+            if not station_name:
+                continue
+            try:
+                self._notify_station_personnel(station_name, alert)
+            except Exception as e:
+                logger.error("SMS 通知异常: device=%s err=%s", device_name, e)
 
     def _buffer_report(self, device_name: str, data: dict):
         now = datetime.now(timezone.utc)
@@ -220,16 +445,30 @@ class MqttConsumer:
         line_name = data.get("nearest_line", "")
         status = data.get("status", "active")
 
+        ti = self._get_device_tenant_info(device_name)
+        tenant_id = ti.get("tenant_id")
+        station_name = ti.get("station_name", "")
+
         self._buffer['devices'][device_name] = {
             'name': device_name, 'last_seen': now, 'status': 'online',
             'lat': lat, 'lon': lon, 'alt': alt,
+            'station_name': station_name, 'tenant_id': tenant_id,
         }
         if drone_id:
             key = (drone_id, device_name)
             self._buffer['drones'][key] = {
                 'id': drone_id, 'device_name': device_name,
                 'last_seen': now, 'last_lat': lat, 'last_lon': lon, 'last_alt': alt,
-                'status': 'active',
+                'last_speed': data.get('speed', 0),
+                'last_heading': data.get('heading', 0),
+                'rssi': data.get('rssi', 0),
+                'ua_type': data.get('ua_type', 0),
+                'status_code': data.get('status_code', 0),
+                'height_agl': data.get('height_agl'),
+                'min_distance': distance,
+                'nearest_line': line_name,
+                'status': status,
+                'tenant_id': tenant_id,
             }
             if distance is not None:
                 self._buffer['status_updates'].append(
@@ -247,17 +486,25 @@ class MqttConsumer:
         alt = data.get("altitude", 0)
         message = f"[{level}] {drone_id} 接近 {line_name} 距离{distance:.0f}m"
 
+        ti = self._get_device_tenant_info(device_name)
+        tenant_id = ti.get("tenant_id")
+        station_name = ti.get("station_name", "")
+
         self._buffer['devices'][device_name] = {
             'name': device_name, 'last_seen': now, 'status': 'online',
             'lat': lat, 'lon': lon, 'alt': alt,
+            'station_name': station_name, 'tenant_id': tenant_id,
         }
         if drone_id:
             key = (drone_id, device_name)
             self._buffer['drones'][key] = {
                 'id': drone_id, 'device_name': device_name,
                 'last_seen': now, 'last_lat': lat, 'last_lon': lon, 'last_alt': alt,
+                'last_speed': 0, 'last_heading': 0,
+                'rssi': 0, 'ua_type': 0, 'status_code': 0, 'height_agl': None,
                 'min_distance': distance, 'nearest_line': line_name,
                 'status': level,
+                'tenant_id': tenant_id,
             }
         self._buffer['alerts'].append({
             'device_name': device_name, 'drone_id': drone_id,
@@ -267,18 +514,143 @@ class MqttConsumer:
 
     def _buffer_heartbeat(self, device_name: str, data: dict):
         now = datetime.now(timezone.utc)
+        ti = self._get_device_tenant_info(device_name)
         self._buffer['devices'][device_name] = {
             'name': device_name, 'last_seen': now, 'status': 'online',
             'lat': data.get('device_lat', 0),
             'lon': data.get('device_lon', 0),
             'alt': data.get('device_alt', 0),
+            'station_name': ti.get("station_name", ""),
+            'tenant_id': ti.get("tenant_id"),
         }
 
     def _buffer_status(self, device_name: str, data: str):
         if isinstance(data, str) and data in ("online", "offline"):
+            ti = self._get_device_tenant_info(device_name)
             self._buffer['devices'][device_name] = {
                 'name': device_name, 'status': data,
+                'station_name': ti.get("station_name", ""),
+                'tenant_id': ti.get("tenant_id"),
             }
+
+    # ── SDRTU Raw Format (DevelopLink / ESP32 透传) ──
+
+    def _translate_raw_to_report(self, device_name: str, payload: dict) -> Optional[dict]:
+        """将 ESP32 原始 JSON 翻译为内部 report 格式
+
+        输入:
+          心跳: {"devId":"EXD001","count":86}
+          数据: {"devId":"EXD001","data":{"osid":"1581F...","RSSI":-72,
+                 "Op_Lat":30.61517,"Op_Lon":104.06742,"Op_Alt":469,
+                 "Lat":0,"Lon":0,"AltGeo":-1000,"Heading":361,"Speed":0,
+                 "UAType":2,"Status":0,"UATime":0}}
+
+        返回 report dict 或 None (心跳/无效数据)
+        """
+        inner = payload.get("data")
+        if not isinstance(inner, dict):
+            return None
+
+        osid = (inner.get("osid") or "").strip()
+        if not osid:
+            return None
+
+        # 位置: Op_Lat/Op_Lon/Op_Alt 优先, 回退到 drone GPS
+        op_lat = inner.get("Op_Lat", 0.0) or 0.0
+        op_lon = inner.get("Op_Lon", 0.0) or 0.0
+        op_alt = inner.get("Op_Alt", 0.0) or 0.0
+        drone_lat = inner.get("Lat", 0.0) or 0.0
+        drone_lon = inner.get("Lon", 0.0) or 0.0
+        alt_geo = inner.get("AltGeo", -1000.0)
+        if alt_geo is None:
+            alt_geo = -1000.0
+
+        lat = op_lat if op_lat != 0.0 else drone_lat
+        lon = op_lon if op_lon != 0.0 else drone_lon
+        alt = op_alt if op_alt != 0.0 else (alt_geo if alt_geo != -1000.0 else 0.0)
+
+        heading = inner.get("Heading", 0) or 0
+        if heading > 360:
+            heading = 0
+
+        return {
+            "drone_id": osid,
+            "latitude": lat,
+            "longitude": lon,
+            "altitude": alt,
+            "distance_to_line": None,      # 由云端距离计算填充
+            "nearest_line": "",
+            "status": "active",
+            "device": device_name,
+            "rssi": inner.get("RSSI", 0) or 0,
+            "heading": heading,
+            "speed": inner.get("Speed", 0) or 0,
+            "ua_type": inner.get("UAType", 0) or 0,
+            "status_code": inner.get("Status", 0) or 0,
+            "height_agl": inner.get("Height"),
+        }
+
+    def _ensure_pl_loaded(self):
+        """延迟加载电力线数据 (需 DB 就绪后调用)"""
+        if self._pl_loaded:
+            return
+        try:
+            from app.server.models import get_power_lines, close_db
+            lines = get_power_lines()
+            if lines:
+                self.pl_manager.load_from_list(lines)
+                pl_loaded.set(len(lines))
+                logger.info("电力线加载完成: %d 条", len(lines))
+        except Exception as e:
+            logger.warning("电力线加载失败: %s", e)
+        finally:
+            try:
+                from app.server.models import close_db
+                close_db()
+            except Exception:
+                pass
+        self._pl_loaded = True
+
+    def _buffer_raw(self, device_name: str, payload: dict):
+        """处理 SDRTU raw 格式消息
+
+        心跳 → 只更新设备在线状态
+        数据 → 翻译为 report 格式, 注入距离计算 + 告警判定, 再复用 _buffer_report
+        """
+        now = datetime.now(timezone.utc)
+
+        # 总是更新设备心跳
+        dev_id = payload.get("devId", device_name)
+        self._buffer['devices'][device_name] = {
+            'name': device_name,
+            'last_seen': now,
+            'status': 'online',
+        }
+
+        report = self._translate_raw_to_report(device_name, payload)
+        if report:
+            # ── 云端距离计算 + 告警 ──
+            self._ensure_pl_loaded()
+            if self.pl_manager and self.pl_manager.lines:
+                line, dist = self.pl_manager.find_nearest_line(
+                    report["latitude"], report["longitude"], report["altitude"]
+                )
+                if line:
+                    report["distance_to_line"] = dist
+                    report["nearest_line"] = line.name
+                    level = self.alert_processor.process(
+                        drone_id=report["drone_id"],
+                        distance=dist,
+                        line_name=line.name,
+                        line_id=line.line_id,
+                        drone_alt=report["altitude"],
+                        drone_lat=report["latitude"],
+                        drone_lon=report["longitude"],
+                        device_name=device_name,
+                    )
+                    if level:
+                        report["status"] = level
+            self._buffer_report(device_name, report)
 
     def _handle_config_sync(self, device_name: str, payload: dict):
         """设备重连后版本号比对，按需推送电力线配置"""
@@ -301,6 +673,12 @@ class MqttConsumer:
                 logger.info("配置推送: %s (v%s → v%s)", device_name, device_version, max_updated)
         except Exception as e:
             logger.error("config_sync 处理失败: %s", e)
+        finally:
+            try:
+                from app.server.models import close_db
+                close_db()
+            except Exception:
+                pass
 
     def buffer_size(self) -> int:
         """当前 buffer 中的总条目数"""
@@ -319,6 +697,8 @@ class MqttConsumer:
             self._flush()
 
     def _flush(self):
+        _t0 = time.time()
+
         with self._buffer_lock:
             devices = list(self._buffer['devices'].values())
             drones = list(self._buffer['drones'].values())
@@ -329,12 +709,28 @@ class MqttConsumer:
                 'status_updates': [], 'alerts': [],
             }
 
+        # 从 CloudAlertProcessor 提取告警
+        cloud_alerts = self.alert_processor.drain_alerts()
+        if cloud_alerts:
+            alerts.extend(cloud_alerts)
+            # 按等级计数
+            for a in cloud_alerts:
+                alerts_generated.labels(level=a['level']).inc()
+
+        # 更新 buffer gauges (flush 后归零)
+        buffer_devices.set(0)
+        buffer_drones.set(0)
+        buffer_alerts.set(0)
+
         if not any([devices, drones, status_updates, alerts]):
+            flushes_total.inc()
             return
 
+        db_ok = False
         try:
             from app.server.models import get_session
             session = get_session()
+            _db_t0 = time.time()
             try:
                 if devices:
                     self._batch_write_devices(session, devices)
@@ -345,16 +741,35 @@ class MqttConsumer:
                 if alerts:
                     self._batch_write_alerts(session, alerts)
                 session.commit()
+                db_ok = True
+                batch_write_latency.observe(time.time() - _db_t0)
                 self.last_flush_time = datetime.now().isoformat()
                 logger.debug("批量写入: devices=%d drones=%d alerts=%d",
                             len(devices), len(drones), len(alerts))
             except Exception as e:
                 session.rollback()
+                write_errors_total.inc()
                 logger.error("批量写入失败: %s", e)
             finally:
                 session.close()
         except Exception as e:
+            write_errors_total.inc()
             logger.error("数据库连接失败: %s", e)
+
+        # SMS 通知 — DB 写入成功后才发送，异常不影响主流程
+        if db_ok and alerts:
+            try:
+                self._notify_alerts_sms(alerts)
+            except Exception as e:
+                logger.error("SMS 通知失败: %s", e)
+
+        # 清理已不在线的无人机告警状态
+        if drones:
+            active_ids = {d['id'] for d in drones}
+            self.alert_processor.cleanup_stale(active_ids)
+
+        flushes_total.inc()
+        flush_latency.observe(time.time() - _t0)
 
     def _batch_write_devices(self, session, devices: list):
         from app.server.models import Device
@@ -378,6 +793,8 @@ class MqttConsumer:
                 'lon': stmt.excluded.lon,
                 'alt': stmt.excluded.alt,
                 'status': 'online',
+                'station_name': stmt.excluded.station_name,
+                'tenant_id': stmt.excluded.tenant_id,
             }
         )
         session.execute(stmt)
@@ -402,7 +819,16 @@ class MqttConsumer:
                 'last_lat': stmt.excluded.last_lat,
                 'last_lon': stmt.excluded.last_lon,
                 'last_alt': stmt.excluded.last_alt,
+                'last_speed': stmt.excluded.last_speed,
+                'last_heading': stmt.excluded.last_heading,
+                'rssi': stmt.excluded.rssi,
+                'ua_type': stmt.excluded.ua_type,
+                'status_code': stmt.excluded.status_code,
+                'height_agl': stmt.excluded.height_agl,
+                'nearest_line': stmt.excluded.nearest_line,
+                'min_distance': stmt.excluded.min_distance,
                 'status': stmt.excluded.status,
+                'tenant_id': stmt.excluded.tenant_id,
             }
         )
         session.execute(stmt)
@@ -429,9 +855,14 @@ class MqttConsumer:
 def main():
     # 初始化数据库连接 (复用 models.py 的引擎)
     database_url = os.environ.get("DATABASE_URL", "sqlite:///data/center.db")
+    pool_size = int(os.environ.get("DB_POOL_SIZE", "5"))
+    pool_overflow = int(os.environ.get("DB_POOL_OVERFLOW", "10"))
+    pool_timeout = int(os.environ.get("DB_POOL_TIMEOUT", "30"))
     from app.server.models import init_db
-    init_db(database_url)
-    logger.info("数据库已连接: %s", database_url.split("://")[0])
+    init_db(database_url, pool_size=pool_size, pool_overflow=pool_overflow,
+            pool_timeout=pool_timeout)
+    logger.info("数据库已连接: %s (pool=%d+%d, timeout=%ds)",
+                database_url.split("://")[0], pool_size, pool_overflow, pool_timeout)
 
     consumer = MqttConsumer()
     consumer.start()

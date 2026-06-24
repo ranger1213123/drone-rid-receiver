@@ -1,8 +1,8 @@
 users:
-  - username: admin
-    password: admin123
-    role: admin
-  - username: user1
-    password: user123
-    role: user
-    station: NW-F1
+- password: scrypt:32768:8:1$DrytezxK4AoWVZYp$6ed6c195c154083182df299be1cb76ca832d474a5a36204ea9940e4d8141f5d8cd21d6d6278daefdb5ba73650adc38262945ab7cb515e6409b71ef7556b56e2f
+  role: admin
+  username: admin
+- password: scrypt:32768:8:1$AyL5rRwswyrcrQ71$cbeaed79a23c35f2d3b19133c2271055d17cb3bdd600dcfb715b63758a85b179476f4f29c3ef6513be395d2a0e68cf0ece6634aef035da6ee076fad72e87bf02
+  role: user
+  station: NW-F1
+  username: user1

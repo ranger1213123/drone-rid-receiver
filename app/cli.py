@@ -194,14 +194,27 @@ def main():
     )
     parser.add_argument(
         "--serial-device",
-        default="/dev/ttyUSB0",
-        help="串口设备路径 (默认: /dev/ttyUSB0)"
+        default=None,
+        help="串口设备路径 (默认: 自动检测或配置值)"
     )
     parser.add_argument(
         "--serial-baud",
         type=int,
-        default=115200,
-        help="串口波特率 (默认: 115200)"
+        default=None,
+        help="串口波特率 (默认: 配置值或 115200)"
+    )
+    parser.add_argument(
+        "--serial-auto", "--no-serial-auto",
+        dest="serial_auto",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="自动检测串口设备 (默认: 配置值)"
+    )
+    parser.add_argument(
+        "--serial-probe-timeout",
+        type=float,
+        default=None,
+        help="串口探测超时秒数 (默认: 配置值或 2.0)"
     )
     args = parser.parse_args()
 
@@ -236,11 +249,19 @@ def main():
             interface=args.wifi_interface,
         )
     elif args.mode == "serial":
-        from receiver.serial import create_serial_receiver
+        from receiver.serial import create_serial_receiver, get_serial_config
+        scfg = get_serial_config(config)
+        # CLI 参数 > 配置文件 > 默认值
+        device = args.serial_device or scfg["device"]
+        baud = args.serial_baud or scfg["baud"]
+        auto_scan = args.serial_auto if args.serial_auto is not None else scfg["auto_scan"]
+        probe_timeout = args.serial_probe_timeout or scfg["probe_timeout"]
         receiver = create_serial_receiver(
             callback=safe_callback,
-            device=args.serial_device,
-            baud=args.serial_baud,
+            device=device,
+            baud=baud,
+            auto_scan=auto_scan,
+            scan_timeout=probe_timeout,
         )
     else:
         receiver = BLE_RIDReceiver(

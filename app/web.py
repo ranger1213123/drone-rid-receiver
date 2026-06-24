@@ -188,6 +188,7 @@ def api_status():
         alert_drones = controller.alert_system.drone_level if controller else {}
 
     # Add power line names, model names to drones (skip for live_feed cached, already populated)
+    device_name = controller._config.get('backhaul', {}).get('device_name', '') if controller else ''
     if controller and (live_feed is None or not live_feed.get_active_drones()):
         line_names = {l.line_id: l.name for l in controller.pl_manager.lines}
         for d in drones:
@@ -195,6 +196,7 @@ def api_status():
             d['product_model'] = lookup_model_by_sn(d['id']) or ''
             line_id = d.get('nearest_line_id')
             d['line_name'] = line_names.get(line_id, '') if line_id else ''
+            d.setdefault('device_name', device_name)  # 确保 DB 回退路径的无人机有所属设备
 
     logs = controller._log_buffer[-50:] if controller and hasattr(controller, '_log_buffer') else []
 
@@ -216,12 +218,8 @@ def api_status():
             'station': user.get('station', ''),
         },
         'backhaul': {
-            'channel': bhaul.channel_status if bhaul else 'offline',
-            'primary_online': bhaul.primary_online if bhaul else False,
-            'beidou_online': bhaul.beidou_online if bhaul else False,
-            'active_channel': bhaul.active_channel if bhaul else 'none',
+            'mqtt_online': bhaul.primary_online if bhaul else False,
             'queue_size': bhaul.queue_size if bhaul else 0,
-            'stats': bhaul.stats if bhaul else {},
         } if bhaul else None,
     })
 
@@ -233,7 +231,14 @@ def api_start():
     mode = data.get('mode', 'ble')
     if controller is None:
         controller = WebController()
-    controller.switch_mode(mode, wifi_interface=data.get('interface'))
+    controller.switch_mode(
+        mode,
+        wifi_interface=data.get('interface'),
+        serial_device=data.get('serial_device') or None,
+        serial_baud=data.get('serial_baud'),
+        serial_auto=data.get('serial_auto'),
+        serial_probe_timeout=data.get('serial_probe_timeout'),
+    )
     return jsonify({'status': 'ok', 'mode': mode})
 
 @app.route('/api/stop', methods=['POST'])
@@ -243,6 +248,42 @@ def api_stop():
     if controller:
         controller.stop()
     return jsonify({'status': 'ok'})
+
+@app.route('/api/serial/scan', methods=['GET'])
+@require_web_auth
+def api_serial_scan():
+    """扫描所有可用串口并检测 ESP32 设备"""
+    from receiver.serial_scanner import scan_ports, list_serial_ports
+    timeout = float(request.args.get('timeout', 2.0))
+    try:
+        ports = list_serial_ports()
+        results = scan_ports(probe_timeout=timeout)
+        return jsonify({
+            'ports': ports,
+            'found': [{'port': r.port, 'baud': r.baud, 'dev_id': r.dev_id}
+                      for r in results],
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/serial/connect', methods=['POST'])
+@require_web_auth
+def api_serial_connect():
+    """切换到指定串口设备"""
+    global controller
+    if not controller:
+        return jsonify({'error': '系统未启动'}), 503
+    data = request.json or {}
+    port = (data.get('port') or '').strip() or None
+    baud = int(data.get('baud', 115200))
+    auto_scan = data.get('auto_scan', False)
+    probe_timeout = float(data.get('probe_timeout', 2.0))
+    controller.switch_mode('serial',
+                           serial_device=port,
+                           serial_baud=baud,
+                           serial_auto=auto_scan,
+                           serial_probe_timeout=probe_timeout)
+    return jsonify({'status': 'ok', 'port': port or '(auto)'})
 
 @app.route('/api/powerlines', methods=['GET', 'POST', 'DELETE'])
 @require_web_auth
@@ -684,16 +725,11 @@ def api_backhaul():
     """数据回传通道状态"""
     global controller
     if not controller or not controller.backhaul:
-        return jsonify({'channel': 'offline', 'primary_online': False,
-                        'beidou_online': False, 'active_channel': 'none'})
+        return jsonify({'mqtt_online': False})
     bh = controller.backhaul
     return jsonify({
-        'channel': bh.channel_status,
-        'primary_online': bh.primary_online,
-        'beidou_online': bh.beidou_online,
-        'active_channel': bh.active_channel,
+        'mqtt_online': bh.primary_online,
         'queue_size': bh.queue_size,
-        'stats': bh.stats,
     })
 
 
@@ -719,25 +755,17 @@ def api_stats_dashboard():
         model_dist = [{'name': k, 'count': v} for k, v in model_counts.most_common()]
 
         bh = controller.backhaul
-        pos_lat, pos_lon, pos_alt = 0.0, 0.0, 0.0
-        try:
-            if bh:
-                pos_lat, pos_lon, pos_alt = bh._get_device_position()
-        except Exception:
-            pass
+        cfg_pos = controller._config.get('position', {})
+        pos_lat = float(cfg_pos.get('manual_lat', 0) or 0)
+        pos_lon = float(cfg_pos.get('manual_lon', 0) or 0)
+        pos_alt = float(cfg_pos.get('manual_alt', 0) or 0)
 
         station = {
             'device_name': controller._config.get('backhaul', {}).get('device_name', 'NW-F1'),
             'device_location': controller._config.get('backhaul', {}).get('device_location', ''),
             'position': {'lat': pos_lat, 'lon': pos_lon, 'alt': pos_alt},
-            'active_channel': str(bh.active_channel) if bh else 'none',
-            'primary_online': bool(bh.primary_online) if bh else False,
-            'beidou_online': bool(bh.beidou_online) if bh else False,
-            'beidou_signal': 0,
+            'mqtt_online': bool(bh.primary_online) if bh else False,
             'queue_size': int(bh.queue_size) if bh else 0,
-            'http_sent': int(bh.stats.get('http_sent', 0)) if bh else 0,
-            'beidou_sent': int(bh.stats.get('beidou_sent', 0)) if bh else 0,
-            'last_send': str(bh.stats.get('last_send_time', '--')) if bh else '--',
             'pl_count': len(controller.pl_manager.lines),
             'drone_count': len(controller.db.get_active_drones()),
         }
@@ -821,8 +849,6 @@ class WebController:
         self._loop = None
         self._thread = None
         self._wifi_interface = None
-        self._serial_device = "/dev/ttyUSB0"
-        self._serial_baud = 115200
         self._lock = threading.Lock()
 
         # 使用共享工厂初始化所有核心组件
@@ -830,6 +856,14 @@ class WebController:
         config_path = str(PROJECT_ROOT / 'config' / 'config.yaml')
         core = bootstrap_core(config_path=config_path)
         self._config = core['config']
+
+        # 串口配置从 config.yaml 加载
+        from receiver.serial import get_serial_config
+        scfg = get_serial_config(self._config)
+        self._serial_device = scfg["device"]
+        self._serial_baud = scfg["baud"]
+        self._serial_auto_scan = scfg["auto_scan"]
+        self._serial_probe_timeout = scfg["probe_timeout"]
         self._pl_file = core['pl_file']
         self._stations_file = PROJECT_ROOT / 'config' / 'stations.yaml'
         self.stations = self._load_stations()
@@ -916,14 +950,21 @@ class WebController:
                 pass
 
     def switch_mode(self, mode, wifi_interface=None,
-                    serial_device="/dev/ttyUSB0", serial_baud=115200):
+                    serial_device=None, serial_baud=None,
+                    serial_auto=None, serial_probe_timeout=None):
         """切换接收模式 (不重建 DB, 线程安全)"""
         with self._lock:
             self.stop()
             self.mode = mode
             self._wifi_interface = wifi_interface
-            self._serial_device = serial_device
-            self._serial_baud = serial_baud
+            if serial_device is not None:
+                self._serial_device = serial_device
+            if serial_baud is not None:
+                self._serial_baud = serial_baud
+            if serial_auto is not None:
+                self._serial_auto_scan = serial_auto
+            if serial_probe_timeout is not None:
+                self._serial_probe_timeout = serial_probe_timeout
             self.start()
 
     def start(self):
@@ -1019,6 +1060,8 @@ class WebController:
                 callback=safe_callback,
                 device=self._serial_device,
                 baud=self._serial_baud,
+                auto_scan=self._serial_auto_scan,
+                scan_timeout=self._serial_probe_timeout,
             )
         else:
             self._receiver = BLE_RIDReceiver(

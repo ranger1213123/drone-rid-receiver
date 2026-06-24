@@ -190,6 +190,10 @@ class RawWiFiReceiver(RIDReceiver):
             )
             self._sock.bind((self.interface, 0))
             self._sock.settimeout(self.timeout)
+        except AttributeError:
+            logger.error("AF_PACKET raw socket 仅支持 Linux，当前平台不可用")
+            self._running = False
+            return
         except PermissionError:
             logger.error("需要 root 权限运行 raw socket, 请使用 sudo")
             self._running = False

@@ -54,6 +54,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 /* ── Map Area ── */
 #mapWrap{flex:1;position:relative;height:100%}
 #map{width:100%;height:100%;background:#e8e8e8}
+.leaflet-control-attribution{display:none!important}
 
 /* ── Bottom Bar ── */
 #bottomBar{
@@ -525,8 +526,10 @@ body.sta-mode .nat-only{display:none!important}
           <button class="btn-sm nat-only" id="stMgrBtn2" onclick="openStModal()" style="text-align:left;display:none">管理站点</button>
           <button class="btn-sm nat-only" id="usrMgrBtn" onclick="openUsrModal()" style="text-align:left;display:none">管理用户</button>
           <button class="btn-sm nat-only" id="cfgMgrBtn" onclick="openCfgModal()" style="text-align:left;display:none">系统设置</button>
+          <button class="btn-sm nat-only" id="licMgrBtn" onclick="openLicModal()" style="text-align:left;display:none">密钥管理</button>
           <button class="btn-sm" onclick="openHistModal()" style="text-align:left">历史告警</button>
           <button class="btn-sm" onclick="openAudModal()" style="text-align:left">审计日志</button>
+          <button class="btn-sm sta-only" id="personnelBtn" onclick="openPersonnelModal()" style="text-align:left">告警联系人</button>
           <button class="btn-sm sta-only" id="bufToggleBtn" onclick="toggleBufferZones()" style="text-align:left">显示阈值圈</button>
           <button class="btn-sm" id="airspaceToggleBtn" onclick="toggleAirspace()" style="text-align:left">显示空域</button>
           <button class="btn-sm" onclick="window.location='/list'" style="text-align:left">查看列表视图</button>
@@ -594,14 +597,8 @@ body.sta-mode .nat-only{display:none!important}
           <span class="li"><span class="leg-dot" style="background:var(--orange)"></span>严重</span>
           <span class="li"><span class="leg-dot" style="background:var(--red)"></span>危险</span>
           <span class="li"><span class="leg-dot" style="background:#bbb"></span>离线</span>
-          <span class="li" style="width:100%;margin-top:2px;padding-top:2px;border-top:1px solid var(--border);font-weight:600">电力线 (电压等级)</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:4px;background:#b91c1c;border-radius:2px;vertical-align:middle"></span>1000kV</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:4px;background:#dc262e;border-radius:2px;vertical-align:middle"></span>±800kV</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:4px;background:#ea580c;border-radius:2px;vertical-align:middle"></span>750kV</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:3px;background:#eab308;border-radius:2px;vertical-align:middle"></span>330/220kV</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:3px;background:#2563eb;border-radius:2px;vertical-align:middle"></span>110kV</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:3px;background:#16a34a;border-radius:2px;vertical-align:middle"></span>66/35kV</span>
-          <span class="li"><span style="display:inline-block;width:12px;height:3px;background:#64748b;border-radius:2px;vertical-align:middle"></span>10kV</span>
+          <span class="li" style="width:100%;margin-top:2px;padding-top:2px;border-top:1px solid var(--border);font-weight:600">电力线</span>
+          <span class="li"><span style="display:inline-block;width:12px;height:4px;background:#e74c3c;border-radius:2px;vertical-align:middle"></span>电力线路</span>
         </div>
       </div>
     </div>
@@ -621,8 +618,7 @@ body.sta-mode .nat-only{display:none!important}
       <div class="bt-stat bt-crit"><div class="btv" id="btNatAlerts">0</div><div class="btl">今日预警</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:14px">
-      <div class="comm-pill"><span class="comm-dot" id="commNat4g"></span><span>4G</span></div>
-      <div class="comm-pill"><span class="comm-dot" id="commNatBd"></span><span>北斗</span></div>
+      <div class="comm-pill"><span class="comm-dot" id="commNat4g"></span><span>MQTT</span></div>
       <span style="font-size:10px;color:var(--muted)" id="commNatLabel">--</span>
       <span style="font-size:10px;color:var(--muted)" id="footerNatTime">--</span>
     </div>
@@ -640,8 +636,7 @@ body.sta-mode .nat-only{display:none!important}
       <div class="bt-stat bt-crit"><div class="btv" id="btCrit">0</div><div class="btl">危险</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:14px">
-      <div class="comm-pill"><span class="comm-dot" id="comm4gDot"></span><span>4G</span></div>
-      <div class="comm-pill"><span class="comm-dot" id="commBdDot"></span><span>北斗</span></div>
+      <div class="comm-pill"><span class="comm-dot" id="comm4gDot"></span><span>MQTT</span></div>
       <span style="font-size:10px;color:var(--muted)" id="commLabel">--</span>
       <span style="font-size:10px;color:var(--muted)" id="footerTime">--</span>
     </div>
@@ -767,7 +762,7 @@ body.sta-mode .nat-only{display:none!important}
     <label>用户名</label><input id="usrName" placeholder="登录用户名">
     <label>密码</label><input id="usrPass" type="password" placeholder="登录密码">
     <div class="row">
-      <div style="flex:1"><label>角色</label><select id="usrRole" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="user">操作员</option><option value="admin">管理员</option></select></div>
+      <div style="flex:1"><label>角色</label><select id="usrRole" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="user">操作员</option><option value="tenant_admin">租户管理员</option><option value="admin">管理员</option></select></div>
       <div style="flex:1"><label>所属站点</label><input id="usrStation" placeholder="站点名称"></div>
     </div>
     <div class="modal-actions">
@@ -790,6 +785,41 @@ body.sta-mode .nat-only{display:none!important}
     <div class="modal-actions">
       <button class="primary" onclick="addStation()">添加</button>
       <button onclick="closeStModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- License management modal (admin only) -->
+<div class="modal-overlay" id="licModal">
+  <div class="modal-dialog" style="width:520px">
+    <h3>密钥管理</h3>
+    <div id="licModalList" style="max-height:220px;overflow-y:auto;margin-bottom:4px"></div>
+    <h3 style="margin-top:8px">创建新密钥</h3>
+    <label>客户名称</label><input id="licName" placeholder="例如: XX电力公司">
+    <div class="row">
+      <div style="flex:1"><label>最大用户数</label><input id="licMaxUsers" type="number" value="3" min="1" max="100"></div>
+      <div style="flex:2"><label>联系方式</label><input id="licContact" placeholder="电话/邮箱"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="primary" onclick="addLicense()">生成密钥</button>
+      <button onclick="closeLicModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Personnel management modal -->
+<div class="modal-overlay" id="personnelModal">
+  <div class="modal-dialog">
+    <h3>告警联系人</h3>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">站点: <span id="personnelStationLabel">-</span></div>
+    <div id="personnelList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
+    <div class="row">
+      <div style="flex:1"><label>姓名</label><input id="persName" placeholder="负责人姓名"></div>
+      <div style="flex:1"><label>联系电话</label><input id="persPhone" placeholder="11位手机号"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="primary" onclick="addPersonnel()">添加</button>
+      <button onclick="closePersonnelModal()">关闭</button>
     </div>
   </div>
 </div>
@@ -830,12 +860,14 @@ function catchErr(msg){
 }
 
 // ═══════════ Map ═══════════
-var map = L.map('map', {attributionControl: true, zoomControl: false, preferCanvas: true}).setView([35, 105], 4.5);
+var map = L.map('map', {attributionControl: false, zoomControl: false, preferCanvas: true}).setView([35, 105], 4.5);
 L.control.zoom({position:'bottomright'}).addTo(map);
+var TK='e43d9110ba6c59f0eb286d5eb43ba674';
+var t=function(l){return'https://t{s}.tianditu.gov.cn/'+l+'_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER='+l+'&STYLE=default&TILEMATRIXSET=w&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=tiles&tk='+TK};
 var baseLayers={
-  '标准地图': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OSM'}),
-  '卫星影像': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Esri'}),
-  '地形图': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'OpenTopoMap'})
+  '标准地图': L.layerGroup([L.tileLayer(t('vec'),{subdomains:'01234567',maxZoom:18}),L.tileLayer(t('cva'),{subdomains:'01234567',maxZoom:18})]),
+  '卫星影像': L.layerGroup([L.tileLayer(t('img'),{subdomains:'01234567',maxZoom:18}),L.tileLayer(t('cia'),{subdomains:'01234567',maxZoom:18})]),
+  '地形图': L.layerGroup([L.tileLayer(t('ter'),{subdomains:'01234567',maxZoom:18}),L.tileLayer(t('cta'),{subdomains:'01234567',maxZoom:18})])
 };
 baseLayers['标准地图'].addTo(map);
 
@@ -861,7 +893,8 @@ function markerRadius(s){if(s==='critical')return 10;if(s==='severe')return 8;if
 
 var cachedDashboard = null;
 var cachedDrones = [];
-var currentUser = {username:'', role:'user', station:''};
+var currentUser = {username:'', role:'user', station:'', tenant_id:null, scope:'station', assigned_station:''};
+var currentStationDevice = null;  // 当前进入的站点 device_name，用于过滤无人机
 
 // ═══════════ Mode switching ═══════════
 function enterStationView(station){
@@ -872,7 +905,10 @@ function enterStationView(station){
   var name=station.name||station.device_name||'站点';
   var loc=station.location||station.device_location||'';
   document.getElementById('staViewTitle').textContent=name+(loc?' — '+loc:'');
+  // 记录当前站点的 device_name 用于过滤无人机
+  currentStationDevice = station.device_name || station.name || null;
   loadPowerLines();
+  updateAll();  // 立即刷新数据，避免等待下一次轮询
   var lat = station.lat!=null ? station.lat : (station.position?station.position.lat:0);
   var lon = station.lon!=null ? station.lon : (station.position?station.position.lon:0);
   if(lat && lon){
@@ -882,11 +918,12 @@ function enterStationView(station){
 
 function returnToNational(){
   // Regular users: go back to their station view
-  if(currentUser.role!=='admin'){
+  if(currentUser.role!=='admin' && currentUser.role!=='tenant_admin'){
     if(cachedDashboard) enterStationView(cachedDashboard.station);
     return;
   }
   nationalMode = true;
+  currentStationDevice = null;
   document.body.className = 'nat-mode';
   // Clear station-mode layers
   Object.keys(droneMarkers).forEach(function(k){map.removeLayer(droneMarkers[k]);});
@@ -988,11 +1025,7 @@ function buildStationGrid(gridId, s){
   g.innerHTML=[
     ['设备',s.device_name],['位置',s.device_location||'--'],
     ['坐标',s.position.lat.toFixed(4)+', '+s.position.lon.toFixed(4)],
-    ['通道',s.active_channel==='4g_wired'?'4G/有线':s.active_channel==='beidou_emergency'?'北斗应急':s.active_channel!=='none'?s.active_channel:'离线'],
-    ['4G/有线',s.primary_online?'在线':'离线'],
-    ['北斗',s.beidou_online?'在线 (信号:'+s.beidou_signal+')':'离线'],
-    ['HTTP已发',s.http_sent+' 条'],['北斗已发',s.beidou_sent+' 条'],
-    ['最近发送',s.last_send||'--'],
+    ['MQTT',s.mqtt_online?'在线':'离线'],
   ].map(function(r){return '<div class="station-item"><div class="sk">'+r[0]+'</div><div class="sv">'+r[1]+'</div></div>'}).join('');
 }
 
@@ -1030,14 +1063,13 @@ function renderNationalStationCards(stations){
     var lon=st.lon!=null?st.lon:(st.position?st.position.lon:0);
     var name=st.name||st.device_name||'站点';
     var loc=st.location||st.device_location||'';
-    var chan=st.active_channel||'registered';
-    var chanLabel=chan==='4g_wired'?'4G':chan==='beidou_emergency'?'北斗':chan==='registered'?'已注册':chan==='none'?'离线':chan;
+    var mqttLabel=st.mqtt_online?'MQTT 在线':'MQTT 离线';
     return '<div class="station-card" onclick="enterStationView(cachedDashboard.stations['+i+'])">'
       +'<div class="s-name">'+name+'</div>'
       +'<div class="s-loc">'+loc+'</div>'
       +'<div class="s-row">'
       +'<span>坐标 '+(lat?lat.toFixed(2)+','+lon.toFixed(2):'--')+'</span>'
-      +'<span>通道 '+chanLabel+'</span>'
+      +'<span>'+mqttLabel+'</span>'
       +'</div></div>';
   }).join('');
 }
@@ -1073,6 +1105,10 @@ function renderNationalAlerts(drones){
 function renderDroneList(){
   var searchTerm=(document.getElementById('droneSearch').value||'').toLowerCase();
   var drones=cachedDrones;
+  // 站点模式下按 device_name 过滤
+  if(currentStationDevice){
+    drones=drones.filter(function(dr){return (dr.device_name||dr.device||'')===currentStationDevice});
+  }
   if(searchTerm){
     drones=drones.filter(function(dr){
       var id=(dr.id||'').toLowerCase();
@@ -1130,9 +1166,7 @@ function renderStationAlerts(drones){
 }
 
 // ═══════════ Power lines ═══════════
-var voltageColors={'1000kV':'#b91c1c','±800kV':'#dc262e','750kV':'#ea580c','500kV':'#f97316','330kV':'#eab308','220kV':'#ca8a04','110kV':'#2563eb','66kV':'#16a34a','35kV':'#16a34a','10kV':'#64748b'};
-function voltageColor(vl){return voltageColors[vl]||'#cc4400'}
-function voltageWidth(vl){return vl&&(vl==='1000kV'||vl==='±800kV'||vl==='750kV')?5:(vl&&vl!=='10kV'&&vl!=='35kV'?4:3)}
+var PL_COLOR='#e74c3c', PL_WIDTH=3;
 
 function loadPowerLines(){
   fetch('/api/powerlines').then(function(r){return r.json()}).then(function(lines){
@@ -1146,15 +1180,14 @@ function loadPowerLines(){
     else{
       lines.forEach(function(l){
         var latlngs=[[l.lat1,l.lon1],[l.lat2,l.lon2]];
-        var vc=voltageColor(l.voltage_level||''), vw=voltageWidth(l.voltage_level||'');
-        var poly=L.polyline(latlngs,{color:vc,weight:vw,dashArray:vw>3?'8,6':'10,8',opacity:.85}).addTo(map);
+        var poly=L.polyline(latlngs,{color:PL_COLOR,weight:PL_WIDTH,dashArray:'10,8',opacity:.85}).addTo(map);
         var label=L.tooltip({permanent:true,direction:'center'})
           .setLatLng([(l.lat1+l.lat2)/2,(l.lon1+l.lon2)/2])
-          .setContent('<span style="font-size:10px;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:4px;color:'+vc+';font-weight:600">'+l.name+(l.voltage_level?' '+l.voltage_level:'')+'</span>')
+          .setContent('<span style="font-size:10px;background:rgba(255,255,255,.92);padding:2px 6px;border-radius:4px;color:'+PL_COLOR+';font-weight:600">'+l.name+(l.voltage_level?' '+l.voltage_level:'')+'</span>')
           .addTo(map);
         plPolylines.push(poly);plLabels.push(label);
-        var vlBadge=l.voltage_level?' <span style="font-size:9px;color:'+vc+'">'+l.voltage_level+'</span>':'';
-        html+='<div class="pl-mini" onclick="map.flyToBounds([['+l.lat1+','+l.lon1+'],['+l.lat2+','+l.lon2+']],{padding:[80,80]})"><span class="pl-swatch" style="background:'+vc+'"></span>'+l.name+vlBadge+'</div>';
+        var vlBadge=l.voltage_level?' <span style="font-size:9px;color:'+PL_COLOR+'">'+l.voltage_level+'</span>':'';
+        html+='<div class="pl-mini" onclick="map.flyToBounds([['+l.lat1+','+l.lon1+'],['+l.lat2+','+l.lon2+']],{padding:[80,80]})"><span class="pl-swatch" style="background:'+PL_COLOR+'"></span>'+l.name+vlBadge+'</div>';
       });
     }
     document.getElementById('plItems').innerHTML=html;
@@ -1260,16 +1293,12 @@ function animateEl(el,target){
 
 // ═══════════ Update comms in bottom bar ═══════════
 function updateComms(bh, prefix){
-  var dot4g=document.getElementById((prefix||'comm')+'4gDot');
-  var dotBd=document.getElementById((prefix||'comm')+'BdDot');
+  var dot=document.getElementById((prefix||'comm')+'4gDot');
   var lbl=document.getElementById((prefix||'comm')+'Label');
-  if(!dot4g) return;
+  if(!dot) return;
   if(bh){
-    dot4g.className='comm-dot'+(bh.primary_online?' online':'');
-    dotBd.className='comm-dot'+(bh.beidou_online?' online':'');
-    if(bh.channel==='4g_wired') lbl.textContent='4G/有线';
-    else if(bh.channel==='beidou_emergency') lbl.textContent='北斗应急';
-    else lbl.textContent='通信中断';
+    dot.className='comm-dot'+(bh.mqtt_online?' online':'');
+    lbl.textContent=bh.mqtt_online?'MQTT 在线':'MQTT 离线';
   }
 }
 
@@ -1499,9 +1528,10 @@ function refreshUsrModalList(){
     var div=document.getElementById('usrModalList');
     if(!users||!users.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无用户</div>';return}
     div.innerHTML=users.map(function(u){
-      var roleLabel=u.role==='admin'?'管理员':'操作员';
-      var stationLabel=u.station||'全部站点';
-      return '<div class="pl-entry"><span><b>'+u.username+'</b> <span style="color:var(--muted);font-size:10px">'+roleLabel+' · '+stationLabel+'</span></span><span class="pl-del" onclick="delUser(\''+u.username+'\')">×</span></div>';
+      var roleLabel={admin:'管理员',tenant_admin:'租户管理员',user:'操作员'}[u.role]||'操作员';
+      var stationLabel=u.assigned_station||u.station||'全部站点';
+      var scopeLabel=u.scope==='tenant'?'(全局)':'';
+      return '<div class="pl-entry"><span><b>'+u.username+'</b> <span style="color:var(--muted);font-size:10px">'+roleLabel+' · '+stationLabel+' '+scopeLabel+'</span></span><span class="pl-del" onclick="delUser(\''+u.username+'\')">×</span></div>';
     }).join('');
   });
 }
@@ -1531,6 +1561,111 @@ function delUser(username){
       if(res.error){alert(res.error);return}
       refreshUsrModalList();
     }).catch(catchErr('删除用户失败'));
+}
+
+// ═══════════ License Management ═══════════
+function openLicModal(){
+  document.getElementById('licModal').classList.add('show');
+  refreshLicModalList();
+}
+function closeLicModal(){document.getElementById('licModal').classList.remove('show')}
+
+function refreshLicModalList(){
+  fetch('/api/licenses').then(function(r){return r.json()}).then(function(tenants){
+    var div=document.getElementById('licModalList');
+    if(!tenants||!tenants.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无密钥</div>';return}
+    div.innerHTML=tenants.map(function(t){
+      var status=t.is_active?'<span style="color:#22c55e">有效</span>':'<span style="color:#ef4444">已停用</span>';
+      return '<div class="pl-entry"><span><b>'+t.name+'</b> <code style="font-size:10px;color:var(--accent)">'+t.license_key+'</code><br><span style="font-size:10px;color:var(--muted)">用户数:'+t.user_count+'/'+t.max_users+' '+status+' 联系人:'+(t.contact||'-')+'</span></span><span class="pl-del" onclick="delLicense('+t.id+')" title="停用">×</span></div>';
+    }).join('');
+  });
+}
+
+function addLicense(){
+  var data={
+    name: document.getElementById('licName').value.trim(),
+    max_users: parseInt(document.getElementById('licMaxUsers').value)||3,
+    contact: document.getElementById('licContact').value.trim()
+  };
+  if(!data.name){alert('客户名称不能为空');return}
+  fetch('/api/licenses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(function(r){return r.json()}).then(function(res){
+      if(res.error){alert(res.error);return}
+      document.getElementById('licName').value='';
+      document.getElementById('licContact').value='';
+      alert('密钥已生成: '+res.license_key);
+      refreshLicModalList();
+    }).catch(catchErr('创建密钥失败'));
+}
+
+function delLicense(id){
+  if(!confirm('确定要停用该密钥吗？所有关联用户将无法操作。')) return;
+  fetch('/api/licenses',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json()}).then(function(res){
+      if(res.error){alert(res.error);return}
+      refreshLicModalList();
+    }).catch(catchErr('停用密钥失败'));
+}
+
+// ═══════════ Personnel Modal (告警联系人) ═══════════
+function openPersonnelModal(){
+  // 确定当前站点
+  var stName = '';
+  if (currentStationDevice) {
+    // 从 cachedDashboard.stations 中查找匹配的站点名
+    var sts = cachedDashboard?cachedDashboard.stations:[];
+    for (var i=0;i<sts.length;i++) {
+      if (sts[i].device_name===currentStationDevice || sts[i].name===currentStationDevice) {
+        stName = sts[i].name; break;
+      }
+    }
+  }
+  if (!stName) stName = currentUser.assigned_station || currentUser.station || '';
+  document.getElementById('personnelStationLabel').textContent = stName || '(未知站点)';
+  document.getElementById('personnelModal').classList.add('show');
+  refreshPersonnelList();
+}
+
+function closePersonnelModal(){document.getElementById('personnelModal').classList.remove('show')}
+
+function refreshPersonnelList(){
+  var stName = document.getElementById('personnelStationLabel').textContent;
+  if (!stName || stName==='(未知站点)') {
+    document.getElementById('personnelList').innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">请先进入站点视图</div>';
+    return;
+  }
+  fetch('/api/personnel?station='+encodeURIComponent(stName)).then(function(r){return r.json()}).then(function(list){
+    var div=document.getElementById('personnelList');
+    if(!list||!list.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无联系人</div>';return}
+    div.innerHTML=list.map(function(p){
+      return '<div class="pl-entry"><span><b>'+p.name+'</b> <span style="color:var(--accent);font-size:10px">'+p.phone+'</span></span><span class="pl-del" onclick="delPersonnel('+p.id+')">×</span></div>';
+    }).join('');
+  });
+}
+
+function addPersonnel(){
+  var stName = document.getElementById('personnelStationLabel').textContent;
+  var name = document.getElementById('persName').value.trim();
+  var phone = document.getElementById('persPhone').value.trim();
+  if (!name || !phone) { alert('请填写姓名和联系电话'); return; }
+  if (!/^\d{11}$/.test(phone)) { alert('请输入11位手机号码'); return; }
+
+  fetch('/api/personnel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station_name:stName, name:name, phone:phone})})
+    .then(function(r){return r.json()}).then(function(res){
+      if(res.error){alert(res.error);return}
+      document.getElementById('persName').value='';
+      document.getElementById('persPhone').value='';
+      refreshPersonnelList();
+    }).catch(catchErr('添加联系人失败'));
+}
+
+function delPersonnel(id){
+  if(!confirm('确定要删除该联系人吗？')) return;
+  fetch('/api/personnel',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+    .then(function(r){return r.json()}).then(function(res){
+      if(res.error){alert(res.error);return}
+      refreshPersonnelList();
+    }).catch(catchErr('删除联系人失败'));
 }
 
 // ═══════════ Settings Modal ═══════════
@@ -1753,7 +1888,8 @@ function updateAll(){
     // Update user info
     if(d.current_user){
       currentUser=d.current_user;
-      document.getElementById('userBadge').textContent=currentUser.username+' ('+(currentUser.role==='admin'?'管理员':'操作员')+')';
+      var roleLabels={admin:'管理员',tenant_admin:'租户管理员',user:'操作员'};
+      document.getElementById('userBadge').textContent=currentUser.username+' ('+(roleLabels[currentUser.role]||'操作员')+')';
     }
 
     cachedDrones=d.drones;
@@ -1793,17 +1929,24 @@ function updateAll(){
         prevAlertLevels[dr.id]=cur;
       });
     }else{
-      // ── Station bottom bar ──
-      animateEl(document.getElementById('btTotal'),d.drones.length);
+      // ── Station bottom bar (按站点过滤无人机) ──
+      var stationDrones = d.drones;
+      if(currentStationDevice){
+        stationDrones = d.drones.filter(function(dr){return (dr.device_name||dr.device||'')===currentStationDevice});
+      }
+      // Recalc stats for filtered drones
+      warn=0;sev=0;crit=0;
+      stationDrones.forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});
+      animateEl(document.getElementById('btTotal'),stationDrones.length);
       animateEl(document.getElementById('btWarn'),warn);
       animateEl(document.getElementById('btSev'),sev);
       animateEl(document.getElementById('btCrit'),crit);
-      document.getElementById('droneCountPill').textContent=d.drones.length;
+      document.getElementById('droneCountPill').textContent=stationDrones.length;
       document.getElementById('footerTime').textContent='更新 '+d.now;
       updateComms(d.backhaul, 'comm');
 
       // Alert notifications
-      d.drones.forEach(function(dr){
+      stationDrones.forEach(function(dr){
         var prev=prevAlertLevels[dr.id];
         var cur=dr.status||'active';
         if(cur!==prev&&(cur==='critical'||cur==='severe')){
@@ -1817,7 +1960,7 @@ function updateAll(){
 
       // Drone markers
       var seen={};
-      d.drones.forEach(function(dr){
+      stationDrones.forEach(function(dr){
         if(dr.last_lat==null||dr.last_lon==null)return;
         var id=dr.id||'?';seen[id]=true;
         var lat=dr.last_lat,lon=dr.last_lon;
@@ -1847,7 +1990,7 @@ function updateAll(){
 
       // Render drone list and station alerts
       renderDroneList();
-      renderStationAlerts(d.drones);
+      renderStationAlerts(stationDrones);
     }
   });
 
@@ -1867,15 +2010,21 @@ function updateAll(){
       updateStationMarkers(s.stations);
 
       // Show/hide admin-only station management buttons
-      var adminBtns=document.querySelectorAll('#addStationBtn,#stMgrBtn2,#usrMgrBtn,#cfgMgrBtn');
       var isAdmin=currentUser.role==='admin';
-      adminBtns.forEach(function(b){b.style.display=isAdmin?'inline-block':'none'});
+      var isTenantAdmin=currentUser.role==='tenant_admin';
+      document.querySelectorAll('#addStationBtn,#stMgrBtn2,#usrMgrBtn').forEach(function(b){
+        b.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
+      });
+      document.getElementById('cfgMgrBtn').style.display=isAdmin?'inline-block':'none';
+      document.getElementById('licMgrBtn').style.display=isAdmin?'inline-block':'none';
 
       // First-time: regular user auto-enters station view (wait for user info)
       if(!updateAll._userInit && currentUser.username){
         updateAll._userInit=true;
-        if(currentUser.role!=='admin'){
-          var userStation=s.stations&&s.stations.length?s.stations[0]:s.station;
+        if(currentUser.role==='user'){
+          // station_user: auto-enter assigned station
+          var stName = currentUser.assigned_station || currentUser.station;
+          var userStation = (s.stations||[]).find(function(st){return st.name===stName}) || s.station;
           enterStationView(userStation);
         }
       }
@@ -1958,6 +2107,9 @@ function initSocket(){
 // Lightweight marker update from cache (no fetch)
 function updateMarkersFromCache(){
   var d=cachedDrones||[];
+  if(currentStationDevice){
+    d=d.filter(function(dr){return (dr.device_name||dr.device||'')===currentStationDevice});
+  }
   var seen={};
   d.forEach(function(dr){
     if(dr.last_lat==null||dr.last_lon==null)return;
@@ -1982,10 +2134,43 @@ function updateMarkersFromCache(){
 // Full poll fallback: runs every 5s when WS is active (light sync), 2s when offline
 function pollFallback(){
   if(wsEnabled){
-    // Lightweight sync: only update stats/backhaul, markers handled by WS
+    // Lightweight sync: markers handled by WS, update stats from cachedDrones
     fetch('/api/status').then(function(r){return r.json()}).then(function(d){
-      document.getElementById('footerTime').textContent='更新 '+d.now+' [WS]';
-      updateComms(d.backhaul,'comm');
+      // Filter drones if in station mode
+      var drones = cachedDrones || [];
+      if(currentStationDevice){
+        drones = drones.filter(function(dr){return (dr.device_name||dr.device||'')===currentStationDevice});
+      }
+      var warn=0,sev=0,crit=0;
+      drones.forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});
+      if(nationalMode){
+        animateEl(document.getElementById('btNatDrones'),drones.length);
+        animateEl(document.getElementById('btNatAlerts'),warn+sev+crit);
+        if(cachedDashboard){
+          animateEl(document.getElementById('btNatStations'),(cachedDashboard.stations||[]).length);
+        }
+        document.getElementById('footerNatTime').textContent='更新 '+d.now+' [WS]';
+        updateComms(d.backhaul,'commNat');
+      }else{
+        animateEl(document.getElementById('btTotal'),drones.length);
+        animateEl(document.getElementById('btWarn'),warn);
+        animateEl(document.getElementById('btSev'),sev);
+        animateEl(document.getElementById('btCrit'),crit);
+        document.getElementById('droneCountPill').textContent=drones.length;
+        document.getElementById('footerTime').textContent='更新 '+d.now+' [WS]';
+        updateComms(d.backhaul,'comm');
+      }
+      // Quick stats
+      animateEl(document.getElementById('qsDrones'),drones.length);
+      animateEl(document.getElementById('qsWarn'),warn);
+      animateEl(document.getElementById('qsSev'),sev);
+      animateEl(document.getElementById('qsCrit'),crit);
+      // Update alert list
+      if(nationalMode){
+        renderNationalAlerts(drones);
+      }else{
+        renderStationAlerts(drones);
+      }
     });
   }else{
     updateAll();

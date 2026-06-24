@@ -35,6 +35,17 @@ SERIAL_DEVICE = "/dev/ttyUSB0"
 BAUD_RATE = 115200
 
 
+def get_serial_config(config: dict) -> dict:
+    """从配置字典提取串口参数, 带默认值"""
+    sc = config.get("serial", {})
+    return {
+        "auto_scan": sc.get("auto_scan", True),
+        "device": sc.get("device", "") or None,
+        "baud": int(sc.get("baud", 115200)),
+        "probe_timeout": float(sc.get("probe_timeout", 2.0)),
+    }
+
+
 def _configure_serial(device: str, baud: int) -> None:
     """通过 stty 配置串口参数"""
     try:
@@ -135,12 +146,26 @@ class SerialRIDReceiver(RIDReceiver):
     """
 
     def __init__(self, callback: Callable[[ParsedRID], None],
-                 device: str = SERIAL_DEVICE, baud: int = BAUD_RATE):
+                 device: Optional[str] = None, baud: int = BAUD_RATE,
+                 auto_scan: bool = False, scan_timeout: float = 2.0):
         super().__init__(callback)
-        self.device = device
         self.baud = baud
         self._thread: Optional[threading.Thread] = None
         self._serial = None
+
+        # 设备选择: 显式指定 > 自动扫描 > 默认
+        if device:
+            self.device = device
+        elif auto_scan:
+            from receiver.serial_scanner import auto_detect
+            detected = auto_detect(baud, scan_timeout)
+            self.device = detected or SERIAL_DEVICE
+            if detected:
+                logger.info("串口自动检测: %s", self.device)
+            else:
+                logger.warning("串口自动检测未发现设备, 使用默认: %s", self.device)
+        else:
+            self.device = SERIAL_DEVICE
 
     def _read_loop(self):
         """串口读取线程 (Windows: pyserial, Linux: open+stty)"""
@@ -223,11 +248,16 @@ class SerialRIDReceiver(RIDReceiver):
 
 
 def create_serial_receiver(callback: Callable[[ParsedRID], None],
-                           device: str = SERIAL_DEVICE,
-                           baud: int = BAUD_RATE) -> SerialRIDReceiver:
+                           device: Optional[str] = None,
+                           baud: int = BAUD_RATE,
+                           auto_scan: bool = False,
+                           scan_timeout: float = 2.0) -> SerialRIDReceiver:
     """创建串口 RID 接收器
 
-    device: 串口设备路径, 默认 /dev/ttyUSB0
-    baud:   波特率, 默认 115200
+    device:      串口设备路径 (None = 自动选择)
+    baud:        波特率, 默认 115200
+    auto_scan:   启用自动端口扫描和 ESP32 检测
+    scan_timeout: 每个端口的探测超时秒数
     """
-    return SerialRIDReceiver(callback, device=device, baud=baud)
+    return SerialRIDReceiver(callback, device=device, baud=baud,
+                             auto_scan=auto_scan, scan_timeout=scan_timeout)

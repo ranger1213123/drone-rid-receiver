@@ -7,7 +7,7 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, ForeignKey, Index,
-    create_engine, event,
+    Text, Boolean, create_engine, event,
 )
 from sqlalchemy.orm import (
     declarative_base, relationship, scoped_session, sessionmaker,
@@ -18,6 +18,25 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 Base = declarative_base()
+
+
+class Tenant(Base):
+    """租户/客户 — 拥有 license_key, 控制用户注册上限"""
+
+    __tablename__ = "tenants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    license_key = Column(String, unique=True, nullable=False, index=True)
+    max_users = Column(Integer, default=3)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime)
+    created_by = Column(String, default="")
+    contact = Column(String, default="")
+
+    __table_args__ = (
+        Index("idx_tenant_license", "license_key"),
+    )
 
 
 class Device(Base):
@@ -33,6 +52,8 @@ class Device(Base):
     status = Column(String, default="online")
     drone_count = Column(Integer, default=0)
     alert_count = Column(Integer, default=0)
+    station_name = Column(String, default="")
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
 
     drones = relationship("Drone", back_populates="device", cascade="all, delete-orphan")
 
@@ -51,6 +72,11 @@ class Drone(Base):
     min_distance = Column(Float)
     nearest_line = Column(String)
     status = Column(String, default="active")
+    rssi = Column(Integer, default=0)
+    ua_type = Column(Integer, default=0)
+    status_code = Column(Integer, default=0)   # ESP32 Status: 0=未知,1=地面,2=空中
+    height_agl = Column(Float, nullable=True)   # ESP32 Height (AGL)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
 
     device = relationship("Device", back_populates="drones")
 
@@ -104,6 +130,9 @@ class WebUser(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, default="user")
     station = Column(String, default="")
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    scope = Column(String, default="station")        # "tenant" | "station"
+    assigned_station = Column(String, default="")     # scope=station 时的绑定站点
 
 
 class Station(Base):
@@ -115,6 +144,7 @@ class Station(Base):
     lon = Column(Float, default=0)
     alt = Column(Float, default=0)
     device_name = Column(String, nullable=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
 
 
 class SystemSetting(Base):
@@ -299,6 +329,8 @@ def get_devices() -> list:
             "last_seen": d.last_seen.isoformat() if d.last_seen else "",
             "status": d.status or "offline",
             "drone_count": d.drone_count or 0, "alert_count": d.alert_count or 0,
+            "station_name": d.station_name or "",
+            "tenant_id": d.tenant_id,
         }
         for d in devices
     ]
@@ -318,6 +350,9 @@ def get_all_drones() -> list:
             "last_speed": d.last_speed or 0, "last_heading": d.last_heading or 0,
             "min_distance": d.min_distance, "nearest_line": d.nearest_line or "",
             "status": d.status or "active",
+            "rssi": d.rssi or 0, "ua_type": d.ua_type or 0,
+            "status_code": d.status_code or 0, "height_agl": d.height_agl,
+            "tenant_id": d.tenant_id,
         }
         for d in drones
     ]
@@ -497,6 +532,9 @@ def get_web_users() -> list:
     sess = get_session()
     return [{
         'username': u.username, 'role': u.role, 'station': u.station or '',
+        'tenant_id': u.tenant_id,
+        'scope': u.scope or 'station',
+        'assigned_station': u.assigned_station or '',
     } for u in sess.query(WebUser).all()]
 
 
@@ -505,11 +543,18 @@ def verify_web_user(username: str, password: str) -> dict:
     sess = get_session()
     u = sess.get(WebUser, username)
     if u and check_password_hash(u.password_hash, password):
-        return {'username': u.username, 'role': u.role, 'station': u.station or ''}
+        return {
+            'username': u.username, 'role': u.role, 'station': u.station or '',
+            'tenant_id': u.tenant_id,
+            'scope': u.scope or 'station',
+            'assigned_station': u.assigned_station or '',
+        }
     return None
 
 
-def upsert_web_user(username: str, password: str = None, role: str = 'user', station: str = '') -> bool:
+def upsert_web_user(username: str, password: str = None, role: str = 'user',
+                    station: str = '', tenant_id: int = None, scope: str = 'station',
+                    assigned_station: str = '') -> bool:
     sess = get_session()
     u = sess.get(WebUser, username)
     if u:
@@ -517,6 +562,10 @@ def upsert_web_user(username: str, password: str = None, role: str = 'user', sta
             u.password_hash = generate_password_hash(password)
         u.role = role
         u.station = station
+        if tenant_id is not None:
+            u.tenant_id = tenant_id
+        u.scope = scope
+        u.assigned_station = assigned_station
     else:
         if not password:
             return False
@@ -524,6 +573,8 @@ def upsert_web_user(username: str, password: str = None, role: str = 'user', sta
             username=username,
             password_hash=generate_password_hash(password),
             role=role, station=station,
+            tenant_id=tenant_id, scope=scope,
+            assigned_station=assigned_station,
         )
         sess.add(u)
     sess.commit()
@@ -553,20 +604,23 @@ def get_stations() -> list:
         'name': s.name, 'location': s.location or '',
         'lat': s.lat or 0, 'lon': s.lon or 0, 'alt': s.alt or 0,
         'device_name': s.device_name or '',
+        'tenant_id': s.tenant_id,
     } for s in sess.query(Station).all()]
 
 
 def upsert_station(name: str, location: str = '', lat: float = 0, lon: float = 0,
-                   alt: float = 0, device_name: str = None):
+                   alt: float = 0, device_name: str = None, tenant_id: int = None):
     sess = get_session()
     s = sess.get(Station, name)
     if s:
         s.location = location
         s.lat = lat; s.lon = lon; s.alt = alt
         s.device_name = device_name
+        if tenant_id is not None:
+            s.tenant_id = tenant_id
     else:
         s = Station(name=name, location=location, lat=lat, lon=lon, alt=alt,
-                    device_name=device_name)
+                    device_name=device_name, tenant_id=tenant_id)
         sess.add(s)
     sess.commit()
 
@@ -717,3 +771,137 @@ def delete_personnel(personnel_id: int) -> bool:
         sess.commit()
         return True
     return False
+
+
+# ── Tenant CRUD ──
+
+import secrets
+import string
+
+
+def _generate_license_key() -> str:
+    """生成 16 位随机密钥: XXXX-XXXX-XXXX-XXXX"""
+    chars = string.ascii_uppercase + string.digits
+    parts = [''.join(secrets.choice(chars) for _ in range(4)) for _ in range(4)]
+    return '-'.join(parts)
+
+
+def create_tenant(name: str, max_users: int = 3, contact: str = "",
+                  created_by: str = "") -> dict:
+    """创建租户并生成密钥, 返回 dict"""
+    sess = get_session()
+    # 确保唯一密钥
+    for _ in range(10):
+        key = _generate_license_key()
+        existing = sess.get(Tenant, key) if False else sess.query(Tenant).filter(
+            Tenant.license_key == key).first()
+        if not existing:
+            break
+    now = datetime.now(timezone.utc)
+    t = Tenant(
+        name=name, license_key=key, max_users=max_users,
+        is_active=True, created_at=now, created_by=created_by,
+        contact=contact,
+    )
+    sess.add(t)
+    sess.commit()
+    return {
+        'id': t.id, 'name': t.name, 'license_key': t.license_key,
+        'max_users': t.max_users, 'is_active': t.is_active,
+        'created_at': now.isoformat(), 'created_by': created_by,
+        'contact': contact,
+    }
+
+
+def get_tenants() -> list:
+    sess = get_session()
+    return [{
+        'id': t.id, 'name': t.name, 'license_key': t.license_key,
+        'max_users': t.max_users, 'is_active': bool(t.is_active),
+        'created_at': t.created_at.isoformat() if t.created_at else '',
+        'created_by': t.created_by, 'contact': t.contact or '',
+        'user_count': count_users_in_tenant(t.id),
+    } for t in sess.query(Tenant).order_by(Tenant.id).all()]
+
+
+def get_tenant_by_key(license_key: str):
+    """按密钥查找租户, 返回 Tenant ORM 对象或 None"""
+    sess = get_session()
+    return sess.query(Tenant).filter(
+        Tenant.license_key == license_key.strip().upper()
+    ).first()
+
+
+def get_tenant_by_id(tenant_id: int):
+    sess = get_session()
+    return sess.get(Tenant, tenant_id)
+
+
+def update_tenant(tenant_id: int, **kwargs) -> bool:
+    """更新租户: name, max_users, is_active, contact"""
+    sess = get_session()
+    t = sess.get(Tenant, tenant_id)
+    if not t:
+        return False
+    for k in ('name', 'max_users', 'is_active', 'contact'):
+        if k in kwargs and kwargs[k] is not None:
+            setattr(t, k, kwargs[k])
+    sess.commit()
+    return True
+
+
+def delete_tenant(tenant_id: int) -> bool:
+    """软删除租户 (is_active=False)"""
+    return update_tenant(tenant_id, is_active=False)
+
+
+def count_users_in_tenant(tenant_id: int) -> int:
+    """当前租户已注册用户数"""
+    sess = get_session()
+    return sess.query(WebUser).filter(WebUser.tenant_id == tenant_id).count()
+
+
+def get_tenant_stations(tenant_id: int) -> list:
+    """返回某个租户拥有的站点列表"""
+    sess = get_session()
+    stations = sess.query(Station).filter(
+        Station.tenant_id == tenant_id
+    ).all()
+    return [{
+        'name': s.name, 'location': s.location or '',
+        'lat': s.lat or 0, 'lon': s.lon or 0, 'alt': s.alt or 0,
+        'device_name': s.device_name or '',
+        'tenant_id': s.tenant_id,
+    } for s in stations]
+
+
+def get_user_stations(username: str) -> list:
+    """返回某用户有权查看的站点名列表
+    admin → None (全部)
+    tenant_admin (scope=tenant) → 租户下所有站点
+    user (scope=station) → [assigned_station]
+    未关联租户 → []
+    """
+    sess = get_session()
+    u = sess.get(WebUser, username)
+    if not u:
+        return []
+    if u.role == "admin":
+        return None  # sentinel: 无限制
+    if u.tenant_id is None:
+        return []
+    if u.scope == "tenant":
+        stations = sess.query(Station).filter(
+            Station.tenant_id == u.tenant_id
+        ).all()
+        return [s.name for s in stations] or []
+    # scope == "station"
+    if u.assigned_station:
+        # 验证站点确实属于该租户
+        st = sess.query(Station).filter(
+            Station.name == u.assigned_station,
+            Station.tenant_id == u.tenant_id,
+        ).first()
+        if st:
+            return [u.assigned_station]
+    return []

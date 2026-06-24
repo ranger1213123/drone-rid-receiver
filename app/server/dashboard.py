@@ -1,4 +1,4 @@
-"""页面路由: /, /map, /login, /logout"""
+"""页面路由: /, /map, /login, /logout, /register"""
 
 from flask import Blueprint, render_template, request, jsonify, session, redirect, url_for
 
@@ -39,3 +39,8 @@ def dashboard():
 @bp.route("/list")
 def list_view():
     return render_template("dashboard.html")
+
+
+@bp.route("/register", methods=["GET"])
+def register_page():
+    return render_template("register.html")

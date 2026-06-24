@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Drone RID Monitor — 注册</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+  background:#0b1120; color:#e2e8f0; min-height:100vh;
+  display:flex; align-items:center; justify-content:center;
+  -webkit-font-smoothing:antialiased; overflow:hidden;
+}
+
+body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);
+  background-size:60px 60px;
+}
+body::after{
+  content:''; position:fixed; width:700px; height:700px;
+  border-radius:50%; border:1px solid rgba(37,99,235,.08);
+  top:50%; left:50%; transform:translate(-50%,-50%);
+  box-shadow:0 0 200px rgba(37,99,235,.04),inset 0 0 200px rgba(37,99,235,.03);
+  z-index:0; pointer-events:none;
+}
+
+.container{
+  position:relative; z-index:1;
+  background:rgba(15,23,42,.9); border:1px solid rgba(255,255,255,.06);
+  border-radius:16px; overflow:hidden;
+  box-shadow:0 0 0 1px rgba(255,255,255,.03),0 24px 80px rgba(0,0,0,.5);
+  width:440px; max-width:94vw; padding:40px 44px;
+}
+
+h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;text-align:center}
+.sub{font-size:11px;color:#64748b;margin-bottom:28px;text-align:center}
+
+.field{margin-bottom:16px}
+.field label{
+  display:block; font-size:10px; font-weight:600; color:#94a3b8;
+  text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px;
+}
+.field input,.field select{
+  width:100%; padding:10px 14px; background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.08); border-radius:8px;
+  color:#e2e8f0; font-size:13px; outline:none;
+  transition:border-color .2s,box-shadow .2s;
+}
+.field input:focus,.field select:focus{
+  border-color:rgba(37,99,235,.5);
+  box-shadow:0 0 0 3px rgba(37,99,235,.1);
+}
+.field input::placeholder{color:#475569}
+.field select{appearance:none;cursor:pointer}
+.field select option{background:#1e293b;color:#e2e8f0}
+
+.submit-btn{
+  width:100%; padding:10px; border-radius:8px; font-size:13px; font-weight:600;
+  cursor:pointer; border:none; color:#fff; letter-spacing:0.3px;
+  background:linear-gradient(135deg,#2563eb,#1d4ed8);
+  transition:all .2s; margin-top:4px;
+}
+.submit-btn:hover{background:linear-gradient(135deg,#3b82f6,#2563eb);box-shadow:0 4px 16px rgba(37,99,235,.3)}
+.submit-btn:disabled{opacity:0.5;cursor:not-allowed}
+
+.error-msg{
+  background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.2);
+  color:#f87171; font-size:11px; padding:8px 12px; border-radius:6px;
+  margin-bottom:18px; text-align:center;
+}
+.success-msg{
+  background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.2);
+  color:#4ade80; font-size:11px; padding:8px 12px; border-radius:6px;
+  margin-bottom:18px; text-align:center;
+}
+
+.footnote{font-size:10px;color:#475569;text-align:center;margin-top:20px}
+.footnote a{color:#60a5fa;text-decoration:none}
+.footnote a:hover{text-decoration:underline}
+
+#stationField{display:block}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2>账号注册</h2>
+  <div class="sub">输入客户密钥以创建账号</div>
+
+  <div id="msg"></div>
+
+  <form id="regForm" onsubmit="return doRegister()">
+    <div class="field">
+      <label>客户密钥</label>
+      <input type="text" id="licenseKey" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off" required autofocus>
+    </div>
+    <div class="field">
+      <label>用户名</label>
+      <input type="text" id="username" placeholder="2-32位登录用户名" minlength="2" maxlength="32" autocomplete="off" required>
+    </div>
+    <div class="field">
+      <label>密码</label>
+      <input type="password" id="password" placeholder="至少6位密码" minlength="6" autocomplete="new-password" required>
+    </div>
+    <div class="field">
+      <label>账号权限</label>
+      <select id="scope" onchange="onScopeChange()">
+        <option value="station">站点用户 — 只看指定站点</option>
+        <option value="tenant">高级用户 — 看所有站点</option>
+      </select>
+    </div>
+    <div class="field" id="stationField">
+      <label>所属站点</label>
+      <select id="station"></select>
+    </div>
+    <button type="submit" class="submit-btn" id="submitBtn">注 册</button>
+  </form>
+
+  <div class="footnote">
+    已有账号？<a href="/login">返回登录</a>
+    &middot; Drone RID Monitor v3.3
+  </div>
+</div>
+
+<script>
+var tenantStations = [];
+onScopeChange();  // 初始化: 默认 scope=station, 显示站点选择
+
+function autoFormatKey(input) {
+  var val = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (val.length > 4) val = val.slice(0,4) + '-' + val.slice(4);
+  if (val.length > 9) val = val.slice(0,9) + '-' + val.slice(9);
+  if (val.length > 14) val = val.slice(0,14) + '-' + val.slice(14);
+  input.value = val.slice(0, 19);
+}
+
+document.getElementById('licenseKey').addEventListener('input', function(){
+  autoFormatKey(this);
+  // 密钥输入后加载该租户的站点列表
+  var formatted = this.value.trim();
+  if (formatted.length >= 14) loadTenantStations(formatted);
+});
+
+function loadTenantStations(key) {
+  fetch('/api/register/stations?key=' + encodeURIComponent(key))
+    .then(function(r){ return r.json(); })
+    .then(function(sts){
+      tenantStations = sts || [];
+      renderStationOptions();
+    }).catch(function(){ tenantStations = []; renderStationOptions(); });
+}
+
+function renderStationOptions() {
+  var sel = document.getElementById('station');
+  sel.innerHTML = tenantStations.map(function(s){
+    return '<option value="'+s.name+'">'+s.name+(s.location?' — '+s.location:'')+'</option>';
+  }).join('');
+  if (!tenantStations.length) {
+    sel.innerHTML = '<option value="">(该密钥暂无绑定站点，请先联系管理员配置)</option>';
+  }
+}
+
+function onScopeChange() {
+  var scope = document.getElementById('scope').value;
+  document.getElementById('stationField').style.display = scope==='station'?'block':'none';
+  if (scope==='tenant') document.getElementById('station').required = false;
+  else document.getElementById('station').required = true;
+}
+
+function showMsg(text, isError) {
+  var el = document.getElementById('msg');
+  el.className = isError ? 'error-msg' : 'success-msg';
+  el.textContent = text;
+  el.style.display = 'block';
+}
+
+function doRegister() {
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '注册中...';
+  document.getElementById('msg').style.display = 'none';
+
+  var data = {
+    license_key: document.getElementById('licenseKey').value.trim(),
+    username: document.getElementById('username').value.trim(),
+    password: document.getElementById('password').value,
+    scope: document.getElementById('scope').value,
+    station: document.getElementById('station').value
+  };
+
+  fetch('/api/register', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(r){ return r.json(); }).then(function(res){
+    btn.disabled = false;
+    btn.textContent = '注 册';
+    if (res.error) {
+      showMsg(res.error, true);
+    } else {
+      showMsg('注册成功！3秒后跳转到登录页...', false);
+      setTimeout(function(){ window.location.href = '/login'; }, 3000);
+    }
+  }).catch(function(e){
+    btn.disabled = false;
+    btn.textContent = '注 册';
+    showMsg('网络错误，请稍后重试', true);
+  });
+
+  return false;
+}
+</script>
+
+</body>
+</html>

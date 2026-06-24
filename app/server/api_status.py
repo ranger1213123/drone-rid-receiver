@@ -4,7 +4,10 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request, session
 
-from .models import get_devices, get_all_drones, get_recent_alerts, mark_stale_devices
+from .models import (
+    get_devices, get_all_drones, get_recent_alerts, mark_stale_devices,
+    get_user_stations, get_stations,
+)
 from .auth import _verify_token
 
 bp = Blueprint("status", __name__)
@@ -32,6 +35,21 @@ def api_status():
     devices = get_devices()
     drones = get_all_drones()
     alerts = get_recent_alerts(limit=50)
+
+    # Web session: 按租户/站点过滤
+    if _is_web_session():
+        u = session.get("user", {})
+        if u.get("role") != "admin":
+            permitted = get_user_stations(u.get("username", ""))
+            if permitted is not None:
+                all_stations = get_stations()
+                station_devs = set(
+                    s["device_name"] for s in all_stations
+                    if s["name"] in permitted and s.get("device_name")
+                )
+                devices = [d for d in devices if d["name"] in station_devs]
+                drones = [d for d in drones if d.get("device_name") in station_devs]
+                alerts = [a for a in alerts if a.get("device_name") in station_devs]
 
     total_devices = len(devices)
     online_devices = sum(1 for d in devices if d["status"] == "online")
@@ -74,6 +92,9 @@ def api_status():
             "username": u.get("username", ""),
             "role": u.get("role", "user"),
             "station": u.get("station", ""),
+            "tenant_id": u.get("tenant_id"),
+            "scope": u.get("scope", "station"),
+            "assigned_station": u.get("assigned_station", ""),
         }
         result["backhaul"] = None
         result["mode"] = "cloud"
