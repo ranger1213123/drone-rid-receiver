@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Drone RID Monitor{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/reset.css">
+{{ vite_tags("app/server/static/js/vendor.js") }}
+{{ vite_tags("app/server/static/js/base-entry.js") }}
+<script>window.__TILE_URLS = {{ tile_urls | tojson | safe }};</script>
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+{% block body %}{% endblock %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

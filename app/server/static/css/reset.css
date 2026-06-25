@@ -1,0 +1,95 @@
+/* Shared CSS reset and common form patterns */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Helvetica Neue",sans-serif;
+  font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased;
+  color:#1a1d23; background:#f0f2f5; min-height:100vh;
+}
+
+/* Shared form input/select/button base */
+input, select, textarea{font-family:inherit; font-size:13px; color:#1a1d23}
+input:focus, select:focus, textarea:focus{outline:none}
+
+/* Shared toast notification */
+#toast{
+  position:fixed; top:12px; left:50%; transform:translateX(-50%); z-index:9999;
+  padding:8px 20px; border-radius:8px; font-size:12px; font-weight:500;
+  pointer-events:none; transition:opacity .3s; opacity:0;
+}
+
+/* Shared empty state */
+.empty-state{text-align:center;padding:16px;color:#909399;font-size:11px}
+
+/* Shared button base */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  padding:8px 18px;border-radius:4px;font-size:13px;font-weight:500;
+  cursor:pointer;border:1px solid transparent;transition:all .22s ease;white-space:nowrap;
+  letter-spacing:0.2px; outline:none; line-height:1.4;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:#2563eb;color:#fff;border-color:#2563eb}
+.btn-primary:hover{background:#1d4ed8;box-shadow:0 2px 8px rgba(37,99,235,.35)}
+.btn-danger{background:#dc2626;color:#fff;border-color:#dc2626}
+.btn-danger:hover{background:#b91c1c}
+.btn-ghost{background:#fff;color:#6b7280;border-color:#e0e3e8}
+.btn-ghost:hover{color:#2563eb;border-color:#2563eb;background:#eff6ff}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-xs{padding:3px 8px;font-size:11px;border-radius:3px}
+
+/* Shared message boxes */
+.msg{font-size:13px;margin-top:10px;padding:8px 14px;border-radius:6px;display:none;line-height:1.5}
+.msg.ok{display:block;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0}
+.msg.err{display:block;color:#dc2626;background:#fef2f2;border:1px solid #fecaca}
+
+/* Auth pages shared styles */
+.auth-body{
+  display:flex; align-items:center; justify-content:center; min-height:100vh;
+}
+.auth-body::before{
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,0,0,.02) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,0,0,.02) 1px,transparent 1px);
+  background-size:60px 60px;
+}
+.auth-card{
+  position:relative; z-index:1;
+  background:#fff; border:1px solid #e0e3e8; border-radius:16px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 20px rgba(0,0,0,.06);
+}
+.auth-field{margin-bottom:16px}
+.auth-field label{
+  display:block; font-size:10px; font-weight:600; color:#6b7280;
+  text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px;
+}
+.auth-field input,.auth-field select{
+  width:100%; padding:10px 14px; background:#f9fafb;
+  border:1px solid #e0e3e8; border-radius:8px;
+  font-size:13px; transition:border-color .2s,box-shadow .2s;
+}
+.auth-field input:focus,.auth-field select:focus{
+  border-color:#2563eb;
+  box-shadow:0 0 0 3px rgba(37,99,235,.1);
+}
+.auth-field input::placeholder{color:#9ca3af}
+.auth-submit{
+  width:100%; padding:10px; border-radius:8px; font-size:13px; font-weight:600;
+  cursor:pointer; border:none; color:#fff; letter-spacing:0.3px;
+  background:#2563eb; transition:all .2s; margin-top:4px;
+}
+.auth-submit:hover{background:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.25)}
+.auth-submit:disabled{opacity:0.5;cursor:not-allowed}
+.auth-error{
+  background:#fef2f2; border:1px solid #fecaca;
+  color:#dc2626; font-size:11px; padding:8px 12px; border-radius:6px;
+  margin-bottom:18px; text-align:center;
+}
+.auth-success{
+  background:#f0fdf4; border:1px solid #bbf7d0;
+  color:#16a34a; font-size:11px; padding:8px 12px; border-radius:6px;
+  margin-bottom:18px; text-align:center;
+}
+.auth-footnote{font-size:10px;color:#9ca3af;text-align:center;margin-top:20px}
+.auth-footnote a{color:#2563eb;text-decoration:none}
+.auth-footnote a:hover{text-decoration:underline}

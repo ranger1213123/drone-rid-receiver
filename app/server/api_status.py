@@ -74,15 +74,17 @@ def api_status():
 
     result = {
         "server_time": datetime.now().strftime("%H:%M:%S"),
+        "mode": "cloud",
+        "running": True,
         "devices": {
             "total": total_devices,
             "online": online_devices,
             "offline": total_devices - online_devices,
             "list": devices,
         },
-        "drones": drones,  # 数组, 与边缘 API 格式一致
+        "drones": drones,
         "drone_count": active_drones,
-        "drone_total": total_drones,  # 过滤/分页前总数
+        "drone_total": total_drones,
         "drone_stats": {
             "total": active_drones,
             "critical": crit,
@@ -98,9 +100,12 @@ def api_status():
             "line": a["line_name"],
             "msg": a["message"],
         } for a in alerts],
+        "backhaul": None,       # 云端无边缘回传, 前端 if(bh) 守卫兼容
+        "alert_count": len(alerts),
+        "pl_count": 0,          # 由 /api/powerlines 独立获取
     }
 
-    # Web session: 附加 current_user + backhaul null (前端兼容)
+    # Web session: 附加 current_user
     if _is_web_session():
         u = session["user"]
         result["current_user"] = {
@@ -111,11 +116,5 @@ def api_status():
             "scope": u.get("scope", "station"),
             "assigned_station": u.get("assigned_station", ""),
         }
-        result["backhaul"] = None
-        result["mode"] = "cloud"
-        result["running"] = True
-        result["drone_count"] = active_drones
-        result["alert_count"] = len(alerts)
-        result["pl_count"] = 0  # 由 api_powerlines 独立获取
 
     return jsonify(result)

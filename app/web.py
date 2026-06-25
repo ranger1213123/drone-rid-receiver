@@ -42,13 +42,23 @@ controller = None
 def api_status():
     """边缘设备本地状态"""
     global controller
+    _now_str = datetime.now().strftime('%H:%M:%S')
     if controller is None:
-        return jsonify({'running': False, 'mode': '', 'drone_count': 0,
-                        'alert_count': 0, 'pl_count': 0, 'drones': [], 'logs': [],
-                        'now': datetime.now().strftime('%H:%M:%S'), 'backhaul': None})
+        return jsonify({'running': False, 'mode': '', 'drone_count': 0, 'drone_total': 0,
+                        'alert_count': 0, 'pl_count': 0,
+                        'drone_stats': {'total': 0, 'critical': 0, 'severe': 0, 'warning': 0},
+                        'drones': [], 'logs': [],
+                        'server_time': _now_str, 'now': _now_str, 'backhaul': None})
 
     drones = controller.db.get_active_drones() if controller else []
     alert_drones = controller.alert_system.drone_level if controller else {}
+
+    # 统计告警等级分布
+    _stats = {'total': len(drones), 'critical': 0, 'severe': 0, 'warning': 0}
+    for d in drones:
+        s = d.get('status', 'active')
+        if s in _stats:
+            _stats[s] += 1
 
     # 补充机型名和电力线名
     device_name = controller._config.get('backhaul', {}).get('device_name', '') if controller else ''
@@ -66,11 +76,14 @@ def api_status():
         'running': controller.running if controller else False,
         'mode': controller.mode if controller else '',
         'drone_count': len(drones),
+        'drone_total': len(drones),
+        'drone_stats': _stats,
         'alert_count': len(alert_drones),
         'pl_count': len(controller.pl_manager.lines) if controller else 0,
         'drones': drones,
         'logs': logs,
-        'now': datetime.now().strftime('%H:%M:%S'),
+        'server_time': _now_str,
+        'now': _now_str,
         'backhaul': {
             'mqtt_online': bhaul.primary_online if bhaul else False,
             'queue_size': bhaul.queue_size if bhaul else 0,

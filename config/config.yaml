@@ -120,6 +120,12 @@ raw_archive:
   enabled: true
   retention_days: 30
   cleanup_interval: 86400
+# ── 地图瓦片配置 ──
+map:
+  tile_standard: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  tile_satellite: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+  tile_terrain: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+
 web_auth:
   secret_key: change-me-in-production
   users:

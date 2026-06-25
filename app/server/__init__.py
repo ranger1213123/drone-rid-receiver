@@ -2,12 +2,14 @@
 中心服务器 App 工厂
 """
 
+import json
 import os
 import secrets
 
 from datetime import datetime
 
 from flask import Flask, jsonify
+from markupsafe import Markup
 
 from .models import init_db, close_db
 
@@ -39,6 +41,93 @@ def create_app(database_url: str = "sqlite:///data/center.db",
         template_folder=str(_Path(__file__).resolve().parent.parent.parent / "templates"),
     )
     app.config["JSON_AS_ASCII"] = False
+
+    manifest_path = _Path(app.static_folder) / "dist" / ".vite" / "manifest.json"
+    _manifest_cache = {"data": None, "mtime": 0}
+
+    def _load_vite_manifest():
+        try:
+            mtime = manifest_path.stat().st_mtime
+            if _manifest_cache["data"] is not None and _manifest_cache["mtime"] == mtime:
+                return _manifest_cache["data"]
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            _manifest_cache["data"] = data
+            _manifest_cache["mtime"] = mtime
+            return data
+        except FileNotFoundError:
+            app.logger.warning("Vite manifest 不存在: %s，请先运行 npm run build", manifest_path)
+        except Exception as exc:
+            app.logger.warning("读取 Vite manifest 失败: %s", exc)
+        _manifest_cache["data"] = {}
+        return {}
+
+    # Dev-mode Vite server check (cached)
+    _vite_dev_checked = False
+    _vite_dev_available = False
+
+    def _check_vite_dev():
+        nonlocal _vite_dev_checked, _vite_dev_available
+        if _vite_dev_checked:
+            return _vite_dev_available
+        _vite_dev_checked = True
+        try:
+            import urllib.request
+            req = urllib.request.Request("http://localhost:3000/@vite/client", method="HEAD")
+            urllib.request.urlopen(req, timeout=0.5)
+            _vite_dev_available = True
+        except Exception:
+            pass
+        return _vite_dev_available
+
+    def _vite_asset(entry: str) -> str:
+        manifest = _load_vite_manifest()
+        item = manifest.get(entry)
+        if not item:
+            return ""
+        return f"/static/dist/{item['file']}"
+
+    def _vite_tags(entry: str) -> Markup:
+        is_dev = os.environ.get("FLASK_ENV") == "development" or os.environ.get("VITE_DEV") == "1"
+        if is_dev and _check_vite_dev():
+            tags = [
+                '<script type="module" src="http://localhost:3000/@vite/client"></script>',
+                f'<script type="module" src="http://localhost:3000{entry}"></script>',
+            ]
+            return Markup("\n".join(tags))
+
+        manifest = _load_vite_manifest()
+        item = manifest.get(entry)
+        if not item:
+            return Markup("")
+        tags = []
+        for css_file in item.get("css", []):
+            tags.append(f'<link rel="stylesheet" href="/static/dist/{css_file}">')
+        tags.append(f'<script type="module" src="/static/dist/{item["file"]}"></script>')
+        return Markup("\n".join(tags))
+
+    # 地图瓦片 URL 配置: 环境变量 > 硬编码默认值 (K8s ConfigMap 注入)
+    _tile_urls = {
+        "standard": os.environ.get(
+            "MAP_TILE_STANDARD",
+            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        ),
+        "satellite": os.environ.get(
+            "MAP_TILE_SATELLITE",
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        ),
+        "terrain": os.environ.get(
+            "MAP_TILE_TERRAIN",
+            "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+        ),
+    }
+
+    @app.context_processor
+    def inject_vite_helpers():
+        return {
+            "vite_asset": _vite_asset,
+            "vite_tags": _vite_tags,
+            "tile_urls": _tile_urls,
+        }
 
     # 生产环境安全检查: JWT_SECRET_KEY 必须配置
     _jwt_secret = os.environ.get("JWT_SECRET_KEY", "")

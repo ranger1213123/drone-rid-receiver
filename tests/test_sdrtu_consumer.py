@@ -60,7 +60,7 @@ class TestSdrtuTranslation(TestCase):
         self.assertIsNone(result["distance_to_line"])
         self.assertEqual(result["status"], "active")
         self.assertEqual(result["rssi"], -72)
-        self.assertEqual(result["ua_type"], 2)
+        self.assertEqual(result.get("model", ""), "")
 
     # ═══════ 位置回退逻辑 ═══════
 

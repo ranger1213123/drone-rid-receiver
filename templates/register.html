@@ -83,7 +83,7 @@ function loadTenantStations(key) {
 function renderStationOptions() {
   var sel = document.getElementById('station');
   sel.innerHTML = tenantStations.map(function(s){
-    return '<option value="'+s.name+'">'+s.name+(s.location?' — '+s.location:'')+'</option>';
+    return '<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+(s.location?' — '+UI.escapeHtml(s.location):'')+'</option>';
   }).join('');
   if (!tenantStations.length) {
     sel.innerHTML = '<option value="">(该密钥暂无绑定站点，请先联系管理员配置)</option>';

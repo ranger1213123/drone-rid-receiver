@@ -1,0 +1,22 @@
+{
+  "name": "drone-rid-monitor",
+  "version": "3.3.0",
+  "private": true,
+  "description": "Drone RID Monitor — 无人机远程识别电力线防碰撞监控系统",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "lightningcss": "^1.32.0",
+    "terser": "^5.48.0",
+    "vite": "^6.4.3"
+  },
+  "dependencies": {
+    "alpinejs": "^3.14.0",
+    "chart.js": "^4.4.0",
+    "leaflet": "^1.9.4",
+    "socket.io-client": "^4.7.5"
+  }
+}
