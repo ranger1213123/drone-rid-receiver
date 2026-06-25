@@ -37,3 +37,5 @@ Thumbs.db
 
 # PyInstaller
 *.exe
+node_modules/
+app/server/static/dist/

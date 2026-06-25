@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 
 PROJECT_ROOT = SCRIPT_DIR.parent
 
-from core.parser.types import UA_TYPE_NAMES, lookup_model_by_sn
+from core.parser.types import lookup_model_by_sn
 
 app = Flask(__name__)
 
@@ -54,7 +54,6 @@ def api_status():
     device_name = controller._config.get('backhaul', {}).get('device_name', '') if controller else ''
     line_names = {l.line_id: l.name for l in controller.pl_manager.lines}
     for d in drones:
-        d['category_name'] = UA_TYPE_NAMES.get(d.get('ua_type', 0), '未知')
         d['product_model'] = lookup_model_by_sn(d['id']) or ''
         line_id = d.get('nearest_line_id')
         d['line_name'] = line_names.get(line_id, '') if line_id else ''

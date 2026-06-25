@@ -7,8 +7,10 @@ from flask import Blueprint, request, jsonify
 from .models import upsert_device
 from .auth import require_auth
 
-bp = Blueprint("heartbeat", __name__)
+from logging_config import get_logger
 
+bp = Blueprint("heartbeat", __name__)
+logger = get_logger(__name__)
 
 @bp.route("/api/heartbeat", methods=["POST"])
 @require_auth
@@ -25,4 +27,5 @@ def api_heartbeat():
         )
         return jsonify({"status": "ok", "server_time": datetime.now().isoformat()})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error("heartbeat error: %s", e)
+        return jsonify({"error": "服务器内部错误"}), 500

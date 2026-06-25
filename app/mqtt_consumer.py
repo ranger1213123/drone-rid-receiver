@@ -445,6 +445,25 @@ class MqttConsumer:
         line_name = data.get("nearest_line", "")
         status = data.get("status", "active")
 
+        # 云端兜底: 若边缘未附带最近电力线但坐标有效, 重新计算
+        nearby_lines_json = ""
+        if lat and lon and self.pl_manager and self.pl_manager.lines:
+            try:
+                if not line_name:
+                    line, dist = self.pl_manager.find_nearest_line(lat, lon, alt)
+                    if line:
+                        distance = dist
+                        line_name = line.name
+                # 计算所有 300m 范围内的电力线 (用于轨迹记录)
+                all_nearby = self.pl_manager.find_all_within(lat, lon, alt, 300.0)
+                if all_nearby:
+                    nearby_lines_json = json.dumps(
+                        [{"line": l.name, "dist": round(d, 1)} for l, d in all_nearby],
+                        ensure_ascii=False
+                    )
+            except Exception:
+                pass
+
         ti = self._get_device_tenant_info(device_name)
         tenant_id = ti.get("tenant_id")
         station_name = ti.get("station_name", "")
@@ -456,17 +475,33 @@ class MqttConsumer:
         }
         if drone_id:
             key = (drone_id, device_name)
+            existing = self._buffer['drones'].get(key, {})
+            h_agl = data.get('height_agl')
+            max_agl = h_agl
+            if h_agl is not None:
+                prev_max_agl = existing.get('max_alt_agl')
+                if prev_max_agl is not None and prev_max_agl > h_agl:
+                    max_agl = prev_max_agl
+            else:
+                max_agl = existing.get('max_alt_agl')
+            max_asl = alt
+            prev_max_asl = existing.get('max_alt_asl')
+            if prev_max_asl is not None and prev_max_asl > alt:
+                max_asl = prev_max_asl
             self._buffer['drones'][key] = {
                 'id': drone_id, 'device_name': device_name,
                 'last_seen': now, 'last_lat': lat, 'last_lon': lon, 'last_alt': alt,
                 'last_speed': data.get('speed', 0),
                 'last_heading': data.get('heading', 0),
                 'rssi': data.get('rssi', 0),
-                'ua_type': data.get('ua_type', 0),
                 'status_code': data.get('status_code', 0),
-                'height_agl': data.get('height_agl'),
+                'height_agl': h_agl,
+                'model': data.get('model', '') or existing.get('model', ''),
+                'max_alt_agl': max_agl,
+                'max_alt_asl': max_asl,
                 'min_distance': distance,
                 'nearest_line': line_name,
+                'nearby_lines': nearby_lines_json,
                 'status': status,
                 'tenant_id': tenant_id,
             }
@@ -484,6 +519,12 @@ class MqttConsumer:
         lat = data.get("latitude", 0)
         lon = data.get("longitude", 0)
         alt = data.get("altitude", 0)
+
+        # 白名单检查: 匹配 SN 的无人机不产生告警
+        self._ensure_whitelist_loaded()
+        if self._is_whitelisted(drone_id):
+            return
+
         message = f"[{level}] {drone_id} 接近 {line_name} 距离{distance:.0f}m"
 
         ti = self._get_device_tenant_info(device_name)
@@ -501,7 +542,8 @@ class MqttConsumer:
                 'id': drone_id, 'device_name': device_name,
                 'last_seen': now, 'last_lat': lat, 'last_lon': lon, 'last_alt': alt,
                 'last_speed': 0, 'last_heading': 0,
-                'rssi': 0, 'ua_type': 0, 'status_code': 0, 'height_agl': None,
+                'rssi': 0, 'status_code': 0, 'height_agl': None,
+                'model': data.get('model', ''),
                 'min_distance': distance, 'nearest_line': line_name,
                 'status': level,
                 'tenant_id': tenant_id,
@@ -585,9 +627,9 @@ class MqttConsumer:
             "rssi": inner.get("RSSI", 0) or 0,
             "heading": heading,
             "speed": inner.get("Speed", 0) or 0,
-            "ua_type": inner.get("UAType", 0) or 0,
             "status_code": inner.get("Status", 0) or 0,
             "height_agl": inner.get("Height"),
+            "model": inner.get("Model", "") or "",
         }
 
     def _ensure_pl_loaded(self):
@@ -611,6 +653,34 @@ class MqttConsumer:
                 pass
         self._pl_loaded = True
 
+    def _ensure_whitelist_loaded(self):
+        if hasattr(self, '_whitelist_loaded') and self._whitelist_loaded:
+            return
+        self._whitelist_entries = []
+        try:
+            from app.server.models import get_whitelist, close_db
+            self._whitelist_entries = get_whitelist()
+        except Exception as e:
+            logger.warning("白名单加载失败: %s", e)
+        finally:
+            try:
+                close_db()
+            except Exception:
+                pass
+        self._whitelist_loaded = True
+
+    def _is_whitelisted(self, drone_id: str) -> bool:
+        if not drone_id:
+            return False
+        for w in self._whitelist_entries:
+            if w.get("match_mode") == "prefix":
+                if drone_id.startswith(w["sn"]):
+                    return True
+            else:
+                if drone_id == w["sn"]:
+                    return True
+        return False
+
     def _buffer_raw(self, device_name: str, payload: dict):
         """处理 SDRTU raw 格式消息
 
@@ -629,6 +699,16 @@ class MqttConsumer:
 
         report = self._translate_raw_to_report(device_name, payload)
         if report:
+            # ── 白名单检查: 匹配的 SN 跳过告警 ──
+            self._ensure_whitelist_loaded()
+            if self._is_whitelisted(report["drone_id"]):
+                # 仅更新位置, 不触发告警
+                report["distance_to_line"] = None
+                report["nearest_line"] = ""
+                report["status"] = "active"
+                self._buffer_report(device_name, report)
+                return
+
             # ── 云端距离计算 + 告警 ──
             self._ensure_pl_loaded()
             if self.pl_manager and self.pl_manager.lines:
@@ -822,9 +902,11 @@ class MqttConsumer:
                 'last_speed': stmt.excluded.last_speed,
                 'last_heading': stmt.excluded.last_heading,
                 'rssi': stmt.excluded.rssi,
-                'ua_type': stmt.excluded.ua_type,
                 'status_code': stmt.excluded.status_code,
                 'height_agl': stmt.excluded.height_agl,
+                'model': stmt.excluded.model,
+                'max_alt_agl': stmt.excluded.max_alt_agl,
+                'max_alt_asl': stmt.excluded.max_alt_asl,
                 'nearest_line': stmt.excluded.nearest_line,
                 'min_distance': stmt.excluded.min_distance,
                 'status': stmt.excluded.status,
@@ -846,6 +928,7 @@ class MqttConsumer:
                 alt=d.get('last_alt', 0) or 0,
                 distance_to_line=d.get('min_distance'),
                 nearest_line=d.get('nearest_line', ''),
+                nearby_lines=d.get('nearby_lines', ''),
                 timestamp=d.get('last_seen', now),
             ))
         if positions:

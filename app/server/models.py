@@ -7,7 +7,7 @@
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, ForeignKey, Index,
-    Text, Boolean, create_engine, event,
+    Text, Boolean, create_engine, event, CheckConstraint,
 )
 from sqlalchemy.orm import (
     declarative_base, relationship, scoped_session, sessionmaker,
@@ -36,6 +36,7 @@ class Tenant(Base):
 
     __table_args__ = (
         Index("idx_tenant_license", "license_key"),
+        CheckConstraint("length(license_key) = 19", name="ck_tenant_license_key"),
     )
 
 
@@ -57,6 +58,10 @@ class Device(Base):
 
     drones = relationship("Drone", back_populates="device", cascade="all, delete-orphan")
 
+    __table_args__ = (
+        CheckConstraint("length(name) >= 1", name="ck_device_name"),
+    )
+
 
 class Drone(Base):
     __tablename__ = "drones"
@@ -73,15 +78,18 @@ class Drone(Base):
     nearest_line = Column(String)
     status = Column(String, default="active")
     rssi = Column(Integer, default=0)
-    ua_type = Column(Integer, default=0)
     status_code = Column(Integer, default=0)   # ESP32 Status: 0=未知,1=地面,2=空中
     height_agl = Column(Float, nullable=True)   # ESP32 Height (AGL)
+    model = Column(String, default="")           # 产品型号 (如 DJI Mini 4K)
+    max_alt_agl = Column(Float, nullable=True)   # 观测最高对地高度 (m)
+    max_alt_asl = Column(Float, nullable=True)   # 观测最高海拔 (m)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
 
     device = relationship("Device", back_populates="drones")
 
     __table_args__ = (
         Index("idx_drones_device", "device_name"),
+        CheckConstraint("length(id) >= 1", name="ck_drone_id"),
     )
 
 
@@ -97,6 +105,7 @@ class DronePosition(Base):
     alt = Column(Float)
     distance_to_line = Column(Float, nullable=True)
     nearest_line = Column(String, default="")
+    nearby_lines = Column(Text, default="")   # JSON: [{"line":"...","dist":45.2}, ...]
     timestamp = Column(DateTime, nullable=False, index=True)
 
     __table_args__ = (
@@ -122,6 +131,9 @@ class Alert(Base):
 
     __table_args__ = (
         Index("idx_alerts_time", "timestamp"),
+        Index("idx_alerts_level_device", "level", "device_name"),
+        Index("idx_alerts_drone", "drone_id"),
+        Index("idx_alerts_device", "device_name"),
     )
 
 
@@ -136,10 +148,16 @@ class PowerLine(Base):
     lat2 = Column(Float, default=0)
     lon2 = Column(Float, default=0)
     alt2 = Column(Float, default=0)
+    tower_height1 = Column(Float, nullable=True)
+    tower_height2 = Column(Float, nullable=True)
     voltage_level = Column(String, default="")
-    device_name = Column(String, ForeignKey("devices.name"), nullable=True)
+    device_name = Column(String, ForeignKey("devices.name"), nullable=True, index=True)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
+
+    __table_args__ = (
+        Index("idx_pl_device", "device_name"),
+    )
 
 
 class WebUser(Base):
@@ -153,12 +171,20 @@ class WebUser(Base):
     scope = Column(String, default="station")        # "tenant" | "station"
     assigned_station = Column(String, default="")     # scope=station 时的绑定站点
 
+    __table_args__ = (
+        CheckConstraint("length(username) >= 2 AND length(username) <= 32",
+                       name="ck_webuser_username"),
+    )
+
 
 class Station(Base):
     __tablename__ = "stations"
 
     name = Column(String, primary_key=True)
     location = Column(String, default="")
+    province = Column(String, default="")
+    city = Column(String, default="")
+    county = Column(String, default="")
     lat = Column(Float, default=0)
     lon = Column(Float, default=0)
     alt = Column(Float, default=0)
@@ -177,7 +203,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime)
+    timestamp = Column(DateTime, index=True)
     username = Column(String)
     operation = Column(String)
     table_name = Column(String, default="")
@@ -211,6 +237,26 @@ class StationPersonnel(Base):
 
     __table_args__ = (
         Index("idx_personnel_station", "station_name"),
+        CheckConstraint("length(phone) = 11", name="ck_personnel_phone"),
+        CheckConstraint("length(name) >= 1", name="ck_personnel_name"),
+    )
+
+
+class DroneWhitelist(Base):
+    """无人机白名单 — 匹配的 SN 不触发告警"""
+
+    __tablename__ = "drone_whitelist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    sn = Column(String, nullable=False, index=True)
+    match_mode = Column(String, default="exact")  # "exact" | "prefix"
+    note = Column(String, default="")
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    created_at = Column(DateTime)
+    created_by = Column(String, default="")
+
+    __table_args__ = (
+        CheckConstraint("length(sn) >= 1", name="ck_whitelist_sn"),
     )
 
 
@@ -292,7 +338,8 @@ def upsert_device(name: str, location: str = "",
 
 def upsert_drone(device_name: str, drone_id: str,
                  lat: float, lon: float, alt: float,
-                 speed: float = 0, heading: float = 0):
+                 speed: float = 0, heading: float = 0,
+                 model: str = "", height_agl: float = None):
     sess = get_session()
     now = datetime.now(timezone.utc)
     drone = sess.get(Drone, (drone_id, device_name))
@@ -304,11 +351,20 @@ def upsert_drone(device_name: str, drone_id: str,
         drone.last_speed = speed
         drone.last_heading = heading
         drone.status = "active"
+        if model and not drone.model:
+            drone.model = model
+        if height_agl is not None:
+            drone.height_agl = height_agl
+            if drone.max_alt_agl is None or height_agl > drone.max_alt_agl:
+                drone.max_alt_agl = height_agl
+        if drone.max_alt_asl is None or alt > drone.max_alt_asl:
+            drone.max_alt_asl = alt
     else:
         drone = Drone(
             id=drone_id, device_name=device_name,
             last_seen=now, last_lat=lat, last_lon=lon, last_alt=alt,
             last_speed=speed, last_heading=heading, status="active",
+            model=model, max_alt_agl=height_agl, max_alt_asl=alt,
         )
         sess.add(drone)
     sess.commit()
@@ -369,8 +425,11 @@ def get_all_drones() -> list:
             "last_speed": d.last_speed or 0, "last_heading": d.last_heading or 0,
             "min_distance": d.min_distance, "nearest_line": d.nearest_line or "",
             "status": d.status or "active",
-            "rssi": d.rssi or 0, "ua_type": d.ua_type or 0,
+            "rssi": d.rssi or 0,
             "status_code": d.status_code or 0, "height_agl": d.height_agl,
+            "model": d.model or "",
+            "max_alt_agl": d.max_alt_agl,
+            "max_alt_asl": d.max_alt_asl,
             "tenant_id": d.tenant_id,
         }
         for d in drones
@@ -379,38 +438,33 @@ def get_all_drones() -> list:
 
 def get_trajectory_summaries(drone_id: str = None,
                             date_from: str = None, date_to: str = None) -> dict:
-    """返回轨迹摘要，支持按无人机ID和日期范围筛选"""
+    """返回轨迹摘要 — 单次 GROUP BY 查询，避免 N+1"""
+    from sqlalchemy import func
     sess = get_session()
-    q = sess.query(DronePosition)
+    q = sess.query(
+        DronePosition.drone_id,
+        func.count().label("count"),
+        func.min(DronePosition.timestamp).label("first_ts"),
+        func.max(DronePosition.timestamp).label("last_ts"),
+        func.min(DronePosition.distance_to_line).label("min_dist"),
+        func.max(DronePosition.device_name).label("device_name"),
+    )
     if drone_id:
         q = q.filter(DronePosition.drone_id.ilike(f"%{drone_id}%"))
     if date_from:
         q = q.filter(DronePosition.timestamp >= date_from)
     if date_to:
         q = q.filter(DronePosition.timestamp <= date_to)
-    dids = [r[0] for r in q.with_entities(DronePosition.drone_id).distinct().all()]
+    rows = q.group_by(DronePosition.drone_id).all()
     result = {}
-    for did in dids:
-        dq = sess.query(DronePosition).filter(DronePosition.drone_id == did)
-        if date_from:
-            dq = dq.filter(DronePosition.timestamp >= date_from)
-        if date_to:
-            dq = dq.filter(DronePosition.timestamp <= date_to)
-        first_pos = dq.order_by(DronePosition.timestamp.asc()).first()
-        last_pos = dq.order_by(DronePosition.timestamp.desc()).first()
-        count = dq.count()
-        min_d = min(
-            (p.distance_to_line for p in [first_pos, last_pos] if p and p.distance_to_line is not None),
-            default=0
-        )
-        if first_pos and last_pos:
-            result[did] = {
-                'count': count,
-                'min_dist': min_d,
-                'first': first_pos.timestamp.isoformat()[:19] if first_pos.timestamp else '',
-                'last': last_pos.timestamp.isoformat()[:19] if last_pos.timestamp else '',
-                'device_name': first_pos.device_name or '',
-            }
+    for row in rows:
+        result[row.drone_id] = {
+            "count": row.count,
+            "min_dist": row.min_dist or 0,
+            "first": row.first_ts.isoformat()[:19] if row.first_ts else "",
+            "last": row.last_ts.isoformat()[:19] if row.last_ts else "",
+            "device_name": row.device_name or "",
+        }
     return result
 
 
@@ -426,6 +480,7 @@ def get_trajectory_points(drone_id: str, limit: int = 500) -> list:
         'alt': p.alt,
         'distance': p.distance_to_line,
         'nearest_line': p.nearest_line or '',
+        'nearby_lines': p.nearby_lines or '',
         'time': p.timestamp.isoformat()[:19] if p.timestamp else '',
     } for p in points]
 
@@ -478,17 +533,25 @@ def acknowledge_alert(alert_id: int, username: str, note: str = "") -> bool:
 
 
 def get_hourly_alert_counts(hours: int = 24) -> list:
-    """近N小时每小时的告警数量 (用于24h趋势图)"""
-    from sqlalchemy import func
+    """近N小时每小时的告警数量 (用于24h趋势图) — 数据库无关"""
     sess = get_session()
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-    rows = sess.query(
-        func.strftime("%Y-%m-%dT%H:00", Alert.timestamp).label("hour"),
-        func.count().label("cnt"),
-    ).filter(
+    alerts = sess.query(Alert.timestamp, Alert.level).filter(
         Alert.timestamp >= cutoff
-    ).group_by("hour").order_by("hour").all()
-    return [{"hour": r.hour, "count": r.cnt} for r in rows]
+    ).order_by(Alert.timestamp).all()
+    # Python 侧按 (hour, level) 分组 (兼容 SQLite / PostgreSQL)
+    buckets: dict = {}  # key: "HH:00_level" → count
+    for ts, level in alerts:
+        if not ts or not level:
+            continue
+        hour_key = ts.strftime("%Y-%m-%dT%H:00")
+        bucket_key = f"{hour_key}|{level}"
+        buckets[bucket_key] = buckets.get(bucket_key, 0) + 1
+    result = []
+    for key, count in sorted(buckets.items()):
+        hour, level = key.rsplit("|", 1)
+        result.append({"hour": hour, "level": level, "count": count})
+    return result
 
 
 def get_alert_stats() -> dict:
@@ -533,10 +596,30 @@ def get_power_lines(device_name: str = None) -> list:
         'id': l.id, 'name': l.name,
         'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
         'lat2': l.lat2, 'lon2': l.lon2, 'alt2': l.alt2,
+        'tower_height1': l.tower_height1,
+        'tower_height2': l.tower_height2,
         'voltage_level': l.voltage_level or '',
         'device_name': l.device_name or '',
         'updated_at': l.updated_at.isoformat() if l.updated_at else '',
     } for l in lines]
+
+
+# ── 塔杆高度参考 (GB 50545 / DL/T 5092 典型值) ──
+TYPICAL_TOWER_HEIGHTS = {
+    '10kV': 15, '35kV': 18, '66kV': 22,
+    '110kV': 25, '220kV': 35, '330kV': 40,
+    '500kV': 50, '750kV': 60, '±800kV': 65, '1000kV': 80,
+}
+
+
+def estimate_tower_height(voltage_level: str) -> float:
+    """根据电压等级返回典型塔杆高度 (m), 未匹配返回 25m"""
+    if not voltage_level:
+        return 25.0
+    for k, v in TYPICAL_TOWER_HEIGHTS.items():
+        if k in voltage_level:
+            return float(v)
+    return 25.0
 
 
 def upsert_power_line(data: dict) -> int:
@@ -547,7 +630,8 @@ def upsert_power_line(data: dict) -> int:
     if pl_id:
         pl = sess.get(PowerLine, pl_id)
         if pl:
-            for k in ('name', 'lat1', 'lon1', 'alt1', 'lat2', 'lon2', 'alt2', 'voltage_level', 'device_name'):
+            for k in ('name', 'lat1', 'lon1', 'alt1', 'lat2', 'lon2', 'alt2',
+                      'tower_height1', 'tower_height2', 'voltage_level', 'device_name'):
                 if k in data:
                     setattr(pl, k, data[k])
             pl.updated_at = now
@@ -557,6 +641,8 @@ def upsert_power_line(data: dict) -> int:
         name=data.get('name', ''),
         lat1=data.get('lat1', 0), lon1=data.get('lon1', 0), alt1=data.get('alt1', 0),
         lat2=data.get('lat2', 0), lon2=data.get('lon2', 0), alt2=data.get('alt2', 0),
+        tower_height1=data.get('tower_height1'),
+        tower_height2=data.get('tower_height2'),
         voltage_level=data.get('voltage_level', ''),
         device_name=data.get('device_name') or None,
         created_at=now, updated_at=now,
@@ -577,22 +663,28 @@ def delete_power_line(pl_id: int) -> bool:
 
 
 def load_power_lines_from_list(lines: list):
-    """从列表批量替换电力线（用于边缘同步）"""
+    """从列表批量替换电力线（用于边缘同步）— 事务保护"""
     sess = get_session()
-    sess.query(PowerLine).delete()
-    now = datetime.now(timezone.utc)
-    for i, l in enumerate(lines, 1):
-        pl = PowerLine(
-            id=i,
-            name=l.get('name', ''),
-            lat1=l.get('lat1', 0), lon1=l.get('lon1', 0), alt1=l.get('alt1', 0),
-            lat2=l.get('lat2', 0), lon2=l.get('lon2', 0), alt2=l.get('alt2', 0),
-            voltage_level=l.get('voltage_level', ''),
-            device_name=l.get('device_name') or None,
-            created_at=now, updated_at=now,
-        )
-        sess.add(pl)
-    sess.commit()
+    try:
+        sess.query(PowerLine).delete()
+        now = datetime.now(timezone.utc)
+        for i, l in enumerate(lines, 1):
+            pl = PowerLine(
+                id=i,
+                name=l.get('name', ''),
+                lat1=l.get('lat1', 0), lon1=l.get('lon1', 0), alt1=l.get('alt1', 0),
+                lat2=l.get('lat2', 0), lon2=l.get('lon2', 0), alt2=l.get('alt2', 0),
+                tower_height1=l.get('tower_height1'),
+                tower_height2=l.get('tower_height2'),
+                voltage_level=l.get('voltage_level', ''),
+                device_name=l.get('device_name') or None,
+                created_at=now, updated_at=now,
+            )
+            sess.add(pl)
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
 
 
 # ── Web User CRUD ──
@@ -674,6 +766,7 @@ def get_stations() -> list:
     sess = get_session()
     return [{
         'name': s.name, 'location': s.location or '',
+        'province': s.province or '', 'city': s.city or '', 'county': s.county or '',
         'lat': s.lat or 0, 'lon': s.lon or 0, 'alt': s.alt or 0,
         'device_name': s.device_name or '',
         'tenant_id': s.tenant_id,
@@ -681,17 +774,22 @@ def get_stations() -> list:
 
 
 def upsert_station(name: str, location: str = '', lat: float = 0, lon: float = 0,
-                   alt: float = 0, device_name: str = None, tenant_id: int = None):
+                   alt: float = 0, device_name: str = None, tenant_id: int = None,
+                   province: str = '', city: str = '', county: str = ''):
     sess = get_session()
     s = sess.get(Station, name)
     if s:
         s.location = location
+        s.province = province
+        s.city = city
+        s.county = county
         s.lat = lat; s.lon = lon; s.alt = alt
         s.device_name = device_name
         if tenant_id is not None:
             s.tenant_id = tenant_id
     else:
-        s = Station(name=name, location=location, lat=lat, lon=lon, alt=alt,
+        s = Station(name=name, location=location, province=province, city=city,
+                    county=county, lat=lat, lon=lon, alt=alt,
                     device_name=device_name, tenant_id=tenant_id)
         sess.add(s)
     sess.commit()
@@ -757,9 +855,19 @@ def get_audit_logs(limit: int = 100) -> list:
 
 # ── Device Secrets ──
 
-def get_device_secrets() -> dict:
+def get_device_secrets() -> list:
     sess = get_session()
-    return {d.device_name: d.device_secret for d in sess.query(DeviceSecret).all()}
+    return [{
+        'device_name': d.device_name,
+        'device_secret': d.device_secret,
+        'station': d.station or '',
+        'client_cert': d.client_cert,
+        'cert_serial': d.cert_serial,
+        'cert_issued_at': d.cert_issued_at.isoformat() if d.cert_issued_at else '',
+        'revoked': bool(d.revoked),
+        'revoked_at': d.revoked_at.isoformat() if d.revoked_at else '',
+        'created_at': d.created_at.isoformat() if d.created_at else '',
+    } for d in sess.query(DeviceSecret).all()]
 
 
 def upsert_device_secret(device_name: str, device_secret: str, station: str = '',
@@ -813,7 +921,7 @@ def get_all_alert_phones() -> list:
     return list(set(r.phone for r in sess.query(StationPersonnel).all()))
 
 
-def upsert_personnel(station_name: str, name: str, phone: str):
+def upsert_personnel(station_name: str, name: str, phone: str) -> int:
     sess = get_session()
     p = sess.query(StationPersonnel).filter(
         StationPersonnel.station_name == station_name,
@@ -822,8 +930,11 @@ def upsert_personnel(station_name: str, name: str, phone: str):
     if p:
         p.name = name
     else:
-        sess.add(StationPersonnel(station_name=station_name, name=name, phone=phone))
+        p = StationPersonnel(station_name=station_name, name=name, phone=phone)
+        sess.add(p)
+        sess.flush()
     sess.commit()
+    return p.id
 
 
 def get_all_personnel(station_name: str = None) -> list:
@@ -842,6 +953,104 @@ def delete_personnel(personnel_id: int) -> bool:
         sess.delete(p)
         sess.commit()
         return True
+    return False
+
+
+# ── Azimuth / Distance ──
+
+def compute_azimuth_distance(station_lat: float, station_lon: float,
+                             drone_lat: float, drone_lon: float):
+    """计算站点到无人机的方位角(°)和水平距离(m)
+    返回 (bearing_deg, horizontal_distance_m)
+    """
+    import math
+    R = 6371000.0  # 地球半径 (m)
+
+    lat1, lon1 = math.radians(station_lat), math.radians(station_lon)
+    lat2, lon2 = math.radians(drone_lat), math.radians(drone_lon)
+
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    dist = R * c
+
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    bearing = (math.degrees(math.atan2(y, x)) + 360) % 360
+
+    return round(bearing, 1), round(dist, 1)
+
+
+# ── Drone Model Distribution ──
+
+def get_drone_model_distribution(device_names: set = None) -> list:
+    """按 model 字段统计无人机型号分布"""
+    from sqlalchemy import func
+    sess = get_session()
+    q = sess.query(Drone.model, func.count()).filter(
+        Drone.status != "gone", Drone.model != "", Drone.model.isnot(None)
+    )
+    if device_names is not None:
+        q = q.filter(Drone.device_name.in_(device_names))
+    rows = q.group_by(Drone.model).order_by(func.count().desc()).all()
+    return [{"model": m, "count": cnt} for m, cnt in rows]
+
+
+# ── Drone Whitelist CRUD ──
+
+def get_whitelist(tenant_id: int = None) -> list:
+    sess = get_session()
+    q = sess.query(DroneWhitelist)
+    if tenant_id is not None:
+        q = q.filter(DroneWhitelist.tenant_id == tenant_id)
+    return [{
+        "id": w.id, "sn": w.sn, "match_mode": w.match_mode,
+        "note": w.note or "", "tenant_id": w.tenant_id,
+        "created_at": w.created_at.isoformat() if w.created_at else "",
+        "created_by": w.created_by or "",
+    } for w in q.order_by(DroneWhitelist.created_at.desc()).all()]
+
+
+def add_to_whitelist(sn: str, match_mode: str = "exact", note: str = "",
+                     tenant_id: int = None, created_by: str = "") -> int:
+    sess = get_session()
+    w = DroneWhitelist(
+        sn=sn.strip(), match_mode=match_mode, note=note,
+        tenant_id=tenant_id, created_by=created_by,
+        created_at=datetime.now(timezone.utc),
+    )
+    sess.add(w)
+    sess.commit()
+    return w.id
+
+
+def remove_from_whitelist(whitelist_id: int) -> bool:
+    sess = get_session()
+    w = sess.get(DroneWhitelist, whitelist_id)
+    if w:
+        sess.delete(w)
+        sess.commit()
+        return True
+    return False
+
+
+def is_drone_whitelisted(drone_id: str, tenant_id: int = None) -> bool:
+    """检查无人机是否在白名单中 (支持精确匹配和前缀匹配)"""
+    if not drone_id:
+        return False
+    sess = get_session()
+    q = sess.query(DroneWhitelist)
+    if tenant_id is not None:
+        q = q.filter(DroneWhitelist.tenant_id == tenant_id)
+    for w in q.all():
+        if w.match_mode == "prefix":
+            if drone_id.startswith(w.sn):
+                return True
+        else:  # exact
+            if drone_id == w.sn:
+                return True
     return False
 
 

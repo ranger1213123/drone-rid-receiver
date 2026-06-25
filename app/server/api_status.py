@@ -5,7 +5,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, session
 
 from .models import (
-    get_devices, get_all_drones, get_recent_alerts, mark_stale_devices,
+    get_devices, get_all_drones, get_recent_alerts,
     get_user_stations, get_stations,
 )
 from .auth import _verify_token
@@ -30,7 +30,10 @@ def api_status():
     if not _is_web_session() and not _is_device_auth():
         return jsonify({"error": "未登录或 token 无效"}), 401
 
-    mark_stale_devices(timeout_seconds=120)
+    # ── 分页参数 (前端列表场景) ──
+    page = request.args.get("page", type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    since = request.args.get("since")  # ISO timestamp, 增量模式
 
     devices = get_devices()
     drones = get_all_drones()
@@ -58,6 +61,17 @@ def api_status():
     sev = sum(1 for d in drones if d["status"] == "severe")
     warn = sum(1 for d in drones if d["status"] == "warning")
 
+    # ── 增量模式: 只返回 since 时间之后更新的无人机 ──
+    if since and drones:
+        drones = [d for d in drones if d.get("last_seen", "") >= since]
+
+    total_drones = len(drones)
+
+    # ── 分页 ──
+    if page and page >= 1:
+        start = (page - 1) * per_page
+        drones = drones[start:start + per_page]
+
     result = {
         "server_time": datetime.now().strftime("%H:%M:%S"),
         "devices": {
@@ -68,6 +82,7 @@ def api_status():
         },
         "drones": drones,  # 数组, 与边缘 API 格式一致
         "drone_count": active_drones,
+        "drone_total": total_drones,  # 过滤/分页前总数
         "drone_stats": {
             "total": active_drones,
             "critical": crit,

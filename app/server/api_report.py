@@ -112,7 +112,7 @@ def api_report():
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error("report error: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "服务器内部错误"}), 500
 
 
 @bp.route("/api/report_alert", methods=["POST"])
@@ -147,4 +147,4 @@ def api_report_alert():
         return jsonify({"status": "ok"})
     except Exception as e:
         logger.error("report_alert error: %s", e)
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "服务器内部错误"}), 500

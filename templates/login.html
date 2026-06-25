@@ -1,102 +1,35 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drone RID Monitor — 登录</title>
+{% extends "base.html" %}
+{% block title %}Drone RID Monitor — 登录{% endblock %}
+{% block head_extra %}
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
-  background:#f0f2f5; color:#1a1d23; min-height:100vh;
-  display:flex; align-items:center; justify-content:center;
-  -webkit-font-smoothing:antialiased;
-}
-
-/* Subtle background pattern */
-body::before{
-  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background-image:
-    linear-gradient(rgba(0,0,0,.02) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(0,0,0,.02) 1px,transparent 1px);
-  background-size:60px 60px;
-}
-
-.container{
-  position:relative; z-index:1; display:flex;
-  background:#fff; border:1px solid #e0e3e8;
+.auth-container{
+  display:flex; background:#fff; border:1px solid #e0e3e8;
   border-radius:16px; overflow:hidden;
   box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.06);
   width:780px; max-width:94vw; min-height:440px;
 }
-
-/* Left branding panel */
 .brand-panel{
   width:320px; background:linear-gradient(160deg,#eff6ff,#f8fafc);
   display:flex; flex-direction:column; justify-content:center; align-items:center;
   padding:40px 28px; text-align:center; border-right:1px solid #e8ecf1;
 }
-.brand-panel .shield{
-  width:64px; height:64px; margin-bottom:20px; position:relative;
-}
+.brand-panel .shield{width:64px;height:64px;margin-bottom:20px}
 .brand-panel .shield svg{width:100%;height:100%}
-.brand-panel h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:6px;color:#1a1d23}
+.brand-panel h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:6px}
 .brand-panel .sub{font-size:11px;color:#6b7280;line-height:1.6}
 .brand-panel .dot-row{display:flex;gap:8px;margin-top:24px}
-.brand-panel .dot-row span{
-  width:6px;height:6px;border-radius:50%;
-  background:rgba(0,0,0,.1);transition:background .3s;
-}
+.brand-panel .dot-row span{width:6px;height:6px;border-radius:50%;background:rgba(0,0,0,.1);transition:background .3s}
 .brand-panel .dot-row span:nth-child(1){background:#22c55e}
 .brand-panel .dot-row span:nth-child(3){background:#eab308}
 .brand-panel .dot-row span:nth-child(5){background:#ef4444}
-
-/* Right form panel */
 .form-panel{
   flex:1; display:flex; flex-direction:column; justify-content:center;
   padding:40px 44px;
 }
-.form-panel h3{font-size:14px;font-weight:600;margin-bottom:2px;letter-spacing:-0.2px;color:#1a1d23}
+.form-panel h3{font-size:14px;font-weight:600;margin-bottom:2px;letter-spacing:-0.2px}
 .form-panel .hint{font-size:11px;color:#6b7280;margin-bottom:24px}
-
-.field{margin-bottom:16px}
-.field label{
-  display:block; font-size:10px; font-weight:600; color:#6b7280;
-  text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px;
-}
-.field input{
-  width:100%; padding:10px 14px; background:#f9fafb;
-  border:1px solid #e0e3e8; border-radius:8px;
-  color:#1a1d23; font-size:13px; outline:none;
-  transition:border-color .2s,box-shadow .2s;
-}
-.field input:focus{
-  border-color:#2563eb;
-  box-shadow:0 0 0 3px rgba(37,99,235,.1);
-}
-.field input::placeholder{color:#9ca3af}
-
-.submit-btn{
-  width:100%; padding:10px; border-radius:8px; font-size:13px; font-weight:600;
-  cursor:pointer; border:none; color:#fff; letter-spacing:0.3px;
-  background:#2563eb;
-  transition:all .2s; margin-top:4px;
-}
-.submit-btn:hover{background:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.25)}
-
-.error-msg{
-  background:#fef2f2; border:1px solid #fecaca;
-  color:#dc2626; font-size:11px; padding:8px 12px; border-radius:6px;
-  margin-bottom:18px; text-align:center;
-}
-
-.footnote{font-size:10px;color:#9ca3af;text-align:center;margin-top:20px}
-.footnote a{color:#2563eb;text-decoration:none}
-.footnote a:hover{text-decoration:underline}
-
 @media(max-width:600px){
-  .container{flex-direction:column;width:100%}
+  .auth-container{flex-direction:column;width:100%}
   .brand-panel{width:100%;padding:24px 20px;border-right:none;border-bottom:1px solid #e8ecf1}
   .brand-panel .shield{width:40px;height:40px;margin-bottom:10px}
   .brand-panel h2{font-size:15px}
@@ -104,10 +37,10 @@ body::before{
   .form-panel{padding:24px 20px}
 }
 </style>
-</head>
-<body>
-
-<div class="container">
+{% endblock %}
+{% block body %}
+<div class="auth-body">
+<div class="auth-container">
   <div class="brand-panel">
     <div class="shield">
       <svg viewBox="0 0 64 64" fill="none">
@@ -126,27 +59,26 @@ body::before{
     <div class="hint">请输入凭据以访问监控面板</div>
 
     {% if error %}
-    <div class="error-msg">{{ error }}</div>
+    <div class="auth-error">{{ error }}</div>
     {% endif %}
 
     <form method="POST" action="/login">
-      <div class="field">
+      <div class="auth-field">
         <label>用户名</label>
         <input type="text" name="username" placeholder="输入用户名" autocomplete="username" required autofocus>
       </div>
-      <div class="field">
+      <div class="auth-field">
         <label>密码</label>
         <input type="password" name="password" placeholder="输入密码" autocomplete="current-password" required>
       </div>
-      <button type="submit" class="submit-btn">登 录</button>
+      <button type="submit" class="auth-submit">登 录</button>
     </form>
 
-    <div class="footnote">
+    <div class="auth-footnote">
       没有账号？<a href="/register">注册</a>
       &middot; 杆塔端监控系统 &middot; v3.3
     </div>
   </div>
 </div>
-
-</body>
-</html>
+</div>
+{% endblock %}

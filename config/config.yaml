@@ -109,9 +109,6 @@ anti_flapping:
   enabled: false
   debounce_in: 3
   debounce_out: 10
-    app_key: ''
-    cache_ttl: 3600
-    cache_path: data/uom_cache.json
 pilot_notify:
   enabled: false
   provider: console

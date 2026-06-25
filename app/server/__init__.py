@@ -3,6 +3,7 @@
 """
 
 import os
+import secrets
 
 from datetime import datetime
 
@@ -17,11 +18,38 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     import os as _os
     from pathlib import Path as _Path
 
+    # ── 后台线程: 定期清理过期设备 & 无人机 ──
+    import threading as _threading
+    import time as _time
+    from .models import mark_stale_devices as _mark_stale_devices
+
+    def _stale_cleaner():
+        while True:
+            _time.sleep(60)
+            try:
+                _mark_stale_devices(timeout_seconds=120)
+            except Exception:
+                pass  # 数据库可能尚未初始化，忽略
+
+    _stale_thread = _threading.Thread(target=_stale_cleaner, daemon=True, name="stale-cleaner")
+    _stale_thread.start()
+
     app = Flask(
         __name__,
         template_folder=str(_Path(__file__).resolve().parent.parent.parent / "templates"),
     )
     app.config["JSON_AS_ASCII"] = False
+
+    # 生产环境安全检查: JWT_SECRET_KEY 必须配置
+    _jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
+    _is_prod = os.environ.get("FLASK_ENV") == "production" or os.environ.get("APP_ENV") == "production"
+    if (not _jwt_secret or _jwt_secret == "dev-secret-change-me") and _is_prod:
+        raise RuntimeError(
+            "JWT_SECRET_KEY 未配置或使用默认值，生产环境禁止启动。"
+            "请设置环境变量 JWT_SECRET_KEY=<随机密钥>"
+        )
+    if not _jwt_secret or _jwt_secret == "dev-secret-change-me":
+        app.logger.warning("WARNING: JWT_SECRET_KEY 使用默认值，仅限开发环境！生产环境必须设置此环境变量")
 
     # 注入安全配置 (环境变量 → Flask app.config)
     for key in ("JWT_SECRET_KEY", "JWT_EXPIRE_SECONDS", "DEVICE_SECRETS"):
@@ -74,8 +102,21 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     app.register_blueprint(trajectory_bp)
     app.register_blueprint(dashboard_bp)
 
-    # Web session secret key
-    app.secret_key = _os.environ.get("WEB_SECRET_KEY", _os.urandom(24).hex())
+    # Web session secret key — 优先环境变量，其次持久化文件
+    _web_secret = _os.environ.get("WEB_SECRET_KEY", "")
+    if not _web_secret:
+        _key_file = _Path(__file__).resolve().parent.parent.parent / "data" / ".session_key"
+        try:
+            if _key_file.exists():
+                _web_secret = _key_file.read_text().strip()
+            else:
+                _web_secret = secrets.token_hex(32)
+                _key_file.parent.mkdir(parents=True, exist_ok=True)
+                _key_file.write_text(_web_secret)
+        except Exception:
+            _web_secret = secrets.token_hex(32)
+            app.logger.warning("无法持久化 session key，使用临时密钥(重启后所有用户需重新登录)")
+    app.secret_key = _web_secret
 
     # 请求结束时释放数据库会话
     @app.teardown_appcontext

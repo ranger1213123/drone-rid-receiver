@@ -62,6 +62,7 @@ def login():
     password = data.get("password", "")
     user = verify_web_user(username, password)
     if user:
+        session.clear()
         session["user"] = user
         return redirect(url_for("dashboard.dashboard"))
     _record_login_attempt(ip)

@@ -1,12 +1,15 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drone RID — 无人机监控</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% extends "base.html" %}
+{% block title %}Drone RID — 无人机监控{% endblock %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" onerror="this.href='/static/leaflet.css'">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>window.Chart||document.write('<script src="/static/chart.umd.min.js"><\/script>')</script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>window.io||document.write('<script src="/static/socket.io.min.js"><\/script>')</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>window.L||document.write('<script src="/static/leaflet.js"><\/script>')</script>
+<script src="/static/js/map-utils.js"></script>
+<script src="/static/js/chart-utils.js"></script>
 <style>
 /* ── Design Tokens ── */
 :root{
@@ -345,7 +348,8 @@ body.sta-mode .nat-only{display:none!important}
   #toggleLeftBtn{left:4px;top:8px}
 }
 </style>
-</head>
+{% endblock %}
+{% block body %}
 <body class="nat-mode">
 
 <!-- ════════ Shell: Left + Map + Right ════════ -->
@@ -460,7 +464,7 @@ body.sta-mode .nat-only{display:none!important}
     <div class="nat-only">
       <div class="side-section">
         <div class="side-head" onclick="toggleSection('secNatChart',this)">
-          <span>24h 预警趋势（全部站点）</span>
+          <span>24h预警趋势</span>
           <span class="chevron open" id="secNatChartChev">▶</span>
         </div>
         <div class="side-body" id="secNatChart">
@@ -523,7 +527,7 @@ body.sta-mode .nat-only{display:none!important}
     <div class="sta-only">
       <div class="side-section">
         <div class="side-head" onclick="toggleSection('secStaChart',this)">
-          <span>24h 预警趋势（本站）</span>
+          <span>24h预警趋势</span>
           <span class="chevron open" id="secStaChartChev">▶</span>
         </div>
         <div class="side-body" id="secStaChart">
@@ -626,9 +630,9 @@ body.sta-mode .nat-only{display:none!important}
     <div id="plModalList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
     <h3 style="margin-top:8px">新增线段</h3>
     <label>名称</label><input id="plName" placeholder="例如: 高压线A-北段">
-    <label>电压等级 <span style="font-weight:400;color:var(--muted)">(GB 50545-2010 最小对地距离)</span></label>
-    <select id="plVoltage" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
-      <option value="">无 (自定义)</option>
+    <label>电压等级 <span style="font-weight:400;color:var(--muted)">GB 50545-2010 最小对地距离</span></label>
+    <select id="plVoltage" onchange="onVoltageChangeForPl()" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
+      <option value="">无 </option>
       <option value="10kV">10kV — 5.5m</option>
       <option value="35kV">35kV — 6.5m</option>
       <option value="66kV">66kV — 7.0m</option>
@@ -640,10 +644,11 @@ body.sta-mode .nat-only{display:none!important}
       <option value="±800kV">±800kV — 21.0m</option>
       <option value="1000kV">1000kV — 27.0m</option>
     </select>
-    <label>端点 1 (纬度, 经度, 海拔)</label>
-    <div class="row"><input id="plLat1" placeholder="纬度"><input id="plLon1" placeholder="经度"><input id="plAlt1" placeholder="海拔"></div>
-    <label>端点 2 (纬度, 经度, 海拔)</label>
-    <div class="row"><input id="plLat2" placeholder="纬度"><input id="plLon2" placeholder="经度"><input id="plAlt2" placeholder="海拔"></div>
+    <label>端点 1 (纬度, 经度, 地面海拔, 塔高)</label>
+    <div class="row" style="grid-template-columns:1fr 1fr 1fr 80px"><input id="plLat1" placeholder="纬度"><input id="plLon1" placeholder="经度"><input id="plAlt1" placeholder="地面海拔(m)"><input id="plTh1" placeholder="塔高(m)" onchange="onPlFieldChange()"></div>
+    <label>端点 2 (纬度, 经度, 地面海拔, 塔高)</label>
+    <div class="row" style="grid-template-columns:1fr 1fr 1fr 80px"><input id="plLat2" placeholder="纬度"><input id="plLon2" placeholder="经度"><input id="plAlt2" placeholder="地面海拔(m)"><input id="plTh2" placeholder="塔高(m)" onchange="onPlFieldChange()"></div>
+    <div id="plAltHint" style="font-size:10px;color:var(--muted);margin-bottom:8px;display:none"></div>
     <div class="modal-actions">
       <button class="primary" onclick="addPowerLine()">添加</button>
       <button onclick="closePlModal()">关闭</button>
@@ -711,7 +716,7 @@ body.sta-mode .nat-only{display:none!important}
     <!-- SMS -->
     <h3 style="margin-top:10px">短信通知</h3>
     <div style="margin-bottom:6px"><label style="margin:0;display:inline"><input type="checkbox" id="cfgSmsEn" style="width:auto"> 启用</label></div>
-    <label>通知手机号 (每行一个)</label><textarea id="cfgSmsPhones" rows="2" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;resize:vertical"></textarea>
+    <label>通知手机号</label><textarea id="cfgSmsPhones" rows="2" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;resize:vertical"></textarea>
     <!-- Other -->
     <h3 style="margin-top:10px">其他</h3>
     <div style="display:flex;gap:14px;align-items:center">
@@ -731,7 +736,7 @@ body.sta-mode .nat-only{display:none!important}
   <div class="modal-dialog">
     <h3>用户管理</h3>
     <div id="usrModalList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
-    <h3 style="margin-top:8px">新增用户</h3>
+    <h3 style="margin-top:8px" id="usrFormTitle">新增用户</h3>
     <label>用户名</label><input id="usrName" placeholder="登录用户名">
     <label>密码</label><input id="usrPass" type="password" placeholder="登录密码">
     <div class="row">
@@ -739,7 +744,8 @@ body.sta-mode .nat-only{display:none!important}
       <div style="flex:1"><label>所属站点</label><input id="usrStation" placeholder="站点名称"></div>
     </div>
     <div class="modal-actions">
-      <button class="primary" onclick="addUser()">添加</button>
+      <button class="primary" id="usrSubmitBtn" onclick="addUser()">添加</button>
+      <button id="usrCancelEditBtn" onclick="_resetUsrForm()" style="display:none">取消编辑</button>
       <button onclick="closeUsrModal()">关闭</button>
     </div>
   </div>
@@ -750,13 +756,21 @@ body.sta-mode .nat-only{display:none!important}
   <div class="modal-dialog">
     <h3>站点管理</h3>
     <div id="stModalList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
-    <h3 style="margin-top:8px">新增站点</h3>
+    <div style="display:flex;gap:4px;margin-bottom:8px">
+      <input id="stFilterProv" placeholder="省" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" oninput="filterStModalList()">
+      <input id="stFilterCity" placeholder="市" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" oninput="filterStModalList()">
+      <input id="stFilterName" placeholder="站点名" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" oninput="filterStModalList()">
+    </div>
+    <h3 style="margin-top:8px" id="stFormTitle">新增站点</h3>
     <label>站点名称</label><input id="stName" placeholder="例如: NW-F2">
-    <label>位置描述</label><input id="stLocation" placeholder="例如: 杭州市西湖区-杆塔#05">
+    <label>省市县</label>
+    <div class="row"><input id="stProvince" placeholder="省"><input id="stCity" placeholder="市"><input id="stCounty" placeholder="区/县"></div>
+    <label>位置描述</label><input id="stLocation" placeholder="例如: 文一西路-杆塔#05">
     <label>坐标 (纬度, 经度, 海拔)</label>
     <div class="row"><input id="stLat" placeholder="纬度"><input id="stLon" placeholder="经度"><input id="stAlt" placeholder="海拔"></div>
     <div class="modal-actions">
-      <button class="primary" onclick="addStation()">添加</button>
+      <button class="primary" id="stSubmitBtn" onclick="addStation()">添加</button>
+      <button id="stCancelEditBtn" onclick="_resetStForm()" style="display:none">取消编辑</button>
       <button onclick="closeStModal()">关闭</button>
     </div>
   </div>
@@ -810,40 +824,53 @@ body.sta-mode .nat-only{display:none!important}
   </div>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-// ═══════════ Toast notification ═══════════
-function showToast(msg, type){
-  type=type||'info';
-  var el=document.getElementById('toast');
-  if(!el){
-    el=document.createElement('div');
-    el.id='toast';
-    el.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 20px;border-radius:var(--radius);font-size:12px;font-weight:500;pointer-events:none;transition:opacity .3s;opacity:0';
-    document.body.appendChild(el);
-  }
-  var colors={info:'#2563eb',error:'#dc262e',ok:'#16a34a',warn:'#ea580c'};
-  el.style.background=colors[type]||colors.info;
-  el.style.color='#fff';
-  el.textContent=msg;
-  el.style.opacity='1';
-  clearTimeout(showToast._tid);
-  showToast._tid=setTimeout(function(){el.style.opacity='0'},2500);
+// Alias shared UI functions for backward compatibility
+var showToast = UI.toast;
+var catchErr = function(msg){
+  return function(e){
+    console.warn(msg, e);
+    UI.toast((msg||'请求失败')+': '+(e.message||'网络错误'), 'error');
+  };
+};
+
+// ── 塔高参考 (GB 50545 / DL/T 5092) ──
+var TOWER_HEIGHTS = {'10kV':15,'35kV':18,'66kV':22,'110kV':25,'220kV':35,'330kV':40,'500kV':50,'750kV':60,'±800kV':65,'1000kV':80};
+function estTowerHeight(vl){
+  if(!vl) return 25;
+  for(var k in TOWER_HEIGHTS){if(vl.indexOf(k)>=0) return TOWER_HEIGHTS[k];}
+  return 25;
+}
+function onVoltageChangeForPl(){
+  var vl=document.getElementById('plVoltage').value;
+  var h=estTowerHeight(vl);
+  if(!document.getElementById('plTh1').value) document.getElementById('plTh1').value=h;
+  if(!document.getElementById('plTh2').value) document.getElementById('plTh2').value=h;
+  onPlFieldChange();
+}
+function onPlFieldChange(){
+  var alt1=parseFloat(document.getElementById('plAlt1').value)||0;
+  var th1=parseFloat(document.getElementById('plTh1').value)||0;
+  var alt2=parseFloat(document.getElementById('plAlt2').value)||0;
+  var th2=parseFloat(document.getElementById('plTh2').value)||0;
+  var hint=document.getElementById('plAltHint');
+  if(th1||th2){hint.style.display='';hint.textContent='导线海拔: 端点1='+(alt1+th1).toFixed(1)+'m  端点2='+(alt2+th2).toFixed(1)+'m';}
+  else{hint.style.display='none';}
+}
+function onPlEditVoltageChange(){
+  var vl=document.getElementById('plEditInpVl').value;
+  var h=estTowerHeight(vl);
+  var th1=document.getElementById('plEditInpTh1');
+  var th2=document.getElementById('plEditInpTh2');
+  if(!th1.value) th1.value=h;
+  if(!th2.value) th2.value=h;
 }
 
-// Global unhandled promise rejection handler (logs polling failures silently)
+// Global unhandled promise rejection handler
 window.addEventListener('unhandledrejection',function(e){
   console.warn('Fetch error:',e.reason);
   e.preventDefault();
 });
-
-// Helper: catch fetch errors and show toast
-function catchErr(msg){
-  return function(e){
-    console.warn(msg,e);
-    showToast((msg||'请求失败')+': '+(e.message||'网络错误'),'error');
-  };
-}
 
 // ═══════════ Map ═══════════
 var map = L.map('map', {attributionControl: false, zoomControl: false, preferCanvas: true}).setView([35, 105], 4.5);
@@ -943,51 +970,15 @@ function toggleSection(id,head){
   body.classList.toggle('collapsed'); if(chev) chev.classList.toggle('open');
 }
 
-// ═══════════ Chart.js — alert charts ═══════════
+// ═══════════ Chart.js — alert charts (reuses instances, no destroy+recreate) ═══════════
 var natChart=null, staChart=null;
 
 function buildAlertChart(canvasId, chartRef, hourly, compact){
-  var canvas=document.getElementById(canvasId);
-  if(!canvas) return null;
-  var ctx=canvas.getContext('2d');
-
-  var hours=[], now=new Date();
-  for(var i=23;i>=0;i--){
-    var d=new Date(now.getFullYear(),now.getMonth(),now.getDate(),now.getHours()-i);
-    hours.push(('0'+d.getHours()).slice(-2)+':00');
-  }
-  var warnData=new Array(24).fill(0), sevData=new Array(24).fill(0), critData=new Array(24).fill(0);
-  (hourly||[]).forEach(function(h){
-    var idx=hours.findIndex(function(x){return x===(h.hour.slice(11,13)+':00')});
-    if(idx>=0){
-      if(h.level==='warning') warnData[idx]=h.count;
-      else if(h.level==='severe') sevData[idx]=h.count;
-      else if(h.level==='critical') critData[idx]=h.count;
-    }
-  });
-
-  if(chartRef) chartRef.destroy();
-  var c = new Chart(ctx,{
-    type:'line',
-    data:{
-      labels:hours,
-      datasets:[
-        {label:'警告',data:warnData,borderColor:'#ca8a04',backgroundColor:'rgba(202,138,4,.08)',fill:true,tension:.3,pointRadius:1.5,borderWidth:1.5},
-        {label:'严重',data:sevData,borderColor:'#ea580c',backgroundColor:'rgba(234,88,12,.08)',fill:true,tension:.3,pointRadius:1.5,borderWidth:1.5},
-        {label:'危险',data:critData,borderColor:'#dc262e',backgroundColor:'rgba(220,38,38,.08)',fill:true,tension:.3,pointRadius:2,borderWidth:2},
-      ]
-    },
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      interaction:{intersect:false,mode:'index'},
-      plugins:{legend:{position:'bottom',labels:{boxWidth:10,padding:10,font:{size:9},usePointStyle:true}}},
-      scales:{
-        x:{ticks:{font:{size:8},maxTicksLimit:compact?4:6,autoSkip:true},grid:{display:false}},
-        y:{beginAtZero:true,ticks:{font:{size:8},stepSize:1},grid:{color:'#f0f0f0'}}
-      }
-    }
-  });
-  return c;
+  var result = ChartUtils.buildAlertChart(canvasId, chartRef, hourly, compact);
+  // Update the module-level reference
+  if(canvasId==='natAlertChart') natChart=result;
+  else if(canvasId==='staAlertChart') staChart=result;
+  return result;
 }
 
 // ═══════════ Model distribution ═══════════
@@ -1226,20 +1217,8 @@ function popupContent(dr){
     +'<button class="popup-btn'+(isActive?' traj-active':'')+'" onclick="toggleTrajectory(\''+dr.id+'\')">'+(isActive?'隐藏轨迹':'显示轨迹')+'</button>';
 }
 
-// ═══════════ Animate values ═══════════
-function animateEl(el,target){
-  var cur=parseInt(el.textContent)||0;
-  if(cur===target)return;
-  var step=Math.max(1,Math.abs(target-cur)/8);
-  var dir=target>cur?1:-1;
-  function tick(){
-    cur+=step*dir;
-    if(dir>0?cur>=target:cur<=target){el.textContent=target;return}
-    el.textContent=Math.round(cur);
-    requestAnimationFrame(tick);
-  }
-  tick();
-}
+// ═══════════ Animate values (delegated to UI module) ═══════════
+var animateEl = UI.animateEl;
 
 // ═══════════ Update comms in bottom bar ═══════════
 function updateComms(bh, prefix){
@@ -1269,7 +1248,7 @@ function refreshPlModalList(){
         +'<span style="flex:1;min-width:0">'
         +'<b id="plEditName'+lid+'">'+l.name+'</b>'
         +(vl?' <span id="plEditVl'+lid+'" style="color:var(--blue);font-size:10px">'+vl+'</span>':'')
-        +' <span style="color:var(--muted);font-size:10px">('+l.lat1.toFixed(4)+','+l.lon1.toFixed(4)+') → ('+l.lat2.toFixed(4)+','+l.lon2.toFixed(4)+') alt:'+l.alt1.toFixed(0)+'m</span>'
+        +' <span style="color:var(--muted);font-size:10px">('+l.lat1.toFixed(4)+','+l.lon1.toFixed(4)+') → ('+l.lat2.toFixed(4)+','+l.lon2.toFixed(4)+') 导线:'+l.alt1.toFixed(0)+'m'+(l.tower_height1?' (塔'+l.tower_height1.toFixed(0)+'m)':'')+'</span>'
         +'</span>'
         +'<span class="pl-del" onclick="editPowerLine('+lid+')" style="color:var(--blue);margin-right:4px">✎</span>'
         +'<span class="pl-del" onclick="delPowerLine('+lid+')">×</span></div>';
@@ -1289,9 +1268,11 @@ function editPowerLine(lineId){
       }).join('');
     entry.innerHTML='<span style="flex:1;display:flex;gap:4px;flex-wrap:wrap;align-items:center">'
       +'<input id="plEditInpName" value="'+l.name+'" style="width:100px;padding:3px 6px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px">'
-      +'<select id="plEditInpVl" style="padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px">'+vlOptions+'</select>'
-      +'<input id="plEditInpAlt1" type="number" step="0.1" value="'+l.alt1+'" style="width:55px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点1海拔">'
-      +'<input id="plEditInpAlt2" type="number" step="0.1" value="'+l.alt2+'" style="width:55px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点2海拔">'
+      +'<select id="plEditInpVl" onchange="onPlEditVoltageChange()" style="padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px">'+vlOptions+'</select>'
+      +'<input id="plEditInpAlt1" type="number" step="0.1" value="'+l.alt1+'" style="width:55px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点1地面海拔">'
+      +'<input id="plEditInpTh1" type="number" step="0.1" value="'+(l.tower_height1||'')+'" style="width:50px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点1塔高(m)">'
+      +'<input id="plEditInpAlt2" type="number" step="0.1" value="'+l.alt2+'" style="width:55px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点2地面海拔">'
+      +'<input id="plEditInpTh2" type="number" step="0.1" value="'+(l.tower_height2||'')+'" style="width:50px;padding:3px 4px;font-size:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px" title="端点2塔高(m)">'
       +'</span>'
       +'<span class="pl-del" onclick="savePowerLine('+lineId+')" style="color:var(--green);margin-right:4px">✓</span>'
       +'<span class="pl-del" onclick="cancelEditPl()">✗</span>';
@@ -1302,12 +1283,17 @@ function cancelEditPl(){
   refreshPlModalList();
 }
 function savePowerLine(lineId){
+  var th1=document.getElementById('plEditInpTh1').value;
+  var th2=document.getElementById('plEditInpTh2').value;
   var data={
-    name:document.getElementById('plEditInpName').value,
+    name:document.getElementById('plEditInpName').value.trim(),
     voltage_level:document.getElementById('plEditInpVl').value,
     alt1:parseFloat(document.getElementById('plEditInpAlt1').value)||0,
-    alt2:parseFloat(document.getElementById('plEditInpAlt2').value)||0
+    alt2:parseFloat(document.getElementById('plEditInpAlt2').value)||0,
+    tower_height1: th1!==''?parseFloat(th1):null,
+    tower_height2: th2!==''?parseFloat(th2):null
   };
+  if(!data.name){alert('电力线名称不能为空');return}
   fetch('/api/powerlines/'+lineId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(function(r){return r.json()}).then(function(){
       _editingPlId=-1;
@@ -1318,20 +1304,26 @@ function savePowerLine(lineId){
 
 function addPowerLine(){
   var data={
-    name:document.getElementById('plName').value,
+    name:document.getElementById('plName').value.trim(),
     voltage_level:document.getElementById('plVoltage').value,
     lat1:parseFloat(document.getElementById('plLat1').value),
     lon1:parseFloat(document.getElementById('plLon1').value),
     alt1:parseFloat(document.getElementById('plAlt1').value)||0,
     lat2:parseFloat(document.getElementById('plLat2').value),
     lon2:parseFloat(document.getElementById('plLon2').value),
-    alt2:parseFloat(document.getElementById('plAlt2').value)||0
+    alt2:parseFloat(document.getElementById('plAlt2').value)||0,
+    tower_height1: parseFloat(document.getElementById('plTh1').value)||null,
+    tower_height2: parseFloat(document.getElementById('plTh2').value)||null
   };
+  if(!data.name){alert('电力线名称不能为空');return}
+  if(isNaN(data.lat1)||isNaN(data.lon1)||isNaN(data.lat2)||isNaN(data.lon2)){alert('请填写有效的经纬度坐标');return}
   fetch('/api/powerlines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(function(r){return r.json()}).then(function(){
       document.getElementById('plName').value='';document.getElementById('plVoltage').value='';
       document.getElementById('plLat1').value='';document.getElementById('plLon1').value='';document.getElementById('plAlt1').value='';
       document.getElementById('plLat2').value='';document.getElementById('plLon2').value='';document.getElementById('plAlt2').value='';
+      document.getElementById('plTh1').value='';document.getElementById('plTh2').value='';
+      document.getElementById('plAltHint').style.display='none';
       refreshPlModalList();
       loadPowerLines();
     }).catch(catchErr('添加电力线失败'));
@@ -1344,71 +1336,171 @@ function delPowerLine(lineId){
   }).catch(catchErr('删除电力线失败'));
 }
 // ═══════════ Station Management Modal ═══════════
+var _stations=[];
+var _editingStName=null;
+
 function openStModal(){
   document.getElementById('stModal').classList.add('show');
   refreshStModalList();
 }
-function closeStModal(){document.getElementById('stModal').classList.remove('show')}
+function closeStModal(){document.getElementById('stModal').classList.remove('show');_resetStForm()}
+
+function _resetStForm(){
+  _editingStName=null;
+  document.getElementById('stName').value='';document.getElementById('stName').readOnly=false;
+  document.getElementById('stLocation').value='';
+  document.getElementById('stProvince').value='';document.getElementById('stCity').value='';document.getElementById('stCounty').value='';
+  document.getElementById('stLat').value='';document.getElementById('stLon').value='';document.getElementById('stAlt').value='';
+  document.getElementById('stFormTitle').textContent='新增站点';
+  document.getElementById('stSubmitBtn').textContent='添加';
+  var cancelBtn=document.getElementById('stCancelEditBtn');
+  if(cancelBtn) cancelBtn.style.display='none';
+}
+
+function _stLocationLabel(s){
+  var parts=[];
+  if(s.province) parts.push(s.province);
+  if(s.city) parts.push(s.city);
+  if(s.county) parts.push(s.county);
+  return parts.length?parts.join(' '):(s.location||'');
+}
+
+function filterStModalList(){
+  var prov=(document.getElementById('stFilterProv').value||'').trim().toLowerCase();
+  var city=(document.getElementById('stFilterCity').value||'').trim().toLowerCase();
+  var name=(document.getElementById('stFilterName').value||'').trim().toLowerCase();
+  var filtered=_stations.filter(function(s){
+    if(prov && (s.province||'').toLowerCase().indexOf(prov)<0) return false;
+    if(city && (s.city||'').toLowerCase().indexOf(city)<0) return false;
+    if(name && s.name.toLowerCase().indexOf(name)<0 && (s.location||'').toLowerCase().indexOf(name)<0) return false;
+    return true;
+  });
+  renderStModalList(filtered);
+}
 
 function refreshStModalList(){
   fetch('/api/stations').then(function(r){return r.json()}).then(function(stations){
-    var div=document.getElementById('stModalList');
-    if(!stations||!stations.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无站点</div>';return}
-    div.innerHTML=stations.map(function(s,i){
-      return '<div class="pl-entry"><span><b>'+s.name+'</b> <span style="color:var(--muted);font-size:10px">'+s.location+' ('+s.lat.toFixed(2)+','+s.lon.toFixed(2)+')</span></span><span class="pl-del" onclick="delStation('+i+')">×</span></div>';
-    }).join('');
+    _stations=stations||[];
+    renderStModalList(_stations);
   });
+}
+
+function renderStModalList(list){
+  var div=document.getElementById('stModalList');
+  if(!list.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无站点</div>';return}
+  div.innerHTML=list.map(function(s,i){
+    var loc=_stLocationLabel(s);
+    return '<div class="pl-entry"><span><b>'+s.name+'</b> <span style="color:var(--muted);font-size:10px">'+(loc||'')+' ('+(s.lat||0).toFixed(2)+','+(s.lon||0).toFixed(2)+')</span></span><span style="display:flex;gap:4px"><span class="pl-del" style="background:var(--blue);margin-right:2px" onclick="editStation(\''+s.name+'\')" title="编辑">✎</span><span class="pl-del" onclick="delStation(\''+s.name+'\')">×</span></span></div>';
+  }).join('');
+}
+
+function editStation(name){
+  var s=_stations.find(function(x){return x.name===name});
+  if(!s) return;
+  _editingStName=s.name;
+  document.getElementById('stName').value=s.name;
+  document.getElementById('stName').readOnly=true;
+  document.getElementById('stLocation').value=s.location||'';
+  document.getElementById('stProvince').value=s.province||'';
+  document.getElementById('stCity').value=s.city||'';
+  document.getElementById('stCounty').value=s.county||'';
+  document.getElementById('stLat').value=s.lat||0;
+  document.getElementById('stLon').value=s.lon||0;
+  document.getElementById('stAlt').value=s.alt||0;
+  document.getElementById('stFormTitle').textContent='编辑站点';
+  document.getElementById('stSubmitBtn').textContent='保存';
+  var cancelBtn=document.getElementById('stCancelEditBtn');
+  if(cancelBtn) cancelBtn.style.display='inline-block';
 }
 
 function addStation(){
   var data={
-    name:document.getElementById('stName').value,
-    location:document.getElementById('stLocation').value,
+    name:document.getElementById('stName').value.trim(),
+    location:document.getElementById('stLocation').value.trim(),
+    province:document.getElementById('stProvince').value.trim(),
+    city:document.getElementById('stCity').value.trim(),
+    county:document.getElementById('stCounty').value.trim(),
     lat:parseFloat(document.getElementById('stLat').value),
     lon:parseFloat(document.getElementById('stLon').value),
     alt:parseFloat(document.getElementById('stAlt').value)||0
   };
   if(!data.name){alert('请输入站点名称');return}
   if(isNaN(data.lat)||isNaN(data.lon)){alert('请输入有效坐标');return}
-  fetch('/api/stations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  var method=_editingStName?'PUT':'POST';
+  fetch('/api/stations',{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(function(r){return r.json()}).then(function(res){
       if(res.error){alert(res.error);return}
-      document.getElementById('stName').value='';
-      document.getElementById('stLocation').value='';
-      document.getElementById('stLat').value='';document.getElementById('stLon').value='';document.getElementById('stAlt').value='';
+      document.getElementById('stName').readOnly=false;
+      _resetStForm();
+      document.getElementById('stFilterProv').value='';document.getElementById('stFilterCity').value='';document.getElementById('stFilterName').value='';
       refreshStModalList();
-      // Force stats refresh to update stations
       updateAll._lastStats=0;
-    }).catch(catchErr('添加站点失败'));
+    }).catch(catchErr((_editingStName?'编辑':'添加')+'站点失败'));
 }
 
-function delStation(idx){
-  if(!confirm('确定要删除此站点吗？')) return;
-  fetch('/api/stations',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({idx:idx})})
+function delStation(name){
+  var s=_stations.find(function(x){return x.name===name});
+  if(!s) return;
+  if(!confirm('确定要删除站点 '+s.name+' 吗？')) return;
+  fetch('/api/stations',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:s.name})})
     .then(function(r){return r.json()}).then(function(){
+      document.getElementById('stFilterProv').value='';document.getElementById('stFilterCity').value='';document.getElementById('stFilterName').value='';
       refreshStModalList();
       updateAll._lastStats=0;
     }).catch(catchErr('删除站点失败'));
 }
 
 // ═══════════ User Management Modal ═══════════
+var _users=[];
+var _editingUsername=null;
+
 function openUsrModal(){
   document.getElementById('usrModal').classList.add('show');
   refreshUsrModalList();
 }
-function closeUsrModal(){document.getElementById('usrModal').classList.remove('show')}
+function closeUsrModal(){document.getElementById('usrModal').classList.remove('show');_resetUsrForm()}
+
+function _resetUsrForm(){
+  _editingUsername=null;
+  document.getElementById('usrName').value='';
+  document.getElementById('usrName').readOnly=false;
+  document.getElementById('usrPass').value='';
+  document.getElementById('usrRole').value='user';
+  document.getElementById('usrStation').value='';
+  document.getElementById('usrFormTitle').textContent='新增用户';
+  document.getElementById('usrSubmitBtn').textContent='添加';
+  var cancelBtn=document.getElementById('usrCancelEditBtn');
+  if(cancelBtn) cancelBtn.style.display='none';
+}
 
 function refreshUsrModalList(){
   fetch('/api/users').then(function(r){return r.json()}).then(function(users){
+    _users=users||[];
     var div=document.getElementById('usrModalList');
-    if(!users||!users.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无用户</div>';return}
-    div.innerHTML=users.map(function(u){
+    if(!_users.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无用户</div>';return}
+    div.innerHTML=_users.map(function(u,i){
       var roleLabel={admin:'管理员',tenant_admin:'租户管理员',user:'操作员'}[u.role]||'操作员';
       var stationLabel=u.assigned_station||u.station||'全部站点';
       var scopeLabel=u.scope==='tenant'?'(全局)':'';
-      return '<div class="pl-entry"><span><b>'+u.username+'</b> <span style="color:var(--muted);font-size:10px">'+roleLabel+' · '+stationLabel+' '+scopeLabel+'</span></span><span style="display:flex;gap:4px">'+(currentUser.role==='admin'?'<span class="pl-del" style="background:var(--blue);margin-right:2px" onclick="resetUserPassword(\''+u.username+'\')" title="重置密码">🔑</span>':'')+'<span class="pl-del" onclick="delUser(\''+u.username+'\')">×</span></span></div>';
+      return '<div class="pl-entry"><span><b>'+u.username+'</b> <span style="color:var(--muted);font-size:10px">'+roleLabel+' · '+stationLabel+' '+scopeLabel+'</span></span><span style="display:flex;gap:4px"><span class="pl-del" style="background:var(--blue)" onclick="editUser('+i+')" title="编辑">✎</span>'+(currentUser.role==='admin'?'<span class="pl-del" style="background:var(--blue);margin-right:2px" onclick="resetUserPassword(\''+u.username+'\')" title="重置密码">🔑</span>':'')+'<span class="pl-del" onclick="delUser(\''+u.username+'\')">×</span></span></div>';
     }).join('');
   });
+}
+
+function editUser(idx){
+  var u=_users[idx];
+  if(!u) return;
+  _editingUsername=u.username;
+  document.getElementById('usrName').value=u.username;
+  document.getElementById('usrName').readOnly=true;
+  document.getElementById('usrPass').value='';
+  document.getElementById('usrPass').placeholder='留空则不改密码';
+  document.getElementById('usrRole').value=u.role||'user';
+  document.getElementById('usrStation').value=u.assigned_station||u.station||'';
+  document.getElementById('usrFormTitle').textContent='编辑用户: '+u.username;
+  document.getElementById('usrSubmitBtn').textContent='保存';
+  var cancelBtn=document.getElementById('usrCancelEditBtn');
+  if(cancelBtn) cancelBtn.style.display='inline-block';
 }
 
 function addUser(){
@@ -1418,15 +1510,15 @@ function addUser(){
     role:document.getElementById('usrRole').value,
     station:document.getElementById('usrStation').value
   };
-  if(!data.username||!data.password){alert('用户名和密码不能为空');return}
-  fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  if(!data.username){alert('用户名不能为空');return}
+  if(!_editingUsername&&!data.password){alert('密码不能为空');return}
+  var method=_editingUsername?'PUT':'POST';
+  fetch('/api/users',{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(function(r){return r.json()}).then(function(res){
       if(res.error){alert(res.error);return}
-      document.getElementById('usrName').value='';
-      document.getElementById('usrPass').value='';
-      document.getElementById('usrStation').value='';
+      _resetUsrForm();
       refreshUsrModalList();
-    }).catch(catchErr('添加用户失败'));
+    }).catch(catchErr((_editingUsername?'编辑':'添加')+'用户失败'));
 }
 
 function delUser(username){
@@ -1520,10 +1612,11 @@ function refreshPersonnelList(){
 
 function addPersonnel(){
   var stName = document.getElementById('personnelStationLabel').textContent;
+  if (!stName || stName==='(未知站点)') { alert('请先进入站点视图再添加联系人'); return; }
   var name = document.getElementById('persName').value.trim();
   var phone = document.getElementById('persPhone').value.trim();
   if (!name || !phone) { alert('请填写姓名和联系电话'); return; }
-  if (!/^\d{11}$/.test(phone)) { alert('请输入11位手机号码'); return; }
+  if (!/^1\d{10}$/.test(phone)) { alert('请输入合法的11位手机号码'); return; }
 
   fetch('/api/personnel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({station_name:stName, name:name, phone:phone})})
     .then(function(r){return r.json()}).then(function(res){
@@ -1547,26 +1640,35 @@ function delPersonnel(id){
 function openCfgModal(){
   document.getElementById('cfgModal').classList.add('show');
   fetch('/api/settings').then(function(r){return r.json()}).then(function(s){
-    var t=s.thresholds||{}; document.getElementById('cfgThreshWarn').value=t.warning||200;
-    document.getElementById('cfgThreshSev').value=t.severe||100; document.getElementById('cfgThreshCrit').value=t.critical||50;
-    var f=s.anti_flapping||{}; document.getElementById('cfgFlapEn').checked=f.enabled||false;
-    document.getElementById('cfgFlapIn').value=f.debounce_in||3; document.getElementById('cfgFlapOut').value=f.debounce_out||10;
-    var sm=s.sms||{}; document.getElementById('cfgSmsEn').checked=sm.enabled||false;
-    document.getElementById('cfgSmsPhones').value=(sm.alert_phones||[]).join('\n');
-    var p=s.pilot_notify||{}; document.getElementById('cfgPilotEn').checked=p.enabled||false;
-    var a=s.raw_archive||{}; document.getElementById('cfgArchiveEn').checked=a.enabled!==false;
-    document.getElementById('cfgRetention').value=a.retention_days||30;
+    document.getElementById('cfgThreshWarn').value=s.threshold_warning||200;
+    document.getElementById('cfgThreshSev').value=s.threshold_severe||100;
+    document.getElementById('cfgThreshCrit').value=s.threshold_critical||50;
+    document.getElementById('cfgFlapEn').checked=s.anti_flapping_enabled==='true';
+    document.getElementById('cfgFlapIn').value=s.debounce_in||3;
+    document.getElementById('cfgFlapOut').value=s.debounce_out||10;
+    document.getElementById('cfgSmsEn').checked=s.sms_enabled==='true';
+    document.getElementById('cfgSmsPhones').value=(s.sms_alert_phones||'').split(',').join('\n');
+    document.getElementById('cfgPilotEn').checked=s.pilot_notify_enabled==='true';
+    document.getElementById('cfgArchiveEn').checked=s.raw_archive_enabled!=='false';
+    document.getElementById('cfgRetention').value=s.raw_archive_retention_days||30;
   });
 }
 function closeCfgModal(){document.getElementById('cfgModal').classList.remove('show')}
 
 function saveSettings(){
+  var phones=document.getElementById('cfgSmsPhones').value.split('\n').map(function(s){return s.trim()}).filter(Boolean).join(',');
   var data={
-    thresholds:{warning:parseFloat(document.getElementById('cfgThreshWarn').value)||200,severe:parseFloat(document.getElementById('cfgThreshSev').value)||100,critical:parseFloat(document.getElementById('cfgThreshCrit').value)||50},
-    anti_flapping:{enabled:document.getElementById('cfgFlapEn').checked,debounce_in:parseFloat(document.getElementById('cfgFlapIn').value)||3,debounce_out:parseFloat(document.getElementById('cfgFlapOut').value)||10},
-    sms:{enabled:document.getElementById('cfgSmsEn').checked,alert_phones:document.getElementById('cfgSmsPhones').value.split('\n').map(function(s){return s.trim()}).filter(Boolean)},
-    pilot_notify:{enabled:document.getElementById('cfgPilotEn').checked},
-    raw_archive:{enabled:document.getElementById('cfgArchiveEn').checked,retention_days:parseInt(document.getElementById('cfgRetention').value)||30}
+    threshold_warning: String(parseFloat(document.getElementById('cfgThreshWarn').value)||200),
+    threshold_severe: String(parseFloat(document.getElementById('cfgThreshSev').value)||100),
+    threshold_critical: String(parseFloat(document.getElementById('cfgThreshCrit').value)||50),
+    anti_flapping_enabled: document.getElementById('cfgFlapEn').checked?'true':'false',
+    debounce_in: String(parseFloat(document.getElementById('cfgFlapIn').value)||3),
+    debounce_out: String(parseFloat(document.getElementById('cfgFlapOut').value)||10),
+    sms_enabled: document.getElementById('cfgSmsEn').checked?'true':'false',
+    sms_alert_phones: phones,
+    pilot_notify_enabled: document.getElementById('cfgPilotEn').checked?'true':'false',
+    raw_archive_enabled: document.getElementById('cfgArchiveEn').checked?'true':'false',
+    raw_archive_retention_days: String(parseInt(document.getElementById('cfgRetention').value)||30)
   };
   fetch('/api/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
     .then(function(r){return r.json()}).then(function(res){
@@ -1632,21 +1734,8 @@ function refreshHistory(){
   }).catch(catchErr('加载告警历史失败'));
 }
 
-// ═══════════ Alert Sound (Web Audio API) ═══════════
-var _audioCtx=null;
-function playAlertBeep(level){
-  try{
-    if(!_audioCtx) _audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    var osc=_audioCtx.createOscillator();
-    var gain=_audioCtx.createGain();
-    osc.connect(gain);gain.connect(_audioCtx.destination);
-    var freq=level==='critical'?880:level==='severe'?660:440;
-    osc.frequency.value=freq;osc.type='square';
-    gain.gain.setValueAtTime(0.08,_audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,_audioCtx.currentTime+0.25);
-    osc.start(_audioCtx.currentTime);osc.stop(_audioCtx.currentTime+0.25);
-  }catch(e){}
-}
+// ═══════════ Alert Sound (delegated to UI module) ═══════════
+var playAlertBeep = UI.beep;
 
 function importPowerLinesCsv(){
   var csvText=document.getElementById('plCsv').value.trim();
@@ -1837,14 +1926,36 @@ function buildBufferZones(){
   });
 }
 
-// Click outside modal to close
-document.addEventListener('click',function(e){if(e.target.id==='plModal')closePlModal();if(e.target.id==='stModal')closeStModal();if(e.target.id==='usrModal')closeUsrModal();if(e.target.id==='cfgModal')closeCfgModal();if(e.target.id==='histModal')closeHistModal();if(e.target.id==='audModal')closeAudModal()});
+// Event delegation: click outside modal to close, modal action buttons
+document.addEventListener('click', function(e) {
+  // Close modals on overlay click
+  var modalCloseMap = {
+    'plModal': closePlModal, 'stModal': closeStModal, 'usrModal': closeUsrModal,
+    'cfgModal': closeCfgModal, 'histModal': closeHistModal, 'audModal': closeAudModal,
+    'personnelModal': closePersonnelModal, 'pwdModal': closePwdModal, 'licModal': closeLicModal
+  };
+  if (e.target.id && modalCloseMap[e.target.id]) {
+    modalCloseMap[e.target.id]();
+    return;
+  }
+  // Handle data-action buttons via delegation
+  var actionBtn = e.target.closest('[data-action]');
+  if (actionBtn) {
+    var action = actionBtn.dataset.action;
+    var droneId = actionBtn.dataset.droneId;
+    if (action === 'toggle-trajectory' && droneId) toggleTrajectory(droneId);
+  }
+});
 
-// ═══════════ Main update loop ═══════════
+// ═══════════ Main update loop (with AbortController) ═══════════
 var prevAlertLevels={};
+var _updateAllCtrl = null;
+var _pollFallbackCtrl = null;
 
 function updateAll(){
-  fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+  if(_updateAllCtrl) _updateAllCtrl.abort();
+  _updateAllCtrl = new AbortController();
+  fetch('/api/status', {signal: _updateAllCtrl.signal}).then(function(r){return r.json()}).then(function(d){
     // Update user info
     if(d.current_user){
       currentUser=d.current_user;
@@ -1871,7 +1982,7 @@ function updateAll(){
       }
       animateEl(document.getElementById('btNatDrones'),d.drones.length);
       animateEl(document.getElementById('btNatAlerts'),warn+sev+crit);
-      document.getElementById('footerNatTime').textContent='更新 '+d.now;
+      document.getElementById('footerNatTime').textContent='更新 '+(d.server_time||d.now);
       updateComms(d.backhaul, 'commNat');
       // Update alert list in right sidebar
       renderNationalAlerts(d.drones);
@@ -1902,7 +2013,7 @@ function updateAll(){
       animateEl(document.getElementById('btSev'),sev);
       animateEl(document.getElementById('btCrit'),crit);
       document.getElementById('droneCountPill').textContent=stationDrones.length;
-      document.getElementById('footerTime').textContent='更新 '+d.now;
+      document.getElementById('footerTime').textContent='更新 '+(d.server_time||d.now);
       updateComms(d.backhaul, 'comm');
 
       // Alert notifications
@@ -1952,6 +2063,8 @@ function updateAll(){
       renderDroneList();
       renderStationAlerts(stationDrones);
     }
+  }).catch(function(e){
+    if(e.name!=='AbortError') console.warn('updateAll error:', e);
   });
 
   // Dashboard stats (every 30s)
@@ -2083,8 +2196,9 @@ function updateMarkersFromCache(){
 // Full poll fallback: runs every 5s when WS is active (light sync), 2s when offline
 function pollFallback(){
   if(wsEnabled){
-    // Lightweight sync: markers handled by WS, update stats from cachedDrones
-    fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+    if(_pollFallbackCtrl) _pollFallbackCtrl.abort();
+    _pollFallbackCtrl = new AbortController();
+    fetch('/api/status', {signal: _pollFallbackCtrl.signal}).then(function(r){return r.json()}).then(function(d){
       // Filter drones if in station mode
       var drones = cachedDrones || [];
       if(currentStationDevice){
@@ -2098,7 +2212,7 @@ function pollFallback(){
         if(cachedDashboard){
           animateEl(document.getElementById('btNatStations'),(cachedDashboard.stations||[]).length);
         }
-        document.getElementById('footerNatTime').textContent='更新 '+d.now+' [WS]';
+        document.getElementById('footerNatTime').textContent='更新 '+(d.server_time||d.now)+' [WS]';
         updateComms(d.backhaul,'commNat');
       }else{
         animateEl(document.getElementById('btTotal'),drones.length);
@@ -2106,7 +2220,7 @@ function pollFallback(){
         animateEl(document.getElementById('btSev'),sev);
         animateEl(document.getElementById('btCrit'),crit);
         document.getElementById('droneCountPill').textContent=drones.length;
-        document.getElementById('footerTime').textContent='更新 '+d.now+' [WS]';
+        document.getElementById('footerTime').textContent='更新 '+(d.server_time||d.now)+' [WS]';
         updateComms(d.backhaul,'comm');
       }
       // Quick stats
@@ -2120,6 +2234,8 @@ function pollFallback(){
       }else{
         renderStationAlerts(drones);
       }
+    }).catch(function(e){
+      if(e.name!=='AbortError') console.warn('pollFallback error:', e);
     });
   }else{
     updateAll();
@@ -2138,5 +2254,4 @@ updateAll();
 schedulePoll();
 setInterval(function(){if(!nationalMode) loadPowerLines();},60000);
 </script>
-</body>
-</html>
+{% endblock %}

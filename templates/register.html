@@ -1,124 +1,58 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drone RID Monitor — 注册</title>
+{% extends "base.html" %}
+{% block title %}Drone RID Monitor — 注册{% endblock %}
+{% block head_extra %}
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-
-body{
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
-  background:#f0f2f5; color:#1a1d23; min-height:100vh;
-  display:flex; align-items:center; justify-content:center;
-  -webkit-font-smoothing:antialiased;
-}
-
-body::before{
-  content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
-  background-image:
-    linear-gradient(rgba(0,0,0,.02) 1px,transparent 1px),
-    linear-gradient(90deg,rgba(0,0,0,.02) 1px,transparent 1px);
-  background-size:60px 60px;
-}
-
-.container{
-  position:relative; z-index:1;
-  background:#fff; border:1px solid #e0e3e8;
-  border-radius:16px;
-  box-shadow:0 1px 3px rgba(0,0,0,.06),0 4px 20px rgba(0,0,0,.06);
+.register-card{
   width:440px; max-width:94vw; padding:40px 44px;
 }
-
-h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;text-align:center;color:#1a1d23}
-.sub{font-size:11px;color:#6b7280;margin-bottom:28px;text-align:center}
-
-.field{margin-bottom:16px}
-.field label{
-  display:block; font-size:10px; font-weight:600; color:#6b7280;
-  text-transform:uppercase; letter-spacing:0.8px; margin-bottom:6px;
-}
-.field input,.field select{
-  width:100%; padding:10px 14px; background:#f9fafb;
-  border:1px solid #e0e3e8; border-radius:8px;
-  color:#1a1d23; font-size:13px; outline:none;
-  transition:border-color .2s,box-shadow .2s;
-}
-.field input:focus,.field select:focus{
-  border-color:#2563eb;
-  box-shadow:0 0 0 3px rgba(37,99,235,.1);
-}
-.field input::placeholder{color:#9ca3af}
-.field select{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
-
-.submit-btn{
-  width:100%; padding:10px; border-radius:8px; font-size:13px; font-weight:600;
-  cursor:pointer; border:none; color:#fff; letter-spacing:0.3px;
-  background:#2563eb;
-  transition:all .2s; margin-top:4px;
-}
-.submit-btn:hover{background:#1d4ed8;box-shadow:0 4px 12px rgba(37,99,235,.25)}
-.submit-btn:disabled{opacity:0.5;cursor:not-allowed}
-
-.error-msg{
-  background:#fef2f2; border:1px solid #fecaca;
-  color:#dc2626; font-size:11px; padding:8px 12px; border-radius:6px;
-  margin-bottom:18px; text-align:center;
-}
-.success-msg{
-  background:#f0fdf4; border:1px solid #bbf7d0;
-  color:#16a34a; font-size:11px; padding:8px 12px; border-radius:6px;
-  margin-bottom:18px; text-align:center;
-}
-
-.footnote{font-size:10px;color:#9ca3af;text-align:center;margin-top:20px}
-.footnote a{color:#2563eb;text-decoration:none}
-.footnote a:hover{text-decoration:underline}
-
-#stationField{display:block}
+.register-card h2{font-size:18px;font-weight:700;letter-spacing:-0.3px;margin-bottom:4px;text-align:center}
+.register-card .sub{font-size:11px;color:#6b7280;margin-bottom:28px;text-align:center}
+.auth-field select{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpath d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 </style>
-</head>
-<body>
-
-<div class="container">
+{% endblock %}
+{% block body %}
+<div class="auth-body">
+<div class="auth-card register-card">
   <h2>账号注册</h2>
   <div class="sub">输入客户密钥以创建账号</div>
 
   <div id="msg"></div>
 
-  <form id="regForm" onsubmit="return doRegister()">
-    <div class="field">
+  <form id="regForm" onsubmit="return false">
+    <div class="auth-field">
       <label>客户密钥</label>
       <input type="text" id="licenseKey" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19" autocomplete="off" required autofocus>
     </div>
-    <div class="field">
+    <div class="auth-field">
       <label>用户名</label>
       <input type="text" id="username" placeholder="2-32位登录用户名" minlength="2" maxlength="32" autocomplete="off" required>
     </div>
-    <div class="field">
+    <div class="auth-field">
       <label>密码</label>
       <input type="password" id="password" placeholder="至少6位密码" minlength="6" autocomplete="new-password" required>
     </div>
-    <div class="field">
+    <div class="auth-field">
       <label>账号权限</label>
-      <select id="scope" onchange="onScopeChange()">
-        <option value="station">站点用户 — 只看指定站点</option>
-        <option value="tenant">高级用户 — 看所有站点</option>
+      <select id="scope">
+        <option value="station">站点用户</option>
+        <option value="tenant">站点管理员</option>
       </select>
     </div>
-    <div class="field" id="stationField">
+    <div class="auth-field" id="stationField">
       <label>所属站点</label>
       <select id="station"></select>
     </div>
-    <button type="submit" class="submit-btn" id="submitBtn">注 册</button>
+    <button type="submit" class="auth-submit" id="submitBtn">注 册</button>
   </form>
 
-  <div class="footnote">
+  <div class="auth-footnote">
     已有账号？<a href="/login">返回登录</a>
     &middot; Drone RID Monitor v3.3
   </div>
 </div>
-
+</div>
+{% endblock %}
+{% block scripts %}
 <script>
 var tenantStations = [];
 onScopeChange();
@@ -163,14 +97,16 @@ function onScopeChange() {
   else document.getElementById('station').required = true;
 }
 
+document.getElementById('scope').addEventListener('change', onScopeChange);
+
 function showMsg(text, isError) {
   var el = document.getElementById('msg');
-  el.className = isError ? 'error-msg' : 'success-msg';
+  el.className = isError ? 'auth-error' : 'auth-success';
   el.textContent = text;
   el.style.display = 'block';
 }
 
-function doRegister() {
+document.getElementById('regForm').addEventListener('submit', function() {
   var btn = document.getElementById('submitBtn');
   btn.disabled = true;
   btn.textContent = '注册中...';
@@ -197,15 +133,11 @@ function doRegister() {
       showMsg('注册成功！3秒后跳转到登录页...', false);
       setTimeout(function(){ window.location.href = '/login'; }, 3000);
     }
-  }).catch(function(e){
+  }).catch(function(){
     btn.disabled = false;
     btn.textContent = '注 册';
     showMsg('网络错误，请稍后重试', true);
   });
-
-  return false;
-}
+});
 </script>
-
-</body>
-</html>
+{% endblock %}

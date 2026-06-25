@@ -1,9 +1,6 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Drone RID Monitor</title>
+{% extends "base.html" %}
+{% block title %}Drone RID Monitor{% endblock %}
+{% block head_extra %}
 <style>
 /* ══════════════════════════ Design Tokens ══════════════════════════ */
 :root{
@@ -344,8 +341,8 @@ input:focus, select:focus{outline:none}
   .profile-right{grid-template-columns:1fr}
 }
 </style>
-</head>
-<body>
+{% endblock %}
+{% block body %}
 
 <!-- ════ Sidebar ════ -->
 <nav class="sidebar">
@@ -392,13 +389,17 @@ input:focus, select:focus{outline:none}
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="7"/><line x1="8" y1="4" x2="8" y2="8"/><line x1="8" y1="11" x2="8.01" y2="11"/></svg>
       <span>告警联系人</span>
     </div>
+    <div class="nav-item" data-page="whitelist" id="navWhitelist">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5.5 3.5l-3 3 3 3"/><path d="M2.5 6.5h11"/><circle cx="12" cy="12" r="1.5"/></svg>
+      <span>白名单</span>
+    </div>
   </div>
 
   <div class="nav-section">
     <div class="nav-label">账户</div>
     <div class="nav-item" data-page="profile">
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="5" r="3"/><path d="M2 15v-1a5 5 0 015-5h2a5 5 0 015 5v1"/></svg>
-      <span>个人信息 &amp; 密码</span>
+      <span>个人信息管理</span>
     </div>
   </div>
 
@@ -498,7 +499,45 @@ input:focus, select:focus{outline:none}
           <div class="table-wrap">
             <table>
               <thead><tr><th>ID</th><th>机型</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
-              <tbody id="droneTable"></tbody>
+              <tbody id="droneTable" x-data="{ drones: [], search: '', statusFilter: '' }" x-init="
+                // Watch for updates from poll
+                setInterval(function(){
+                  var d = window._alpineDrones || [];
+                  var s = document.getElementById('droneSearch').value.toLowerCase();
+                  var f = document.getElementById('statusFilter').value;
+                  if(s) d = d.filter(function(dr){ var id=(dr.id||'').toLowerCase(), m=(dr.product_model||'').toLowerCase(); return id.includes(s)||m.includes(s) });
+                  if(f) d = d.filter(function(dr){ return (dr.status||'active')===f });
+                  $data.drones = d;
+                }, 800)
+              ">
+                <template x-for="dr in drones" :key="dr.id">
+                  <tr :class="{'row-critical': dr.status==='critical', 'row-severe': dr.status==='severe'}">
+                    <td class="mono" :title="dr.id">
+                      <svg class="drone-svg" :class="dr.status||'active'" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 1L5 4h2v3L3 8l-2-1v1l2 1.5v2l5 2.5 5-2.5v-2l2-1.5V7l-2 1-4-1V4h2L8 1z" :stroke="({active:'#67c23a',warning:'#e6a23c',severe:'#f56c6c',critical:'#f56c6c',gone:'#c0c4cc'}[dr.status||'active'])" stroke-width="1.5"/>
+                        <circle cx="8" cy="8" r="1" :fill="({active:'#67c23a',warning:'#e6a23c',severe:'#f56c6c',critical:'#f56c6c',gone:'#c0c4cc'}[dr.status||'active'])"/>
+                      </svg>
+                      <span x-text="(dr.id||'?').length>14?(dr.id||'?').substring(0,14)+'...':(dr.id||'?')"></span>
+                    </td>
+                    <td style="font-weight:500" x-text="dr.product_model||'-'"></td>
+                    <td class="mono" x-text="(dr.last_lat||0).toFixed(5)"></td>
+                    <td class="mono" x-text="(dr.last_lon||0).toFixed(5)"></td>
+                    <td x-text="(dr.last_alt||0).toFixed(0)+' m'"></td>
+                    <td class="mono" style="font-weight:600" x-text="dr.min_distance!=null?dr.min_distance.toFixed(0)+' m':'-'"></td>
+                    <td x-text="dr.line_name||dr.nearest_line||'-'"></td>
+                    <td>
+                      <span class="tag" :class="{
+                        'tag-active': (dr.status||'active')==='active',
+                        'tag-warning': dr.status==='warning',
+                        'tag-severe': dr.status==='severe',
+                        'tag-critical': dr.status==='critical',
+                        'tag-gone': dr.status==='gone'
+                      }" x-text="({active:'正常',warning:'警告',severe:'严重',critical:'危险',gone:'离线'}[dr.status||'active'])"></span>
+                    </td>
+                    <td class="mono" x-text="(dr.last_seen||'').substring(11,19)"></td>
+                    <td><button class="btn btn-ghost btn-xs" @click="window.open('/?lat='+dr.last_lat+'&lon='+dr.last_lon+'&zoom=15','_blank')">定位</button></td>
+                  </tr>
+                </template></tbody>
             </table>
           </div>
           <div class="empty-state" id="emptyMsg" style="display:none">
@@ -540,17 +579,19 @@ input:focus, select:focus{outline:none}
         <div class="inline-form" id="plForm">
           <div class="row">
             <input id="plName" placeholder="名称 (如 杭富线110kV#03)" style="flex:2">
-            <select id="plVoltage" style="flex:1">
+            <select id="plVoltage" style="flex:1" onchange="onVoltageChangeForPl()">
               <option value="">电压等级</option>
               <option value="10kV">10kV</option><option value="35kV">35kV</option><option value="110kV">110kV</option>
               <option value="220kV">220kV</option><option value="500kV">500kV</option><option value="750kV">750kV</option>
               <option value="±800kV">±800kV</option><option value="1000kV">1000kV</option>
             </select>
           </div>
-          <label>端点 1</label><div class="row"><input id="plLat1" placeholder="纬度" step="any"><input id="plLon1" placeholder="经度" step="any"><input id="plAlt1" placeholder="海拔 (m)" step="any" value="0"></div>
-          <label>端点 2</label><div class="row"><input id="plLat2" placeholder="纬度" step="any"><input id="plLon2" placeholder="经度" step="any"><input id="plAlt2" placeholder="海拔 (m)" step="any" value="0"></div>
-          <button class="btn btn-primary btn-sm" onclick="addPowerLine()">保存</button>
-          <button class="btn btn-ghost btn-sm" onclick="togglePlForm()" style="margin-left:6px">取消</button>
+          <label>端点 1</label><div class="row"><input id="plLat1" placeholder="纬度" step="any"><input id="plLon1" placeholder="经度" step="any"><input id="plAlt1" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh1" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
+          <label>端点 2</label><div class="row"><input id="plLat2" placeholder="纬度" step="any"><input id="plLon2" placeholder="经度" step="any"><input id="plAlt2" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh2" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
+          <div id="plAltHint" style="display:none;font-size:11px;color:var(--brand);margin-bottom:8px"></div>
+          <button class="btn btn-primary btn-sm" id="plSaveBtn" onclick="addPowerLine()">保存</button>
+          <button class="btn btn-ghost btn-sm" id="plCancelEditBtn" onclick="cancelEditPl()" style="display:none;margin-left:6px">取消编辑</button>
+          <button class="btn btn-ghost btn-sm" id="plCancelBtn" onclick="togglePlForm()" style="margin-left:6px">取消</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="plList">
@@ -569,16 +610,33 @@ input:focus, select:focus{outline:none}
         </div>
         <div class="toolbar">
           <button class="btn btn-primary btn-sm" onclick="toggleStForm()">+ 新增站点</button>
+          <span class="sep"></span>
+          <input id="stFilterProv" placeholder="省" style="width:70px" oninput="filterStationList()">
+          <input id="stFilterCity" placeholder="市" style="width:80px" oninput="filterStationList()">
+          <input id="stFilterCounty" placeholder="区/县" style="width:80px" oninput="filterStationList()">
+          <input id="stFilterName" placeholder="搜索站点名..." style="width:140px" oninput="filterStationList()">
         </div>
         <div class="inline-form" id="stForm">
           <div class="row">
             <input id="stName" placeholder="站点名称">
             <input id="stDevice" placeholder="关联设备名">
+          </div>
+          <div class="row">
+            <input id="stLocation" placeholder="位置描述">
+          </div>
+          <div class="row">
+            <input id="stProvince" placeholder="省" style="flex:1">
+            <input id="stCity" placeholder="市" style="flex:1">
+            <input id="stCounty" placeholder="区/县" style="flex:1">
+          </div>
+          <div class="row">
             <input id="stLat" placeholder="纬度" step="any">
             <input id="stLon" placeholder="经度" step="any">
+            <input id="stAlt" placeholder="海拔(m)" step="any">
           </div>
-          <button class="btn btn-primary btn-sm" onclick="addStation()">保存</button>
-          <button class="btn btn-ghost btn-sm" onclick="toggleStForm()" style="margin-left:6px">取消</button>
+          <button class="btn btn-primary btn-sm" id="stSaveBtn" onclick="addStation()">保存</button>
+          <button class="btn btn-ghost btn-sm" id="stCancelEditBtn" onclick="cancelEditStation()" style="display:none;margin-left:6px">取消编辑</button>
+          <button class="btn btn-ghost btn-sm" id="stCancelBtn" onclick="toggleStForm()" style="margin-left:6px">取消</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="stList">
@@ -604,10 +662,12 @@ input:focus, select:focus{outline:none}
             <input id="uName" placeholder="用户名">
             <input id="uPwd" type="password" placeholder="密码">
             <select id="uRole"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
+            <select id="uScope"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
             <input id="uStation" placeholder="站点 (可选)">
           </div>
-          <button class="btn btn-primary btn-sm" onclick="addUser()">保存</button>
-          <button class="btn btn-ghost btn-sm" onclick="toggleUserForm()" style="margin-left:6px">取消</button>
+          <button class="btn btn-primary btn-sm" id="uSaveBtn" onclick="addUser()">保存</button>
+          <button class="btn btn-ghost btn-sm" id="uCancelEditBtn" onclick="cancelEditUser()" style="display:none;margin-left:6px">取消编辑</button>
+          <button class="btn btn-ghost btn-sm" id="uCancelBtn" onclick="toggleUserForm()" style="margin-left:6px">取消</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="userList">
@@ -630,8 +690,8 @@ input:focus, select:focus{outline:none}
         <div class="inline-form" id="psForm">
           <div class="row">
             <input id="psName" placeholder="姓名">
-            <input id="psPhone" placeholder="手机号">
-            <input id="psStation" placeholder="关联站点">
+            <input id="psPhone" placeholder="手机号（11位）">
+            <select id="psStation"><option value="">选择关联站点</option></select>
           </div>
           <button class="btn btn-primary btn-sm" onclick="addPerson()">保存</button>
           <button class="btn btn-ghost btn-sm" onclick="togglePersonForm()" style="margin-left:6px">取消</button>
@@ -639,6 +699,33 @@ input:focus, select:focus{outline:none}
         <div class="panel-body fill">
           <div class="crud-list" id="psList">
             <div class="empty-state"><div class="msg">暂无联系人</div><div class="sub">点击「新增联系人」添加</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ Whitelist Page ════ -->
+    <div class="panel-page" id="page-whitelist">
+      <div class="panel">
+        <div class="panel-header">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5.5 3.5l-3 3 3 3"/><path d="M2.5 6.5h11"/><circle cx="12" cy="12" r="1.5"/></svg>
+          无人机白名单
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-primary btn-sm" onclick="toggleWlForm()">+ 新增白名单</button>
+        </div>
+        <div class="inline-form" id="wlForm">
+          <div class="row">
+            <input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2">
+            <select id="wlMode"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select>
+            <input id="wlNote" placeholder="备注 (可选)" style="flex:1">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addWhitelist()">保存</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleWlForm()" style="margin-left:6px">取消</button>
+        </div>
+        <div class="panel-body fill">
+          <div class="crud-list" id="wlList">
+            <div class="empty-state"><div class="msg">暂无白名单</div><div class="sub">白名单中的无人机 SN 不会触发告警</div></div>
           </div>
         </div>
       </div>
@@ -742,7 +829,7 @@ let pollTimer, lastDrones = [], prevAlertLevels = {}, currentUser = {};
 let plData = [], stData = [], userData = [], psData = [];
 let pageTitles = {
   drones:'无人机列表', alerts:'告警日志', trajectory:'轨迹查看', powerlines:'电力线管理',
-  stations:'站点管理', users:'用户管理', personnel:'告警联系人', profile:'个人信息 & 密码'
+  stations:'站点管理', users:'用户管理', personnel:'告警联系人', profile:'用户信息管理'
 };
 let monitoringPages = {drones:1, alerts:1, trajectory:1};
 
@@ -761,6 +848,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(el){
     if(this.dataset.page==='stations') loadStations();
     if(this.dataset.page==='users') loadUsers();
     if(this.dataset.page==='personnel') loadPersonnel();
+    if(this.dataset.page==='whitelist') loadWhitelist();
     if(this.dataset.page==='profile') loadProfile();
   });
 });
@@ -788,9 +876,12 @@ function droneSvg(status){
   return '<svg class="drone-svg '+status+'" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1L5 4h2v3L3 8l-2-1v1l2 1.5v2l5 2.5 5-2.5v-2l2-1.5V7l-2 1-4-1V4h2L8 1z" stroke="'+c+'" stroke-width="1.5"/><circle cx="8" cy="8" r="1" fill="'+c+'"/></svg>';
 }
 
-// ═══════════ Main poll ═══════════
+// ═══════════ Main poll (with AbortController) ═══════════
+var _updateUICtrl = null;
 function updateUI(){
-  fetch('/api/status').then(function(r){return r.json()}).then(function(d){
+  if(_updateUICtrl) _updateUICtrl.abort();
+  _updateUICtrl = new AbortController();
+  fetch('/api/status', {signal: _updateUICtrl.signal}).then(function(r){return r.json()}).then(function(d){
     // Comms status
     var bh=d.backhaul;
     if(bh){
@@ -831,10 +922,13 @@ function updateUI(){
       }
     });
     lastDrones = d.drones||[];
+    window._alpineDrones = lastDrones;  // Bridge to Alpine x-data
     updateDroneTable();
     updateLogPanel(d.alerts||[]);
     document.getElementById('footerLeft').textContent='更新于 '+(d.server_time||d.now||'');
-  }).catch(function(e){console.error(e)});
+  }).catch(function(e){
+    if(e.name!=='AbortError') console.error(e);
+  });
 }
 
 function updateDroneTable(){
@@ -891,7 +985,42 @@ function updateLogPanel(alerts){
 }
 
 // ═══════════ Power Lines CRUD ═══════════
+var TOWER_HEIGHTS = {'10kV':15,'35kV':18,'66kV':22,'110kV':25,'220kV':35,'330kV':40,'500kV':50,'750kV':60,'±800kV':65,'1000kV':80};
+function estTowerHeight(vl){
+  if(!vl) return 25;
+  for(var k in TOWER_HEIGHTS){if(vl.indexOf(k)>=0) return TOWER_HEIGHTS[k];}
+  return 25;
+}
+function onVoltageChangeForPl(){
+  var vl=document.getElementById('plVoltage').value;
+  var h=estTowerHeight(vl);
+  if(!document.getElementById('plTh1').value) document.getElementById('plTh1').value=h;
+  if(!document.getElementById('plTh2').value) document.getElementById('plTh2').value=h;
+  onPlFieldChange();
+}
+function onPlFieldChange(){
+  var alt1=parseFloat(document.getElementById('plAlt1').value)||0;
+  var th1=parseFloat(document.getElementById('plTh1').value)||0;
+  var alt2=parseFloat(document.getElementById('plAlt2').value)||0;
+  var th2=parseFloat(document.getElementById('plTh2').value)||0;
+  var hint=document.getElementById('plAltHint');
+  if(th1||th2){hint.style.display='';hint.textContent='导线海拔: 端点1='+(alt1+th1).toFixed(1)+'m  端点2='+(alt2+th2).toFixed(1)+'m';}
+  else{hint.style.display='none';}
+}
+var _editingPlId=null;
 function togglePlForm(){ document.getElementById('plForm').classList.toggle('show'); }
+function _resetPlForm(){
+  _editingPlId=null;
+  document.getElementById('plName').value='';document.getElementById('plVoltage').value='';
+  document.getElementById('plLat1').value='';document.getElementById('plLon1').value='';document.getElementById('plAlt1').value='0';
+  document.getElementById('plLat2').value='';document.getElementById('plLon2').value='';document.getElementById('plAlt2').value='0';
+  document.getElementById('plTh1').value='';document.getElementById('plTh2').value='';
+  document.getElementById('plAltHint').style.display='none';
+  document.getElementById('plSaveBtn').textContent='保存';
+  document.getElementById('plCancelEditBtn').style.display='none';
+  document.getElementById('plCancelBtn').style.display='inline-block';
+}
+function cancelEditPl(){ _resetPlForm(); }
 function loadPowerLines(){
   fetch('/api/powerlines').then(function(r){return r.json()}).then(function(d){
     plData=d||[];
@@ -900,58 +1029,162 @@ function loadPowerLines(){
       el.innerHTML='<div class="empty-state"><div class="msg">暂无电力线</div><div class="sub">点击「新增电力线」添加</div></div>';
     }else{
       el.innerHTML=plData.map(function(l,i){
-        return '<div class="crud-item"><div class="info"><b>'+l.name+'</b><div class="meta">('+l.lat1.toFixed(4)+', '+l.lon1.toFixed(4)+', '+(l.alt1||0)+'m) → ('+l.lat2.toFixed(4)+', '+l.lon2.toFixed(4)+', '+(l.alt2||0)+'m) &nbsp;|&nbsp; '+(l.voltage_level||'')+'</div></div><div class="actions"><button class="del" onclick="delPowerLine('+i+')">删除</button></div></div>';
+        return '<div class="crud-item"><div class="info"><b>'+l.name+'</b><div class="meta">('+l.lat1.toFixed(4)+', '+l.lon1.toFixed(4)+') → ('+l.lat2.toFixed(4)+', '+l.lon2.toFixed(4)+') 导线:'+(l.alt1||0).toFixed(0)+'m'+(l.tower_height1?' (塔'+l.tower_height1.toFixed(0)+'m)':'')+' &nbsp;|&nbsp; '+(l.voltage_level||'')+'</div></div><div class="actions"><button class="btn btn-ghost btn-xs" onclick="editPowerLine('+i+')">编辑</button><button class="del" onclick="delPowerLine('+i+')">删除</button></div></div>';
       }).join('');
     }
   });
 }
+function editPowerLine(idx){
+  var l=plData[idx]; if(!l) return;
+  _editingPlId=l.id;
+  document.getElementById('plName').value=l.name;
+  document.getElementById('plVoltage').value=l.voltage_level||'';
+  document.getElementById('plLat1').value=l.lat1;document.getElementById('plLon1').value=l.lon1;
+  document.getElementById('plAlt1').value=l.tower_height1!=null?(l.alt1-(l.tower_height1||0)).toFixed(1):(l.alt1||0);
+  document.getElementById('plLat2').value=l.lat2;document.getElementById('plLon2').value=l.lon2;
+  document.getElementById('plAlt2').value=l.tower_height2!=null?(l.alt2-(l.tower_height2||0)).toFixed(1):(l.alt2||0);
+  document.getElementById('plTh1').value=l.tower_height1!=null?l.tower_height1:'';
+  document.getElementById('plTh2').value=l.tower_height2!=null?l.tower_height2:'';
+  document.getElementById('plSaveBtn').textContent='更新';
+  document.getElementById('plCancelEditBtn').style.display='inline-block';
+  document.getElementById('plCancelBtn').style.display='none';
+  onPlFieldChange();
+  if(!document.getElementById('plForm').classList.contains('show')) togglePlForm();
+}
 function addPowerLine(){
   var data={
-    name:document.getElementById('plName').value,
+    name:document.getElementById('plName').value.trim(),
     voltage_level:document.getElementById('plVoltage').value,
     lat1:parseFloat(document.getElementById('plLat1').value), lon1:parseFloat(document.getElementById('plLon1').value), alt1:parseFloat(document.getElementById('plAlt1').value)||0,
-    lat2:parseFloat(document.getElementById('plLat2').value), lon2:parseFloat(document.getElementById('plLon2').value), alt2:parseFloat(document.getElementById('plAlt2').value)||0
+    lat2:parseFloat(document.getElementById('plLat2').value), lon2:parseFloat(document.getElementById('plLon2').value), alt2:parseFloat(document.getElementById('plAlt2').value)||0,
+    tower_height1: parseFloat(document.getElementById('plTh1').value)||null,
+    tower_height2: parseFloat(document.getElementById('plTh2').value)||null
   };
-  fetch('/api/powerlines',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  if(!data.name){alert('电力线名称不能为空');return}
+  if(isNaN(data.lat1)||isNaN(data.lon1)||isNaN(data.lat2)||isNaN(data.lon2)){alert('请填写有效的经纬度坐标');return}
+  var method=_editingPlId?'PUT':'POST';
+  var url=_editingPlId?'/api/powerlines/'+_editingPlId:'/api/powerlines';
+  fetch(url,{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
   .then(function(r){return r.json()}).then(function(){
-    document.getElementById('plName').value='';document.getElementById('plVoltage').value='';
-    document.getElementById('plLat1').value='';document.getElementById('plLon1').value='';document.getElementById('plAlt1').value='';
-    document.getElementById('plLat2').value='';document.getElementById('plLon2').value='';document.getElementById('plAlt2').value='';
-    togglePlForm(); loadPowerLines();
+    _resetPlForm(); togglePlForm(); loadPowerLines();
   });
 }
 function delPowerLine(idx){
   if(!confirm('确定删除此电力线？')) return;
-  fetch('/api/powerlines/'+idx,{method:'DELETE'}).then(function(r){return r.json()}).then(function(){loadPowerLines()});
+  var lineId=plData[idx]&&plData[idx].id;
+  if(!lineId) return;
+  fetch('/api/powerlines/'+lineId,{method:'DELETE'}).then(function(r){return r.json()}).then(function(){loadPowerLines()});
 }
 
 // ═══════════ Stations CRUD ═══════════
+var _editingStName2=null;
+var _allStations=[];
 function toggleStForm(){ document.getElementById('stForm').classList.toggle('show'); }
+function _resetStForm2(){
+  _editingStName2=null;
+  document.getElementById('stName').value='';document.getElementById('stDevice').value='';
+  document.getElementById('stLocation').value='';
+  document.getElementById('stProvince').value='';document.getElementById('stCity').value='';document.getElementById('stCounty').value='';
+  document.getElementById('stLat').value='';document.getElementById('stLon').value='';document.getElementById('stAlt').value='';
+  document.getElementById('stSaveBtn').textContent='保存';
+  document.getElementById('stCancelEditBtn').style.display='none';
+  document.getElementById('stCancelBtn').style.display='inline-block';
+}
+function cancelEditStation(){ _resetStForm2(); }
+function _stLocationLabel(s){
+  var parts=[];
+  if(s.province) parts.push(s.province);
+  if(s.city) parts.push(s.city);
+  if(s.county) parts.push(s.county);
+  return parts.length?parts.join(' '):(s.location||'');
+}
+function filterStationList(){
+  var prov=(document.getElementById('stFilterProv').value||'').trim().toLowerCase();
+  var city=(document.getElementById('stFilterCity').value||'').trim().toLowerCase();
+  var county=(document.getElementById('stFilterCounty').value||'').trim().toLowerCase();
+  var name=(document.getElementById('stFilterName').value||'').trim().toLowerCase();
+  var filtered=_allStations.filter(function(s){
+    if(prov && (s.province||'').toLowerCase().indexOf(prov)<0) return false;
+    if(city && (s.city||'').toLowerCase().indexOf(city)<0) return false;
+    if(county && (s.county||'').toLowerCase().indexOf(county)<0) return false;
+    if(name && s.name.toLowerCase().indexOf(name)<0 && (s.location||'').toLowerCase().indexOf(name)<0) return false;
+    return true;
+  });
+  renderStationList(filtered);
+}
 function loadStations(){
   fetch('/api/stations').then(function(r){return r.json()}).then(function(d){
-    stData=d||[];
-    var el=document.getElementById('stList');
-    if(stData.length===0){
-      el.innerHTML='<div class="empty-state"><div class="msg">暂无站点</div><div class="sub">点击「新增站点」添加</div></div>';
-    }else{
-      el.innerHTML=stData.map(function(s,i){
-        return '<div class="crud-item"><div class="info"><b>'+s.name+'</b><div class="meta">设备: '+(s.device_name||'-')+' &nbsp;|&nbsp; 坐标: ('+(s.lat||0).toFixed(4)+', '+(s.lon||0).toFixed(4)+')</div></div><div class="actions"><button class="del" onclick="delStation('+i+')">删除</button></div></div>';
-      }).join('');
-    }
+    _allStations=d||[];
+    renderStationList(_allStations);
   });
+}
+function renderStationList(list){
+  var el=document.getElementById('stList');
+  if(!list.length){
+    el.innerHTML='<div class="empty-state"><div class="msg">暂无站点</div><div class="sub">点击「新增站点」添加</div></div>';
+  }else{
+    el.innerHTML=list.map(function(s,i){
+      var loc=_stLocationLabel(s);
+      return '<div class="crud-item"><div class="info"><b>'+s.name+'</b><div class="meta">'+(loc?loc+' &nbsp;|&nbsp; ':'')+'设备: '+(s.device_name||'-')+' &nbsp;|&nbsp; 坐标: ('+(s.lat||0).toFixed(4)+', '+(s.lon||0).toFixed(4)+')</div></div><div class="actions"><button class="btn btn-ghost btn-xs" onclick="editStation2(\''+s.name+'\')">编辑</button><button class="del" onclick="delStation(\''+s.name+'\')">删除</button></div></div>';
+    }).join('');
+  }
+}
+function editStation2(name){
+  var s=_allStations.find(function(x){return x.name===name}); if(!s) return;
+  _editingStName2=s.name;
+  document.getElementById('stName').value=s.name;
+  document.getElementById('stName').readOnly=true;
+  document.getElementById('stDevice').value=s.device_name||'';
+  document.getElementById('stLocation').value=s.location||'';
+  document.getElementById('stProvince').value=s.province||'';
+  document.getElementById('stCity').value=s.city||'';
+  document.getElementById('stCounty').value=s.county||'';
+  document.getElementById('stLat').value=s.lat||0;
+  document.getElementById('stLon').value=s.lon||0;
+  document.getElementById('stAlt').value=s.alt||0;
+  document.getElementById('stSaveBtn').textContent='更新';
+  document.getElementById('stCancelEditBtn').style.display='inline-block';
+  document.getElementById('stCancelBtn').style.display='none';
+  if(!document.getElementById('stForm').classList.contains('show')) toggleStForm();
 }
 function addStation(){
-  var data={name:document.getElementById('stName').value, device_name:document.getElementById('stDevice').value, lat:parseFloat(document.getElementById('stLat').value), lon:parseFloat(document.getElementById('stLon').value)};
-  fetch('/api/stations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-  .then(function(r){return r.json()}).then(function(){
-    document.getElementById('stName').value='';document.getElementById('stDevice').value='';document.getElementById('stLat').value='';document.getElementById('stLon').value='';
-    toggleStForm(); loadStations();
+  var data={
+    name:document.getElementById('stName').value.trim(),
+    device_name:document.getElementById('stDevice').value.trim(),
+    location:document.getElementById('stLocation').value.trim(),
+    province:document.getElementById('stProvince').value.trim(),
+    city:document.getElementById('stCity').value.trim(),
+    county:document.getElementById('stCounty').value.trim(),
+    lat:parseFloat(document.getElementById('stLat').value)||0,
+    lon:parseFloat(document.getElementById('stLon').value)||0,
+    alt:parseFloat(document.getElementById('stAlt').value)||0
+  };
+  if(!data.name){alert('站点名称不能为空');return}
+  var method=_editingStName2?'PUT':'POST';
+  fetch('/api/stations',{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  .then(function(r){return r.json()}).then(function(res){
+    if(res.error){alert(res.error);return}
+    document.getElementById('stName').readOnly=false;
+    _resetStForm2(); toggleStForm(); loadStations();
   });
 }
-function delStation(idx){ if(!confirm('确定删除此站点？')) return; fetch('/api/stations',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:stData[idx].name})}).then(function(r){return r.json()}).then(function(){loadStations()}); }
+function delStation(name){ if(!confirm('确定删除站点 '+name+'？')) return; fetch('/api/stations',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})}).then(function(r){return r.json()}).then(function(){loadStations()}); }
 
 // ═══════════ Users CRUD ═══════════
+var _editingUsername2=null;
 function toggleUserForm(){ document.getElementById('userForm').classList.toggle('show'); }
+function _resetUserForm2(){
+  _editingUsername2=null;
+  document.getElementById('uName').value='';document.getElementById('uName').readOnly=false;
+  document.getElementById('uPwd').value='';document.getElementById('uPwd').placeholder='密码';
+  document.getElementById('uRole').value='user';
+  document.getElementById('uScope').value='station';
+  document.getElementById('uStation').value='';
+  document.getElementById('uSaveBtn').textContent='保存';
+  document.getElementById('uCancelEditBtn').style.display='none';
+  document.getElementById('uCancelBtn').style.display='inline-block';
+}
+function cancelEditUser(){ _resetUserForm2(); }
 function loadUsers(){
   fetch('/api/users').then(function(r){return r.json()}).then(function(d){
     userData=Array.isArray(d)?d:(d.users||[]);
@@ -960,24 +1193,53 @@ function loadUsers(){
       el.innerHTML='<div class="empty-state"><div class="msg">暂无用户</div><div class="sub">点击「新增用户」添加</div></div>';
     }else{
       el.innerHTML=userData.map(function(u,i){
-        return '<div class="crud-item"><div class="info"><b>'+u.username+'</b><div class="meta">角色: '+u.role+' &nbsp;|&nbsp; 站点: '+(u.station||'-')+' &nbsp;|&nbsp; 租户: '+(u.tenant_name||'-')+'</div></div><div class="actions"><button class="del" onclick="delUser(\''+u.username+'\')">删除</button></div></div>';
+        return '<div class="crud-item"><div class="info"><b>'+u.username+'</b><div class="meta">角色: '+u.role+' &nbsp;|&nbsp; 站点: '+(u.assigned_station||u.station||'-')+'</div></div><div class="actions"><button class="btn btn-ghost btn-xs" onclick="editUser2('+i+')">编辑</button><button class="del" onclick="delUser(\''+u.username+'\')">删除</button></div></div>';
       }).join('');
     }
   });
 }
+function editUser2(idx){
+  var u=userData[idx]; if(!u) return;
+  _editingUsername2=u.username;
+  document.getElementById('uName').value=u.username;
+  document.getElementById('uName').readOnly=true;
+  document.getElementById('uPwd').value='';document.getElementById('uPwd').placeholder='留空则不改密码';
+  document.getElementById('uRole').value=u.role||'user';
+  document.getElementById('uScope').value=u.scope||'station';
+  document.getElementById('uStation').value=u.assigned_station||u.station||'';
+  document.getElementById('uSaveBtn').textContent='更新';
+  document.getElementById('uCancelEditBtn').style.display='inline-block';
+  document.getElementById('uCancelBtn').style.display='none';
+  if(!document.getElementById('userForm').classList.contains('show')) toggleUserForm();
+}
 function addUser(){
-  var data={username:document.getElementById('uName').value, password:document.getElementById('uPwd').value, role:document.getElementById('uRole').value, station:document.getElementById('uStation').value};
-  fetch('/api/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
-  .then(function(r){return r.json()}).then(function(){
-    document.getElementById('uName').value='';document.getElementById('uPwd').value='';document.getElementById('uStation').value='';
-    toggleUserForm(); loadUsers();
+  var data={username:document.getElementById('uName').value, password:document.getElementById('uPwd').value, role:document.getElementById('uRole').value, scope:document.getElementById('uScope').value, station:document.getElementById('uStation').value};
+  if(!data.username){alert('用户名不能为空');return}
+  if(!_editingUsername2&&!data.password){alert('密码不能为空');return}
+  var method=_editingUsername2?'PUT':'POST';
+  fetch('/api/users',{method:method,headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  .then(function(r){return r.json()}).then(function(res){
+    if(res.error){alert(res.error);return}
+    _resetUserForm2(); toggleUserForm(); loadUsers();
   });
 }
 function delUser(username){ if(!confirm('确定删除用户 '+username+'？')) return; fetch('/api/users',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:username})}).then(function(r){return r.json()}).then(function(){loadUsers()}); }
-function resetUserPwd(){ var u=prompt('输入要重置密码的用户名:'); if(!u) return; var p=prompt('输入新密码:'); if(!p) return; fetch('/api/users/'+u+'/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:p})}).then(function(r){return r.json()}).then(function(d){alert(d.error||'已重置')}); }
+function resetUserPwd(){ var u=prompt('输入要重置密码的用户名:'); if(!u) return; var p=prompt('输入新密码:'); if(!p) return; fetch('/api/users/'+u+'/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:p})}).then(function(r){return r.json()}).then(function(d){alert(d.error||'已重置')}); }
 
 // ═══════════ Personnel CRUD ═══════════
-function togglePersonForm(){ document.getElementById('psForm').classList.toggle('show'); }
+function togglePersonForm(){
+  var form=document.getElementById('psForm');
+  form.classList.toggle('show');
+  // 打开表单时加载站点列表到下拉框
+  if(form.classList.contains('show')){
+    fetch('/api/stations').then(function(r){return r.json()}).then(function(stations){
+      var sel=document.getElementById('psStation');
+      sel.innerHTML='<option value="">选择关联站点</option>'+stations.map(function(s){
+        return '<option value="'+s.name+'">'+s.name+(s.location?' ('+s.location+')':'')+'</option>';
+      }).join('');
+    }).catch(function(){});
+  }
+}
 function loadPersonnel(){
   fetch('/api/personnel').then(function(r){return r.json()}).then(function(d){
     psData=Array.isArray(d)?d:[];
@@ -986,20 +1248,60 @@ function loadPersonnel(){
       el.innerHTML='<div class="empty-state"><div class="msg">暂无联系人</div><div class="sub">点击「新增联系人」添加</div></div>';
     }else{
       el.innerHTML=psData.map(function(p,i){
-        return '<div class="crud-item"><div class="info"><b>'+p.name+'</b><div class="meta">手机: '+p.phone+' &nbsp;|&nbsp; 站点: '+(p.station||'-')+'</div></div><div class="actions"><button class="del" onclick="delPerson('+i+')">删除</button></div></div>';
+        return '<div class="crud-item"><div class="info"><b>'+p.name+'</b><div class="meta">手机: '+p.phone+' &nbsp;|&nbsp; 站点: '+(p.station_name||'-')+'</div></div><div class="actions"><button class="del" onclick="delPerson('+i+')">删除</button></div></div>';
       }).join('');
     }
   });
 }
 function addPerson(){
-  var data={name:document.getElementById('psName').value, phone:document.getElementById('psPhone').value, station:document.getElementById('psStation').value};
+  var sel=document.getElementById('psStation');
+  var data={name:document.getElementById('psName').value, phone:document.getElementById('psPhone').value, station_name:sel.value};
+  if(!data.name||!data.phone||!data.station_name){alert('请填写姓名、联系电话和关联站点');return}
+  if(!/^1\d{10}$/.test(data.phone)){alert('联系电话格式无效，需为11位手机号');return}
   fetch('/api/personnel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
   .then(function(r){return r.json()}).then(function(){
-    document.getElementById('psName').value='';document.getElementById('psPhone').value='';document.getElementById('psStation').value='';
+    document.getElementById('psName').value='';document.getElementById('psPhone').value='';
+    sel.value='';
     togglePersonForm(); loadPersonnel();
   });
 }
-function delPerson(idx){ if(!confirm('确定删除此联系人？')) return; fetch('/api/personnel',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:psData[idx].name})}).then(function(r){return r.json()}).then(function(){loadPersonnel()}); }
+function delPerson(idx){ if(!confirm('确定删除此联系人？')) return; var p=psData[idx]; if(!p||!p.id) return; fetch('/api/personnel',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:p.id})}).then(function(r){return r.json()}).then(function(){loadPersonnel()}); }
+
+// ═══════════ Whitelist CRUD ═══════════
+var wlData=[];
+function toggleWlForm(){ document.getElementById('wlForm').classList.toggle('show'); }
+function loadWhitelist(){
+  fetch('/api/whitelist').then(function(r){return r.json()}).then(function(d){
+    wlData=d||[];
+    var el=document.getElementById('wlList');
+    if(wlData.length===0){
+      el.innerHTML='<div class="empty-state"><div class="msg">暂无白名单</div><div class="sub">白名单中的无人机 SN 不会触发告警</div></div>';
+    }else{
+      el.innerHTML=wlData.map(function(w){
+        return '<div class="crud-item"><div class="info"><b>'+w.sn+'</b><div class="meta">匹配: '+(w.match_mode==='prefix'?'前缀':'精确')+' &nbsp;|&nbsp; '+(w.note||'--')+' &nbsp;|&nbsp; '+w.created_by+' @ '+(w.created_at||'').slice(0,10)+'</div></div><div class="actions"><button class="del" onclick="delWhitelist('+w.id+')">删除</button></div></div>';
+      }).join('');
+    }
+  });
+}
+function addWhitelist(){
+  var data={
+    sn:document.getElementById('wlSn').value.trim(),
+    match_mode:document.getElementById('wlMode').value,
+    note:document.getElementById('wlNote').value.trim()
+  };
+  if(!data.sn){alert('SN 不能为空');return}
+  fetch('/api/whitelist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+  .then(function(r){return r.json()}).then(function(res){
+    if(res.error){alert(res.error);return}
+    document.getElementById('wlSn').value='';document.getElementById('wlNote').value='';
+    toggleWlForm(); loadWhitelist();
+  });
+}
+function delWhitelist(id){
+  if(!confirm('确定移除此白名单？')) return;
+  fetch('/api/whitelist',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+  .then(function(r){return r.json()}).then(function(){loadWhitelist()});
+}
 
 // ═══════════ Profile ═══════════
 function loadProfile(){
@@ -1106,5 +1408,4 @@ function clearTrajFilters(){
 updateUI();
 pollTimer=setInterval(updateUI,2000);
 </script>
-</body>
-</html>
+{% endblock %}

@@ -37,19 +37,24 @@ class PowerLineSegment:
 
     __slots__ = ('name', 'line_id', 'lat1', 'lon1', 'alt1',
                  'lat2', 'lon2', 'alt2', 'voltage_level', 'sag',
+                 'tower_height1', 'tower_height2',
                  '_cache_dx2', '_cache_dy2', '_cache_len_sq', '_cache_span_m')
 
     def __init__(self, name: str,
                  lat1: float, lon1: float, alt1: float,
                  lat2: float, lon2: float, alt2: float,
                  line_id: int = 0, voltage_level: str = '',
-                 sag: float = 0.0):
+                 sag: float = 0.0,
+                 tower_height1: Optional[float] = None,
+                 tower_height2: Optional[float] = None):
         self.name = name
         self.line_id = line_id
         self.lat1, self.lon1, self.alt1 = lat1, lon1, alt1
         self.lat2, self.lon2, self.alt2 = lat2, lon2, alt2
         self.voltage_level = voltage_level
         self.sag = sag
+        self.tower_height1 = tower_height1
+        self.tower_height2 = tower_height2
         self._cache_dx2: Optional[float] = None
         self._cache_dy2: Optional[float] = None
         self._cache_len_sq: Optional[float] = None
@@ -148,6 +153,8 @@ class PowerLineManager:
                 line_id=line_data.get("id", 0),
                 voltage_level=voltage_level,
                 sag=0.0,
+                tower_height1=line_data.get("tower_height1"),
+                tower_height2=line_data.get("tower_height2"),
             )
             if sag >= 0:
                 segment.sag = sag
