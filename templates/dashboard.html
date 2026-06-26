@@ -272,6 +272,33 @@ input:focus, select:focus{outline:none}
 .inline-form input:focus,.inline-form select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(64,158,255,.1)}
 .inline-form label{font-size:11px;color:var(--text-secondary);display:block;margin:8px 0 4px;font-weight:500}
 
+/* ══════════════════════════ Modal Overlay ══════════════════════════ */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay.show{display:flex}
+.modal-dialog{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:20px 24px;width:480px;max-width:94vw;max-height:80vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.15);
+}
+.modal-dialog h3{font-size:14px;font-weight:600;margin:0 0 14px;color:var(--text-primary)}
+.modal-dialog label{font-size:10px;color:var(--text-secondary);display:block;margin:8px 0 3px;text-transform:uppercase;letter-spacing:.5px}
+.modal-dialog input,.modal-dialog select{
+  width:100%;padding:7px 10px;background:var(--surface);border:1px solid var(--border);
+  color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;outline:none;
+}
+.modal-dialog input:focus,.modal-dialog select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(64,158,255,.1)}
+.modal-dialog .row{display:flex;gap:8px;margin-bottom:8px}
+.modal-dialog .row input,.modal-dialog .row select{flex:1;min-width:80px}
+.modal-actions{display:flex;gap:8px;margin-top:14px;justify-content:flex-end}
+.modal-actions button{
+  padding:7px 16px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;
+  cursor:pointer;border:1px solid var(--border);background:var(--surface);transition:all var(--transition);
+}
+.modal-actions button:hover{background:#f0f2f5}
+.modal-actions button.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+.modal-actions button.primary:hover{background:var(--brand-dark);box-shadow:0 2px 8px rgba(64,158,255,.35)}
+.modal-actions button.danger{background:var(--danger);color:#fff;border-color:var(--danger)}
+
 /* ══════════════════════════ Profile ══════════════════════════ */
 .profile-grid{display:grid;grid-template-columns:220px 1fr;min-height:240px}
 .profile-left{
@@ -589,24 +616,7 @@ input:focus, select:focus{outline:none}
           电力线管理
         </div>
         <div class="toolbar">
-          <button class="btn btn-primary btn-sm" onclick="togglePlForm()">+ 新增电力线</button>
-        </div>
-        <div class="inline-form" id="plForm">
-          <div class="row">
-            <input id="plName" placeholder="名称 (如 杭富线110kV#03)" style="flex:2">
-            <select id="plVoltage" style="flex:1" onchange="onVoltageChangeForPl()">
-              <option value="">电压等级</option>
-              <option value="10kV">10kV</option><option value="35kV">35kV</option><option value="110kV">110kV</option>
-              <option value="220kV">220kV</option><option value="500kV">500kV</option><option value="750kV">750kV</option>
-              <option value="±800kV">±800kV</option><option value="1000kV">1000kV</option>
-            </select>
-          </div>
-          <label>端点 1</label><div class="row"><input id="plLat1" placeholder="纬度" step="any"><input id="plLon1" placeholder="经度" step="any"><input id="plAlt1" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh1" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
-          <label>端点 2</label><div class="row"><input id="plLat2" placeholder="纬度" step="any"><input id="plLon2" placeholder="经度" step="any"><input id="plAlt2" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh2" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
-          <div id="plAltHint" style="display:none;font-size:11px;color:var(--brand);margin-bottom:8px"></div>
-          <button class="btn btn-primary btn-sm" id="plSaveBtn" onclick="addPowerLine()">保存</button>
-          <button class="btn btn-ghost btn-sm" id="plCancelEditBtn" onclick="cancelEditPl()" style="display:none;margin-left:6px">取消编辑</button>
-          <button class="btn btn-ghost btn-sm" id="plCancelBtn" onclick="togglePlForm()" style="margin-left:6px">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="openPlModal()">+ 新增电力线</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="plList">
@@ -624,34 +634,12 @@ input:focus, select:focus{outline:none}
           站点管理
         </div>
         <div class="toolbar">
-          <button class="btn btn-primary btn-sm" onclick="toggleStForm()">+ 新增站点</button>
+          <button class="btn btn-primary btn-sm" onclick="openStModal()">+ 新增站点</button>
           <span class="sep"></span>
           <input id="stFilterProv" placeholder="省" style="width:70px" oninput="filterStationList()">
           <input id="stFilterCity" placeholder="市" style="width:80px" oninput="filterStationList()">
           <input id="stFilterCounty" placeholder="区/县" style="width:80px" oninput="filterStationList()">
           <input id="stFilterName" placeholder="搜索站点名..." style="width:140px" oninput="filterStationList()">
-        </div>
-        <div class="inline-form" id="stForm">
-          <div class="row">
-            <input id="stName" placeholder="站点名称">
-            <input id="stDevice" placeholder="关联设备名">
-          </div>
-          <div class="row">
-            <input id="stLocation" placeholder="位置描述">
-          </div>
-          <div class="row">
-            <input id="stProvince" placeholder="省" style="flex:1">
-            <input id="stCity" placeholder="市" style="flex:1">
-            <input id="stCounty" placeholder="区/县" style="flex:1">
-          </div>
-          <div class="row">
-            <input id="stLat" placeholder="纬度" step="any">
-            <input id="stLon" placeholder="经度" step="any">
-            <input id="stAlt" placeholder="海拔(m)" step="any">
-          </div>
-          <button class="btn btn-primary btn-sm" id="stSaveBtn" onclick="addStation()">保存</button>
-          <button class="btn btn-ghost btn-sm" id="stCancelEditBtn" onclick="cancelEditStation()" style="display:none;margin-left:6px">取消编辑</button>
-          <button class="btn btn-ghost btn-sm" id="stCancelBtn" onclick="toggleStForm()" style="margin-left:6px">取消</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="stList">
@@ -669,20 +657,8 @@ input:focus, select:focus{outline:none}
           用户管理
         </div>
         <div class="toolbar">
-          <button class="btn btn-primary btn-sm" onclick="toggleUserForm()">+ 新增用户</button>
+          <button class="btn btn-primary btn-sm" onclick="openUsrModal()">+ 新增用户</button>
           <button class="btn btn-ghost btn-sm" onclick="resetUserPwd()" style="margin-left:auto">重置密码</button>
-        </div>
-        <div class="inline-form" id="userForm">
-          <div class="row">
-            <input id="uName" placeholder="用户名">
-            <input id="uPwd" type="password" placeholder="密码">
-            <select id="uRole"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
-            <select id="uScope"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
-            <input id="uStation" placeholder="站点 (可选)">
-          </div>
-          <button class="btn btn-primary btn-sm" id="uSaveBtn" onclick="addUser()">保存</button>
-          <button class="btn btn-ghost btn-sm" id="uCancelEditBtn" onclick="cancelEditUser()" style="display:none;margin-left:6px">取消编辑</button>
-          <button class="btn btn-ghost btn-sm" id="uCancelBtn" onclick="toggleUserForm()" style="margin-left:6px">取消</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="userList">
@@ -700,16 +676,7 @@ input:focus, select:focus{outline:none}
           告警联系人
         </div>
         <div class="toolbar">
-          <button class="btn btn-primary btn-sm" onclick="togglePersonForm()">+ 新增联系人</button>
-        </div>
-        <div class="inline-form" id="psForm">
-          <div class="row">
-            <input id="psName" placeholder="姓名">
-            <input id="psPhone" placeholder="手机号（11位）">
-            <select id="psStation"><option value="">选择关联站点</option></select>
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="addPerson()">保存</button>
-          <button class="btn btn-ghost btn-sm" onclick="togglePersonForm()" style="margin-left:6px">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="openPsModal()">+ 新增联系人</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="psList">
@@ -727,16 +694,7 @@ input:focus, select:focus{outline:none}
           无人机白名单
         </div>
         <div class="toolbar">
-          <button class="btn btn-primary btn-sm" onclick="toggleWlForm()">+ 新增白名单</button>
-        </div>
-        <div class="inline-form" id="wlForm">
-          <div class="row">
-            <input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2">
-            <select id="wlMode"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select>
-            <input id="wlNote" placeholder="备注 (可选)" style="flex:1">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="addWhitelist()">保存</button>
-          <button class="btn btn-ghost btn-sm" onclick="toggleWlForm()" style="margin-left:6px">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="openWlModal()">+ 新增白名单</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="wlList">
@@ -797,16 +755,7 @@ input:focus, select:focus{outline:none}
           密钥管理
         </div>
         <div class="toolbar">
-          <button class="btn btn-primary btn-sm" onclick="toggleLicForm()">+ 生成密钥</button>
-        </div>
-        <div class="inline-form" id="licForm">
-          <div class="row">
-            <input id="licName" placeholder="客户名称">
-            <input id="licMaxUsers" type="number" value="3" placeholder="最大用户数" style="width:100px">
-            <input id="licContact" placeholder="联系人">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="addLicense()">生成密钥</button>
-          <button class="btn btn-ghost btn-sm" onclick="toggleLicForm()" style="margin-left:6px">取消</button>
+          <button class="btn btn-primary btn-sm" onclick="openLicModal()">+ 生成密钥</button>
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="licList">
@@ -878,6 +827,102 @@ input:focus, select:focus{outline:none}
       </div>
     </div>
 
+  </div>
+
+  <!-- ════ Modal Overlays ════ -->
+  <!-- Power Line Modal -->
+  <div class="modal-overlay" id="plModal">
+    <div class="modal-dialog">
+      <h3>电力线</h3>
+      <div class="row">
+        <input id="plName" placeholder="名称 (如 杭富线110kV#03)" style="flex:2">
+        <select id="plVoltage" style="flex:1" onchange="onVoltageChangeForPl()">
+          <option value="">电压等级</option>
+          <option value="10kV">10kV</option><option value="35kV">35kV</option><option value="110kV">110kV</option>
+          <option value="220kV">220kV</option><option value="500kV">500kV</option><option value="750kV">750kV</option>
+          <option value="±800kV">±800kV</option><option value="1000kV">1000kV</option>
+        </select>
+      </div>
+      <label>端点 1</label>
+      <div class="row"><input id="plLat1" placeholder="纬度" step="any"><input id="plLon1" placeholder="经度" step="any"><input id="plAlt1" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh1" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
+      <label>端点 2</label>
+      <div class="row"><input id="plLat2" placeholder="纬度" step="any"><input id="plLon2" placeholder="经度" step="any"><input id="plAlt2" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh2" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
+      <div id="plAltHint" style="display:none;font-size:11px;color:var(--brand);margin-bottom:8px"></div>
+      <div class="modal-actions">
+        <button class="primary" id="plSaveBtn" onclick="addPowerLine()">保存</button>
+        <button onclick="closePlModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Station Modal -->
+  <div class="modal-overlay" id="stModal">
+    <div class="modal-dialog">
+      <h3>站点</h3>
+      <div class="row"><input id="stName" placeholder="站点名称"><input id="stDevice" placeholder="关联设备名"></div>
+      <div class="row"><input id="stLocation" placeholder="位置描述"></div>
+      <div class="row"><input id="stProvince" placeholder="省"><input id="stCity" placeholder="市"><input id="stCounty" placeholder="区/县"></div>
+      <div class="row"><input id="stLat" placeholder="纬度" step="any"><input id="stLon" placeholder="经度" step="any"><input id="stAlt" placeholder="海拔(m)" step="any"></div>
+      <div class="modal-actions">
+        <button class="primary" id="stSaveBtn" onclick="addStation()">保存</button>
+        <button onclick="closeStModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Modal -->
+  <div class="modal-overlay" id="usrModal">
+    <div class="modal-dialog">
+      <h3>用户</h3>
+      <div class="row"><input id="uName" placeholder="用户名"><input id="uPwd" type="password" placeholder="密码"></div>
+      <div class="row">
+        <select id="uRole"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
+        <select id="uScope"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
+        <input id="uStation" placeholder="站点 (可选)">
+      </div>
+      <div class="modal-actions">
+        <button class="primary" id="uSaveBtn" onclick="addUser()">保存</button>
+        <button onclick="closeUsrModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Personnel Modal -->
+  <div class="modal-overlay" id="psModal">
+    <div class="modal-dialog">
+      <h3>告警联系人</h3>
+      <div class="row"><input id="psName" placeholder="姓名"><input id="psPhone" placeholder="手机号（11位）"></div>
+      <label>关联站点</label>
+      <select id="psStation"><option value="">选择关联站点</option></select>
+      <div class="modal-actions">
+        <button class="primary" onclick="addPerson()">保存</button>
+        <button onclick="closePsModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Whitelist Modal -->
+  <div class="modal-overlay" id="wlModal">
+    <div class="modal-dialog">
+      <h3>白名单</h3>
+      <div class="row"><input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2"><select id="wlMode"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select><input id="wlNote" placeholder="备注 (可选)" style="flex:1"></div>
+      <div class="modal-actions">
+        <button class="primary" onclick="addWhitelist()">保存</button>
+        <button onclick="closeWlModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- License Modal -->
+  <div class="modal-overlay" id="licModal">
+    <div class="modal-dialog">
+      <h3>生成密钥</h3>
+      <div class="row"><input id="licName" placeholder="客户名称"><input id="licMaxUsers" type="number" value="3" placeholder="最大用户数" style="width:100px"><input id="licContact" placeholder="联系人"></div>
+      <div class="modal-actions">
+        <button class="primary" onclick="addLicense()">生成密钥</button>
+        <button onclick="closeLicModal()">关闭</button>
+      </div>
+    </div>
   </div>
 
   <div class="footer">

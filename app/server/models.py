@@ -296,8 +296,69 @@ def init_db(database_url: str = "sqlite:///data/center.db",
 
     _Session = scoped_session(sessionmaker(bind=_engine))
     Base.metadata.create_all(_engine)
+    _migrate_schema(_engine)
     logger.info("中心数据库已初始化: %s", database_url.split("://")[0])
     return _engine
+
+
+def _migrate_schema(engine):
+    """Auto-add missing columns to existing tables (safe ALTER TABLE ADD COLUMN).
+
+    SQLAlchemy's create_all only creates new tables; it never adds columns
+    to existing tables. This scans every mapped table and adds any column
+    present in the model but missing from the live database.
+    """
+    import sqlalchemy as sa
+
+    for table in Base.metadata.sorted_tables:
+        table_name = table.name
+        with engine.connect() as conn:
+            # Get existing columns from the live database
+            if engine.dialect.name == "sqlite":
+                rows = conn.execute(
+                    sa.text(f"PRAGMA table_info('{table_name}')")
+                ).fetchall()
+                existing = {row[1] for row in rows}  # column name is index 1
+            else:
+                # PostgreSQL / others
+                insp = sa.inspect(engine)
+                cols = insp.get_columns(table_name)
+                existing = {c["name"] for c in cols}
+
+            for col in table.columns:
+                if col.name not in existing:
+                    col_type_sql = _render_column_type(engine.dialect.name, col)
+                    sql = (
+                        f"ALTER TABLE {table_name} ADD COLUMN "
+                        f"{col.name} {col_type_sql}"
+                    )
+                    conn.execute(sa.text(sql))
+                    logger.warning(
+                        "迁移: %s.%s (%s) 已添加", table_name, col.name, col_type_sql
+                    )
+            conn.commit()
+
+
+def _render_column_type(dialect, col):
+    """Render a Column's type as DDL-compatible SQL for ALTER TABLE ADD COLUMN."""
+    from sqlalchemy import Integer, String, Float, DateTime, Text, Boolean
+
+    t = col.type
+    if isinstance(t, Integer):
+        return "INTEGER"
+    if isinstance(t, String):
+        return f"VARCHAR({t.length or 255})" if dialect != "sqlite" else "TEXT"
+    if isinstance(t, Float):
+        return "REAL" if dialect == "sqlite" else "DOUBLE PRECISION"
+    if isinstance(t, DateTime):
+        return "DATETIME" if dialect == "sqlite" else "TIMESTAMP"
+    if isinstance(t, Text):
+        return "TEXT"
+    if isinstance(t, Boolean):
+        return "INTEGER" if dialect == "sqlite" else "BOOLEAN"
+    # Fallback: use SQLAlchemy's type compiler
+    from sqlalchemy import create_engine as _ce
+    return str(t.compile(dialect=_ce("sqlite:///").dialect if dialect == "sqlite" else None))
 
 
 def get_session():

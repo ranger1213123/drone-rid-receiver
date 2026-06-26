@@ -42,6 +42,40 @@ input:focus, select:focus, textarea:focus{outline:none}
 .msg.ok{display:block;color:#16a34a;background:#f0fdf4;border:1px solid #bbf7d0}
 .msg.err{display:block;color:#dc2626;background:#fef2f2;border:1px solid #fecaca}
 
+/* Shared message box overlay (replaces native alert/confirm) */
+.message-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.35); z-index: 9100;
+  justify-content: center; align-items: center;
+  backdrop-filter: blur(2px);
+}
+.message-overlay.show { display: flex; }
+.message-box {
+  background: #fff; border: 1px solid #e0e3e8;
+  border-radius: 12px; padding: 24px 28px 20px;
+  width: 380px; max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+  text-align: center;
+}
+.message-box .msg-icon { font-size: 36px; margin-bottom: 10px; line-height: 1; }
+.message-box .msg-icon.success { color: #16a34a; }
+.message-box .msg-icon.error { color: #dc2626; }
+.message-box .msg-icon.warning { color: #ca8a04; }
+.message-box .msg-icon.info { color: #2563eb; }
+.message-box .msg-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: #1a1d23; }
+.message-box .msg-body { font-size: 13px; color: #6b7280; margin-bottom: 18px; line-height: 1.5; }
+.message-box .msg-actions { display: flex; gap: 8px; justify-content: center; }
+.message-box .msg-actions button {
+  padding: 7px 20px; border-radius: 6px; font-size: 12px; font-weight: 500;
+  cursor: pointer; border: 1px solid #e0e3e8; background: #fff;
+  transition: all .15s; min-width: 72px;
+}
+.message-box .msg-actions button:hover { background: #f3f4f6; }
+.message-box .msg-actions button.primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+.message-box .msg-actions button.primary:hover { background: #1d4ed8; }
+.message-box .msg-actions button.danger { background: #dc2626; color: #fff; border-color: #dc2626; }
+.message-box .msg-actions button.danger:hover { background: #b91c1c; }
+
 /* Auth pages shared styles */
 .auth-body{
   display:flex; align-items:center; justify-content:center; min-height:100vh;

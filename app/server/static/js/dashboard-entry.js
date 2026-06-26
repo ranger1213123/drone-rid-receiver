@@ -53,6 +53,18 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(el){
   });
 });
 
+// ═══════════ Click-outside-to-close for modals ═══════════
+document.addEventListener('click', function(e) {
+  var modalCloseMap = {
+    'plModal': closePlModal, 'stModal': closeStModal,
+    'usrModal': closeUsrModal, 'psModal': closePsModal,
+    'wlModal': closeWlModal, 'licModal': closeLicModal
+  };
+  if (e.target.id && modalCloseMap[e.target.id]) {
+    modalCloseMap[e.target.id]();
+  }
+});
+
 // ═══════════ Notification ═══════════
 function requestNotify(){
   if(window.Notification && Notification.permission==='default') Notification.requestPermission();
@@ -215,7 +227,15 @@ window.onPlFieldChange = function(){
   if(th1||th2){hint.style.display='';hint.textContent='导线海拔: 端点1='+(alt1+th1).toFixed(1)+'m  端点2='+(alt2+th2).toFixed(1)+'m';}
   else{hint.style.display='none';}
 };
-window.togglePlForm = function(){ document.getElementById('plForm').classList.toggle('show'); };
+
+window.openPlModal = function(){
+  document.getElementById('plModal').classList.add('show');
+};
+window.closePlModal = function(){
+  _resetPlForm();
+  document.getElementById('plModal').classList.remove('show');
+};
+
 function _resetPlForm(){
   _editingPlId=null;
   document.getElementById('plName').value='';document.getElementById('plVoltage').value='';
@@ -224,10 +244,8 @@ function _resetPlForm(){
   document.getElementById('plTh1').value='';document.getElementById('plTh2').value='';
   document.getElementById('plAltHint').style.display='none';
   document.getElementById('plSaveBtn').textContent='保存';
-  document.getElementById('plCancelEditBtn').style.display='none';
-  document.getElementById('plCancelBtn').style.display='inline-block';
 }
-window.cancelEditPl = function(){ _resetPlForm(); };
+
 window.loadPowerLines = function(){
   Api.get('/api/powerlines').then(function(d){
     plData=d||[];
@@ -253,10 +271,8 @@ window.editPowerLine = function(idx){
   document.getElementById('plTh1').value=l.tower_height1!=null?l.tower_height1:'';
   document.getElementById('plTh2').value=l.tower_height2!=null?l.tower_height2:'';
   document.getElementById('plSaveBtn').textContent='更新';
-  document.getElementById('plCancelEditBtn').style.display='inline-block';
-  document.getElementById('plCancelBtn').style.display='none';
   onPlFieldChange();
-  if(!document.getElementById('plForm').classList.contains('show')) togglePlForm();
+  openPlModal();
 };
 window.addPowerLine = function(){
   var data={
@@ -267,34 +283,42 @@ window.addPowerLine = function(){
     tower_height1: parseFloat(document.getElementById('plTh1').value)||null,
     tower_height2: parseFloat(document.getElementById('plTh2').value)||null
   };
-  if(!data.name){alert('电力线名称不能为空');return}
-  if(isNaN(data.lat1)||isNaN(data.lon1)||isNaN(data.lat2)||isNaN(data.lon2)){alert('请填写有效的经纬度坐标');return}
+  if(!data.name){UI.Message.warning('电力线名称不能为空');return}
+  if(isNaN(data.lat1)||isNaN(data.lon1)||isNaN(data.lat2)||isNaN(data.lon2)){UI.Message.warning('请填写有效的经纬度坐标');return}
   var method=_editingPlId?'PUT':'POST';
   var url=_editingPlId?'/api/powerlines/'+_editingPlId:'/api/powerlines';
   Api[method.toLowerCase()](url, data).then(function(){
-    _resetPlForm(); togglePlForm(); loadPowerLines();
+    closePlModal(); loadPowerLines();
   });
 };
 window.delPowerLine = function(idx){
-  if(!confirm('确定删除此电力线？')) return;
-  var lineId=plData[idx]&&plData[idx].id;
-  if(!lineId) return;
-  Api.del('/api/powerlines/'+lineId).then(function(){loadPowerLines()});
+  UI.Message.confirm('确定删除此电力线？').then(function(ok){
+    if(!ok) return;
+    var lineId=plData[idx]&&plData[idx].id;
+    if(!lineId) return;
+    Api.del('/api/powerlines/'+lineId).then(function(){loadPowerLines()});
+  });
 };
 
 // ═══════════ Stations CRUD ═══════════
-window.toggleStForm = function(){ document.getElementById('stForm').classList.toggle('show'); };
+window.openStModal = function(){
+  document.getElementById('stModal').classList.add('show');
+};
+window.closeStModal = function(){
+  _resetStForm2();
+  document.getElementById('stModal').classList.remove('show');
+};
+
 function _resetStForm2(){
   _editingStName2=null;
-  document.getElementById('stName').value='';document.getElementById('stDevice').value='';
+  document.getElementById('stName').value='';document.getElementById('stName').readOnly=false;
+  document.getElementById('stDevice').value='';
   document.getElementById('stLocation').value='';
   document.getElementById('stProvince').value='';document.getElementById('stCity').value='';document.getElementById('stCounty').value='';
   document.getElementById('stLat').value='';document.getElementById('stLon').value='';document.getElementById('stAlt').value='';
   document.getElementById('stSaveBtn').textContent='保存';
-  document.getElementById('stCancelEditBtn').style.display='none';
-  document.getElementById('stCancelBtn').style.display='inline-block';
 }
-window.cancelEditStation = function(){ _resetStForm2(); };
+
 function _stLocationLabel(s){
   var parts=[];
   if(s.province) parts.push(s.province);
@@ -347,9 +371,7 @@ window.editStation2 = function(name){
   document.getElementById('stLon').value=s.lon||0;
   document.getElementById('stAlt').value=s.alt||0;
   document.getElementById('stSaveBtn').textContent='更新';
-  document.getElementById('stCancelEditBtn').style.display='inline-block';
-  document.getElementById('stCancelBtn').style.display='none';
-  if(!document.getElementById('stForm').classList.contains('show')) toggleStForm();
+  openStModal();
 };
 window.addStation = function(){
   var data={
@@ -363,21 +385,30 @@ window.addStation = function(){
     lon:parseFloat(document.getElementById('stLon').value)||0,
     alt:parseFloat(document.getElementById('stAlt').value)||0
   };
-  if(!data.name){alert('站点名称不能为空');return}
+  if(!data.name){UI.Message.warning('站点名称不能为空');return}
   var method=_editingStName2?'PUT':'POST';
   Api[method.toLowerCase()]('/api/stations', data).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     document.getElementById('stName').readOnly=false;
-    _resetStForm2(); toggleStForm(); loadStations();
+    closeStModal(); loadStations();
   });
 };
 window.delStation = function(name){
-  if(!confirm('确定删除站点 '+name+'？')) return;
-  Api.del('/api/stations', {name:name}).then(function(){loadStations()});
+  UI.Message.confirm('确定删除站点 '+name+'？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/stations', {name:name}).then(function(){loadStations()});
+  });
 };
 
 // ═══════════ Users CRUD ═══════════
-window.toggleUserForm = function(){ document.getElementById('userForm').classList.toggle('show'); };
+window.openUsrModal = function(){
+  document.getElementById('usrModal').classList.add('show');
+};
+window.closeUsrModal = function(){
+  _resetUserForm2();
+  document.getElementById('usrModal').classList.remove('show');
+};
+
 function _resetUserForm2(){
   _editingUsername2=null;
   document.getElementById('uName').value='';document.getElementById('uName').readOnly=false;
@@ -386,10 +417,8 @@ function _resetUserForm2(){
   document.getElementById('uScope').value='station';
   document.getElementById('uStation').value='';
   document.getElementById('uSaveBtn').textContent='保存';
-  document.getElementById('uCancelEditBtn').style.display='none';
-  document.getElementById('uCancelBtn').style.display='inline-block';
 }
-window.cancelEditUser = function(){ _resetUserForm2(); };
+
 window.loadUsers = function(){
   Api.get('/api/users').then(function(d){
     userData=Array.isArray(d)?d:(d.users||[]);
@@ -413,43 +442,49 @@ window.editUser2 = function(idx){
   document.getElementById('uScope').value=u.scope||'station';
   document.getElementById('uStation').value=u.assigned_station||u.station||'';
   document.getElementById('uSaveBtn').textContent='更新';
-  document.getElementById('uCancelEditBtn').style.display='inline-block';
-  document.getElementById('uCancelBtn').style.display='none';
-  if(!document.getElementById('userForm').classList.contains('show')) toggleUserForm();
+  openUsrModal();
 };
 window.addUser = function(){
   var data={username:document.getElementById('uName').value, password:document.getElementById('uPwd').value, role:document.getElementById('uRole').value, scope:document.getElementById('uScope').value, station:document.getElementById('uStation').value};
-  if(!data.username){alert('用户名不能为空');return}
-  if(!_editingUsername2&&!data.password){alert('密码不能为空');return}
+  if(!data.username){UI.Message.warning('用户名不能为空');return}
+  if(!_editingUsername2&&!data.password){UI.Message.warning('密码不能为空');return}
   var method=_editingUsername2?'PUT':'POST';
   Api[method.toLowerCase()]('/api/users', data).then(function(res){
-    if(res.error){alert(res.error);return}
-    _resetUserForm2(); toggleUserForm(); loadUsers();
+    if(res.error){UI.toast(res.error,'error');return}
+    closeUsrModal(); loadUsers();
   });
 };
 window.delUser = function(username){
-  if(!confirm('确定删除用户 '+username+'？')) return;
-  Api.del('/api/users', {username:username}).then(function(){loadUsers()});
+  UI.Message.confirm('确定删除用户 '+username+'？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/users', {username:username}).then(function(){loadUsers()});
+  });
 };
 window.resetUserPwd = function(){
   var u=prompt('输入要重置密码的用户名:'); if(!u) return;
   var p=prompt('输入新密码:'); if(!p) return;
-  Api.post('/api/users/'+u+'/reset-password', {new_password:p}).then(function(d){alert(d.error||'已重置')});
+  Api.post('/api/users/'+u+'/reset-password', {new_password:p}).then(function(d){
+    UI.toast(d.error||'已重置', d.error?'error':'ok');
+  });
 };
 
 // ═══════════ Personnel CRUD ═══════════
-window.togglePersonForm = function(){
-  var form=document.getElementById('psForm');
-  form.classList.toggle('show');
-  if(form.classList.contains('show')){
-    Api.get('/api/stations').then(function(stations){
-      var sel=document.getElementById('psStation');
-      sel.innerHTML='<option value="">选择关联站点</option>'+stations.map(function(s){
-        return '<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+(s.location?' ('+UI.escapeHtml(s.location)+')':'')+'</option>';
-      }).join('');
-    }).catch(function(){});
-  }
+window.openPsModal = function(){
+  document.getElementById('psModal').classList.add('show');
+  Api.get('/api/stations').then(function(stations){
+    var sel=document.getElementById('psStation');
+    sel.innerHTML='<option value="">选择关联站点</option>'+stations.map(function(s){
+      return '<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+(s.location?' ('+UI.escapeHtml(s.location)+')':'')+'</option>';
+    }).join('');
+  }).catch(function(){});
 };
+window.closePsModal = function(){
+  document.getElementById('psName').value='';
+  document.getElementById('psPhone').value='';
+  document.getElementById('psStation').value='';
+  document.getElementById('psModal').classList.remove('show');
+};
+
 window.loadPersonnel = function(){
   Api.get('/api/personnel').then(function(d){
     psData=Array.isArray(d)?d:[];
@@ -466,22 +501,30 @@ window.loadPersonnel = function(){
 window.addPerson = function(){
   var sel=document.getElementById('psStation');
   var data={name:document.getElementById('psName').value, phone:document.getElementById('psPhone').value, station_name:sel.value};
-  if(!data.name||!data.phone||!data.station_name){alert('请填写姓名、联系电话和关联站点');return}
-  if(!/^1\d{10}$/.test(data.phone)){alert('联系电话格式无效，需为11位手机号');return}
+  if(!data.name||!data.phone||!data.station_name){UI.Message.warning('请完整填写姓名、联系电话并选择关联站点');return}
+  if(!/^1\d{10}$/.test(data.phone)){UI.Message.warning('联系电话格式无效，需为11位手机号');return}
   Api.post('/api/personnel', data).then(function(){
-    document.getElementById('psName').value='';document.getElementById('psPhone').value='';
-    sel.value='';
-    togglePersonForm(); loadPersonnel();
+    closePsModal(); loadPersonnel();
   });
 };
 window.delPerson = function(idx){
-  if(!confirm('确定删除此联系人？')) return;
-  var p=psData[idx]; if(!p||!p.id) return;
-  Api.del('/api/personnel', {id:p.id}).then(function(){loadPersonnel()});
+  UI.Message.confirm('确定删除此联系人？').then(function(ok){
+    if(!ok) return;
+    var p=psData[idx]; if(!p||!p.id) return;
+    Api.del('/api/personnel', {id:p.id}).then(function(){loadPersonnel()});
+  });
 };
 
 // ═══════════ Whitelist CRUD ═══════════
-window.toggleWlForm = function(){ document.getElementById('wlForm').classList.toggle('show'); };
+window.openWlModal = function(){
+  document.getElementById('wlModal').classList.add('show');
+};
+window.closeWlModal = function(){
+  document.getElementById('wlSn').value='';
+  document.getElementById('wlNote').value='';
+  document.getElementById('wlModal').classList.remove('show');
+};
+
 window.loadWhitelist = function(){
   Api.get('/api/whitelist').then(function(d){
     wlData=d||[];
@@ -501,16 +544,17 @@ window.addWhitelist = function(){
     match_mode:document.getElementById('wlMode').value,
     note:document.getElementById('wlNote').value.trim()
   };
-  if(!data.sn){alert('SN 不能为空');return}
+  if(!data.sn){UI.Message.warning('SN 不能为空');return}
   Api.post('/api/whitelist', data).then(function(res){
-    if(res.error){alert(res.error);return}
-    document.getElementById('wlSn').value='';document.getElementById('wlNote').value='';
-    toggleWlForm(); loadWhitelist();
+    if(res.error){UI.toast(res.error,'error');return}
+    closeWlModal(); loadWhitelist();
   });
 };
 window.delWhitelist = function(id){
-  if(!confirm('确定移除此白名单？')) return;
-  Api.del('/api/whitelist', {id:id}).then(function(){loadWhitelist()});
+  UI.Message.confirm('确定移除此白名单？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/whitelist', {id:id}).then(function(){loadWhitelist()});
+  });
 };
 
 // ═══════════ Profile ═══════════
@@ -633,10 +677,16 @@ function refreshTenantInfo(){
 
 // ═══════════ License Management ═══════════
 window.openLicPage = function(){
-  document.getElementById('licForm').style.display='none';
   loadLicenses();
 };
-window.toggleLicForm = function(){ document.getElementById('licForm').style.display=document.getElementById('licForm').style.display==='none'?'':'none'; };
+window.openLicModal = function(){
+  document.getElementById('licModal').classList.add('show');
+};
+window.closeLicModal = function(){
+  document.getElementById('licName').value='';
+  document.getElementById('licContact').value='';
+  document.getElementById('licModal').classList.remove('show');
+};
 
 function loadLicenses(){
   Api.get('/api/licenses').then(function(tenants){
@@ -658,30 +708,33 @@ window.addLicense = function(){
     max_users: parseInt(document.getElementById('licMaxUsers').value)||3,
     contact: document.getElementById('licContact').value.trim()
   };
-  if(!data.name){alert('客户名称不能为空');return}
+  if(!data.name){UI.Message.warning('客户名称不能为空');return}
   Api.post('/api/licenses', data).then(function(res){
-    if(res.error){alert(res.error);return}
-    document.getElementById('licName').value='';
-    document.getElementById('licContact').value='';
-    alert('密钥已生成: '+res.license_key);
+    if(res.error){UI.toast(res.error,'error');return}
+    UI.Message.success('密钥已生成: '+res.license_key);
+    closeLicModal();
     loadLicenses();
   }).catch(catchErr('创建密钥失败'));
 };
 
 window.delLicense = function(id){
-  if(!confirm('确定要停用该密钥吗？所有关联用户将无法操作。')) return;
-  Api.del('/api/licenses', {id:id}).then(function(res){
-    if(res.error){alert(res.error);return}
-    loadLicenses();
-  }).catch(catchErr('停用密钥失败'));
+  UI.Message.confirm('确定要停用该密钥吗？所有关联用户将无法操作。').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/licenses', {id:id}).then(function(res){
+      if(res.error){UI.toast(res.error,'error');return}
+      loadLicenses();
+    }).catch(catchErr('停用密钥失败'));
+  });
 };
 
 window.reactivateLicense = function(id){
-  if(!confirm('确定要重新激活该密钥吗？')) return;
-  Api.put('/api/licenses', {id:id, is_active:true}).then(function(res){
-    if(res.error){alert(res.error);return}
-    loadLicenses();
-  }).catch(catchErr('激活密钥失败'));
+  UI.Message.confirm('确定要重新激活该密钥吗？').then(function(ok){
+    if(!ok) return;
+    Api.put('/api/licenses', {id:id, is_active:true}).then(function(res){
+      if(res.error){UI.toast(res.error,'error');return}
+      loadLicenses();
+    }).catch(catchErr('激活密钥失败'));
+  });
 };
 
 // ═══════════ Audit Log ═══════════

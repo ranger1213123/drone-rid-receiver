@@ -790,7 +790,10 @@ body.sta-mode .nat-only{display:none!important}
 <div class="modal-overlay" id="personnelModal">
   <div class="modal-dialog">
     <h3>告警联系人</h3>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">站点: <span id="personnelStationLabel">-</span></div>
+    <label>关联站点</label>
+    <select id="personnelStationSelect" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;margin-bottom:8px">
+      <option value="">选择关联站点</option>
+    </select>
     <div id="personnelList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
     <div class="row">
       <div style="flex:1"><label>姓名</label><input id="persName" placeholder="负责人姓名"></div>

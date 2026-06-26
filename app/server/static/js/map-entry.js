@@ -495,7 +495,7 @@ window.savePowerLine = function(lineId){
     tower_height1: th1!==''?parseFloat(th1):null,
     tower_height2: th2!==''?parseFloat(th2):null
   };
-  if(!data.name){alert('电力线名称不能为空');return}
+  if(!data.name){UI.Message.warning('电力线名称不能为空');return}
   Api.put('/api/powerlines/'+lineId, data).then(function(){
     _editingPlId=-1;
     refreshPlModalList();
@@ -516,8 +516,8 @@ window.addPowerLine = function(){
     tower_height1: parseFloat(document.getElementById('plTh1').value)||null,
     tower_height2: parseFloat(document.getElementById('plTh2').value)||null
   };
-  if(!data.name){alert('电力线名称不能为空');return}
-  if(isNaN(data.lat1)||isNaN(data.lon1)||isNaN(data.lat2)||isNaN(data.lon2)){alert('请填写有效的经纬度坐标');return}
+  if(!data.name){UI.Message.warning('电力线名称不能为空');return}
+  if(isNaN(data.lat1)||isNaN(data.lon1)||isNaN(data.lat2)||isNaN(data.lon2)){UI.Message.warning('请填写有效的经纬度坐标');return}
   Api.post('/api/powerlines', data).then(function(){
     document.getElementById('plName').value='';document.getElementById('plVoltage').value='';
     document.getElementById('plLat1').value='';document.getElementById('plLon1').value='';document.getElementById('plAlt1').value='';
@@ -530,11 +530,13 @@ window.addPowerLine = function(){
 };
 
 window.delPowerLine = function(lineId){
-  if(!confirm('确定删除此电力线？')) return;
-  Api.del('/api/powerlines/'+lineId).then(function(){
-    refreshPlModalList();
-    loadPowerLines();
-  }).catch(catchErr('删除电力线失败'));
+  UI.Message.confirm('确定删除此电力线？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/powerlines/'+lineId).then(function(){
+      refreshPlModalList();
+      loadPowerLines();
+    }).catch(catchErr('删除电力线失败'));
+  });
 };
 
 // ═══════════ Station Management Modal ═══════════
@@ -626,11 +628,11 @@ window.addStation = function(){
     lon:parseFloat(document.getElementById('stLon').value),
     alt:parseFloat(document.getElementById('stAlt').value)||0
   };
-  if(!data.name){alert('请输入站点名称');return}
-  if(isNaN(data.lat)||isNaN(data.lon)){alert('请输入有效坐标');return}
+  if(!data.name){UI.Message.warning('请输入站点名称');return}
+  if(isNaN(data.lat)||isNaN(data.lon)){UI.Message.warning('请输入有效坐标');return}
   var method=_editingStName?'PUT':'POST';
   Api[method.toLowerCase()]('/api/stations', data).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     document.getElementById('stName').readOnly=false;
     _resetStForm();
     document.getElementById('stFilterProv').value='';document.getElementById('stFilterCity').value='';document.getElementById('stFilterName').value='';
@@ -642,12 +644,14 @@ window.addStation = function(){
 window.delStation = function(name){
   var s=_stations.find(function(x){return x.name===name});
   if(!s) return;
-  if(!confirm('确定要删除站点 '+s.name+' 吗？')) return;
-  Api.del('/api/stations', {name:s.name}).then(function(){
-    document.getElementById('stFilterProv').value='';document.getElementById('stFilterCity').value='';document.getElementById('stFilterName').value='';
-    refreshStModalList();
-    updateAll._lastStats=0;
-  }).catch(catchErr('删除站点失败'));
+  UI.Message.confirm('确定要删除站点 '+s.name+' 吗？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/stations', {name:s.name}).then(function(){
+      document.getElementById('stFilterProv').value='';document.getElementById('stFilterCity').value='';document.getElementById('stFilterName').value='';
+      refreshStModalList();
+      updateAll._lastStats=0;
+    }).catch(catchErr('删除站点失败'));
+  });
 };
 
 // ═══════════ User Management Modal ═══════════
@@ -710,22 +714,24 @@ window.addUser = function(){
     role:document.getElementById('usrRole').value,
     station:document.getElementById('usrStation').value
   };
-  if(!data.username){alert('用户名不能为空');return}
-  if(!_editingUsername&&!data.password){alert('密码不能为空');return}
+  if(!data.username){UI.Message.warning('用户名不能为空');return}
+  if(!_editingUsername&&!data.password){UI.Message.warning('密码不能为空');return}
   var method=_editingUsername?'PUT':'POST';
   Api[method.toLowerCase()]('/api/users', data).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     _resetUsrForm();
     refreshUsrModalList();
   }).catch(catchErr((_editingUsername?'编辑':'添加')+'用户失败'));
 };
 
 window.delUser = function(username){
-  if(!confirm('确定要删除用户 '+username+' 吗？')) return;
-  Api.del('/api/users', {username:username}).then(function(res){
-    if(res.error){alert(res.error);return}
-    refreshUsrModalList();
-  }).catch(catchErr('删除用户失败'));
+  UI.Message.confirm('确定要删除用户 '+username+' 吗？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/users', {username:username}).then(function(res){
+      if(res.error){UI.toast(res.error,'error');return}
+      refreshUsrModalList();
+    }).catch(catchErr('删除用户失败'));
+  });
 };
 
 // ═══════════ License Management ═══════════
@@ -755,55 +761,67 @@ window.addLicense = function(){
     max_users: parseInt(document.getElementById('licMaxUsers').value)||3,
     contact: document.getElementById('licContact').value.trim()
   };
-  if(!data.name){alert('客户名称不能为空');return}
+  if(!data.name){UI.Message.warning('客户名称不能为空');return}
   Api.post('/api/licenses', data).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     document.getElementById('licName').value='';
     document.getElementById('licContact').value='';
-    alert('密钥已生成: '+res.license_key);
+    UI.Message.success('密钥已生成: '+res.license_key);
     refreshLicModalList();
   }).catch(catchErr('创建密钥失败'));
 };
 
 window.delLicense = function(id){
-  if(!confirm('确定要停用该密钥吗？所有关联用户将无法操作。')) return;
-  Api.del('/api/licenses', {id:id}).then(function(res){
-    if(res.error){alert(res.error);return}
-    refreshLicModalList();
-  }).catch(catchErr('停用密钥失败'));
+  UI.Message.confirm('确定要停用该密钥吗？所有关联用户将无法操作。').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/licenses', {id:id}).then(function(res){
+      if(res.error){UI.toast(res.error,'error');return}
+      refreshLicModalList();
+    }).catch(catchErr('停用密钥失败'));
+  });
 };
 
 window.reactivateLicense = function(id){
-  if(!confirm('确定要重新激活该密钥吗？')) return;
-  Api.put('/api/licenses', {id:id, is_active:true}).then(function(res){
-    if(res.error){alert(res.error);return}
-    refreshLicModalList();
-  }).catch(catchErr('激活密钥失败'));
+  UI.Message.confirm('确定要重新激活该密钥吗？').then(function(ok){
+    if(!ok) return;
+    Api.put('/api/licenses', {id:id, is_active:true}).then(function(res){
+      if(res.error){UI.toast(res.error,'error');return}
+      refreshLicModalList();
+    }).catch(catchErr('激活密钥失败'));
+  });
 };
 
 // ═══════════ Personnel Modal (告警联系人) ═══════════
 window.openPersonnelModal = function(){
-  var stName = '';
-  if (currentStationDevice) {
-    var sts = cachedDashboard?cachedDashboard.stations:[];
-    for (var i=0;i<sts.length;i++) {
-      if (sts[i].device_name===currentStationDevice || sts[i].name===currentStationDevice) {
-        stName = sts[i].name; break;
+  document.getElementById('personnelModal').classList.add('show');
+  Api.get('/api/stations').then(function(stations){
+    var sel = document.getElementById('personnelStationSelect');
+    sel.innerHTML = '<option value="">选择关联站点</option>' + stations.map(function(s){
+      return '<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+
+             (s.location?' ('+UI.escapeHtml(s.location)+')':'')+'</option>';
+    }).join('');
+    var stName = '';
+    if (currentStationDevice) {
+      var sts = cachedDashboard?cachedDashboard.stations:[];
+      for (var i=0;i<sts.length;i++) {
+        if (sts[i].device_name===currentStationDevice || sts[i].name===currentStationDevice) {
+          stName = sts[i].name; break;
+        }
       }
     }
-  }
-  if (!stName) stName = currentUser.assigned_station || currentUser.station || '';
-  document.getElementById('personnelStationLabel').textContent = stName || '(未知站点)';
-  document.getElementById('personnelModal').classList.add('show');
-  refreshPersonnelList();
+    if (!stName) stName = currentUser.assigned_station || currentUser.station || '';
+    if (stName) sel.value = stName;
+    refreshPersonnelList();
+  });
 };
 
 window.closePersonnelModal = function(){document.getElementById('personnelModal').classList.remove('show')};
 
 function refreshPersonnelList(){
-  var stName = document.getElementById('personnelStationLabel').textContent;
-  if (!stName || stName==='(未知站点)') {
-    document.getElementById('personnelList').innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">请先进入站点视图</div>';
+  var sel = document.getElementById('personnelStationSelect');
+  var stName = sel ? sel.value : '';
+  if (!stName) {
+    document.getElementById('personnelList').innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">请选择站点</div>';
     return;
   }
   Api.get('/api/personnel?station='+encodeURIComponent(stName)).then(function(list){
@@ -816,15 +834,16 @@ function refreshPersonnelList(){
 }
 
 window.addPersonnel = function(){
-  var stName = document.getElementById('personnelStationLabel').textContent;
-  if (!stName || stName==='(未知站点)') { alert('请先进入站点视图再添加联系人'); return; }
+  var sel = document.getElementById('personnelStationSelect');
+  var stName = sel ? sel.value : '';
+  if (!stName) { UI.Message.warning('请选择关联站点'); return; }
   var name = document.getElementById('persName').value.trim();
   var phone = document.getElementById('persPhone').value.trim();
-  if (!name || !phone) { alert('请填写姓名和联系电话'); return; }
-  if (!/^1\d{10}$/.test(phone)) { alert('请输入合法的11位手机号码'); return; }
+  if (!name || !phone) { UI.Message.warning('请填写姓名和联系电话'); return; }
+  if (!/^1\d{10}$/.test(phone)) { UI.Message.warning('请输入合法的11位手机号码'); return; }
 
   Api.post('/api/personnel', {station_name:stName, name:name, phone:phone}).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     document.getElementById('persName').value='';
     document.getElementById('persPhone').value='';
     refreshPersonnelList();
@@ -832,11 +851,13 @@ window.addPersonnel = function(){
 };
 
 window.delPersonnel = function(id){
-  if(!confirm('确定要删除该联系人吗？')) return;
-  Api.del('/api/personnel', {id:id}).then(function(res){
-    if(res.error){alert(res.error);return}
-    refreshPersonnelList();
-  }).catch(catchErr('删除联系人失败'));
+  UI.Message.confirm('确定要删除该联系人吗？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/personnel', {id:id}).then(function(res){
+      if(res.error){UI.toast(res.error,'error');return}
+      refreshPersonnelList();
+    }).catch(catchErr('删除联系人失败'));
+  });
 };
 
 // ═══════════ Settings Modal ═══════════
@@ -874,7 +895,7 @@ window.saveSettings = function(){
     raw_archive_retention_days: String(parseInt(document.getElementById('cfgRetention').value)||30)
   };
   Api.put('/api/settings', data).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     closeCfgModal();
   }).catch(catchErr('保存设置失败'));
 };
@@ -897,7 +918,7 @@ window.exportDronesCsv = function(){window.open('/api/drones/export','_blank')};
 
 window.ackAlert = function(alertId, el){
   Api.post('/api/alerts/'+alertId+'/acknowledge', {note:''}).then(function(res){
-    if(res.error){alert(res.error);return}
+    if(res.error){UI.toast(res.error,'error');return}
     el.textContent='已确认';el.style.color='var(--green)';el.style.cursor='default';
     el.onclick=null;
   }).catch(catchErr('确认告警失败'));
@@ -940,10 +961,10 @@ var playAlertBeep = UI.beep;
 
 window.importPowerLinesCsv = function(){
   var csvText=document.getElementById('plCsv').value.trim();
-  if(!csvText){alert('请粘贴 CSV 内容');return}
+  if(!csvText){UI.Message.warning('请粘贴 CSV 内容');return}
   Api.post('/api/powerlines/import', {csv:csvText}).then(function(res){
-    if(res.error){alert(res.error);return}
-    alert('成功导入 '+res.imported+' 条电力线');
+    if(res.error){UI.toast(res.error,'error');return}
+    UI.toast('成功导入 '+res.imported+' 条电力线', 'ok');
     document.getElementById('plCsv').value='';
     refreshPlModalList();
     loadPowerLines();
