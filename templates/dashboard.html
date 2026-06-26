@@ -124,10 +124,10 @@ body{
 .stat-card{
   background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
   padding:20px 22px; box-shadow:var(--shadow-sm); transition:all var(--transition);
-  position:relative; overflow:hidden; cursor:default;
+  position:relative; overflow:hidden; cursor:default; text-align:center;
 }
 .stat-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px);border-color:var(--border-light)}
-.stat-card .stat-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.stat-card .stat-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;justify-content:center}
 .stat-card .stat-icon{
   width:44px;height:44px;border-radius:var(--radius-lg);display:flex;align-items:center;
   justify-content:center;flex-shrink:0;
@@ -238,6 +238,15 @@ input:focus, select:focus{outline:none}
 
 /* ══════════════════════════ CRUD List ══════════════════════════ */
 .crud-list{max-height:440px;overflow-y:auto;padding:8px 0}
+.pl-entry{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 16px;margin:0 12px 4px;background:#fafbfc;
+  border:1px solid var(--border-light);border-radius:var(--radius);font-size:13px;
+  transition:background .15s;
+}
+.pl-entry:hover{background:#f0f5ff}
+.pl-entry .pl-del{color:var(--danger);cursor:pointer;font-weight:700;padding:2px 8px;border-radius:4px;transition:background .15s}
+.pl-entry .pl-del:hover{background:var(--danger-light)}
 .crud-item{
   display:flex;justify-content:space-between;align-items:center;
   padding:12px 16px;margin:0 12px 4px;background:#fafbfc;
@@ -273,7 +282,7 @@ input:focus, select:focus{outline:none}
 .inline-form label{font-size:11px;color:var(--text-secondary);display:block;margin:8px 0 4px;font-weight:500}
 
 /* ══════════════════════════ Modal Overlay ══════════════════════════ */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 .modal-overlay.show{display:flex}
 .modal-dialog{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
@@ -341,11 +350,11 @@ input:focus, select:focus{outline:none}
 
 /* ══════════════════════════ Drone SVG icon colors ══════════════════════════ */
 .drone-svg{display:inline-block;vertical-align:-3px;margin-right:4px}
-.drone-svg.active path,.drone-svg.active circle{stroke:var(--success);fill:var(--success)}
-.drone-svg.warning path,.drone-svg.warning circle{stroke:var(--warning);fill:var(--warning)}
-.drone-svg.severe path,.drone-svg.severe circle{stroke:#f56c6c;fill:#f56c6c}
-.drone-svg.critical path,.drone-svg.critical circle{stroke:var(--danger);fill:var(--danger)}
-.drone-svg.gone path,.drone-svg.gone circle{stroke:var(--text-placeholder);fill:var(--text-placeholder)}
+.drone-svg.active path{fill:var(--success)}
+.drone-svg.warning path{fill:var(--warning)}
+.drone-svg.severe path{fill:#f56c6c}
+.drone-svg.critical path{fill:var(--danger)}
+.drone-svg.gone path{fill:var(--text-placeholder)}
 
 /* ══════════════════════════ Responsive ══════════════════════════ */
 @media(max-width:1024px){
@@ -385,7 +394,7 @@ input:focus, select:focus{outline:none}
   <div class="nav-section">
     <div class="nav-label">监控</div>
     <div class="nav-item active" data-page="drones">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="3" r="2"/><path d="M8 5v3M4 12l4-4 4 4"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M340.65 809.17a138.26 138.26 0 1 1-114.43-114.43 330 330 0 0 1 40.41-46.06 193.1 193.1 0 0 0-198.82 46.09c-75.21 75.21-75.21 197.59 0 272.81s197.6 75.22 272.83 0a193.1 193.1 0 0 0 46.1-198.75c-14.72 11.99-30.17 25.49-46.09 40.34zM764.81 641.69a330 330 0 0 1 39.8 46.32 138.27 138.27 0 1 1-114.77 114.84c-15.99-14.63-31.47-27.96-46.33-39.76a193.1 193.1 0 0 0 46.33 196.8c75.22 75.22 197.62 75.22 272.83 0s75.22-197.6 0-272.83a193.1 193.1 0 0 0-197.86-46.37zM692.82 227.86a138.27 138.27 0 1 1 114.7 114.67c-15.25 16.52-28.54 31.93-40.05 46.23a193.1 193.1 0 0 0 198.23-46.27c75.22-75.22 75.22-197.6 0-272.83s-197.62-75.22-272.83 0a193.1 193.1 0 0 0-46.24 198.33c13.95-11.26 29.32-24.53 46.19-40.13zM258.29 374.94a330 330 0 0 1-41.12-45.77 138.26 138.26 0 1 1 113.83-113.79c15.65 14.9 31 28.61 45.77 41.12a193.1 193.1 0 0 0-45.69-200.09c-75.18-75.22-197.6-75.22-272.78 0s-75.22 197.6 0 272.83a193.18 193.18 0 0 0 199.99 45.7zM518.34 460.18a56.33 56.33 0 1 0 39.91 16.49 56.01 56.01 0 0 0-39.91-16.49z"/><path d="M787.95 845.34c3.2 3.42 11.06 12.32 12.7 13.95l.82.79a8 8 0 0 0 1.43 1.3c19.2 17.26 46.82 18.59 62.94 2.42 15.13-15.13 14.95-40.39.61-59.32a170 170 0 0 0-12.24-12.17c-1.59-1.34-2.86-2.52-3.48-3-44.13-40.88-188.14-180.73-185.3-262.66 0-3.42 0-17.78 0-21.93-.4-82.2 141.6-220.08 185.35-260.61.54-.49 1.89-1.66 3.48-3.02a167 167 0 0 0 12.24-12.16c14.3-18.92 14.52-44.18-.62-59.32-16.12-16.12-43.74-14.85-62.94 2.42a8 8 0 0 0-1.43 1.3l-.81.77c-1.65 1.64-9.5 10.54-12.7 13.97-43.07 46.13-170.6 175.53-251.23 181.66-6.35.49-28.06.39-33.37.17-82.55-3.25-217.42-142.11-257.35-185.29-.5-.54-1.66-1.89-3.02-3.48a164 164 0 0 0-12.16-12.24c-18.92-14.3-44.18-14.52-59.32.6-16.12 16.13-14.86 43.75 2.42 62.94a8.7 8.7 0 0 0 1.3 1.43l.77.8c1.65 1.66 10.54 9.5 13.96 12.7 46.3 45.98 170.22 168.06 182.27 248.9 1.3 8.7 1.22 44.21-1.12 55.23-17.16 80.73-136 197.73-179.81 238.63-3.42 3.22-12.32 11.06-13.96 12.7l-.77.82a8 8 0 0 0-1.3 1.43c-17.28 19.2-18.59 46.82-2.42 62.94 15.13 15.13 40.39 14.96 59.32.61a167 167 0 0 0 12.16-12.24c1.36-1.59 2.52-2.86 3.03-3.48 46.51-43.97 175.93-177.35 258.85-186.66 7.48-.84 33.96-.82 40.87-.16 80.71 7.45 206.9 135.54 249.7 181.31zM580.25 578.41a87.55 87.55 0 1 1 0-123.81 86.98 86.98 0 0 1 0 123.81z"/></svg>
       <span>无人机列表</span>
     </div>
     <div class="nav-item" data-page="alerts">
@@ -398,15 +407,15 @@ input:focus, select:focus{outline:none}
   <div class="nav-section">
     <div class="nav-label">管理</div>
     <div class="nav-item" data-page="powerlines">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1,15 8,2 15,15"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M920.74 448.29H720.1l-37.81-191.97h112.42c17.64 0 31.26-14.37 31.26-31.82 0-17.96-14.12-31.82-31.26-31.82H669.68L641.96 52.04C635.91 22.27 610.2.71 580.45.71H442.82c-29.74 0-55.96 21.56-61.5 51.33l-27.73 140.64H229.07c-17.64 0-31.26 14.37-31.26 31.82 0 17.97 14.11 31.82 31.26 31.82h112.42l-37.81 191.97H103.04c-17.65 0-31.26 14.37-31.26 31.82 0 17.45 14.11 31.82 31.26 31.82h188.04L198.32 986.2v9.75c0 2.05.5 3.59 1.01 5.64.5 2.06 1.51 3.59 2.52 5.65 1.01 2.05 2.02 3.59 3.53 5.13.51 1.03 1.01 2.05 2.02 2.57.51.51 1.51 1.03 2.02 1.54 1.51 1.03 3.03 2.06 5.04 3.08 2.01 1.03 4.03 2.05 6.05 2.57 1.01 0 1.51 1.02 2.52 1.02h3.02c1.01 0 2.02.51 3.03.51 1 0 2.01-.51 3.53-.51 2.01 0 4.03-.51 6.05-1.02 2.01-.51 4.04-1.54 5.55-2.57 2.02-1.02 3.53-2.05 5.04-3.59 1.01-1.03 2.02-1.03 3.03-2.05L512.4 734.7l260.13 279.22c.5.51 1.01.51 1.51 1.03 2.02 2.05 4.53 3.59 7.06 4.62 1 .51 2.01 1.54 3.03 1.54 3.53 1.54 7.56 2.56 11.59 2.56 2.01 0 4.03 0 5.54-.51 1.01 0 1.51-1.02 2.52-1.02 2.02-.51 4.03-1.54 6.05-2.57l4.54-3.08c1-.51 1.51-1.03 2.52-1.54 1-1.03 1-2.05 2.01-2.57 1.52-1.54 2.53-3.08 3.53-5.13 1.01-2.05 2.01-3.59 2.52-5.65.51-2.05 1.01-3.59 1.01-5.64v-9.75L732.7 512.45h188.05c17.64 0 31.26-14.37 31.26-31.82-.01-17.45-13.62-32.34-31.27-32.34zM443.83 63.85h136.62l25.21 128.32H418.62l25.21-128.32zm-37.8 192.48h211.73l37.81 191.97H368.21l37.82-191.97zm227.36 256.12l-121.5 129.86L390.4 512.45h242.99zM281 890.22l65.53-332.09 122 130.89L281 890.22zm396.25-332.09l65.53 332.09-187.54-201.2 122.01-130.89z"/></svg>
       <span>电力线管理</span>
     </div>
     <div class="nav-item" data-page="trajectory">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2,14 6,6 10,10 14,2"/><circle cx="14" cy="2" r="1.5" fill="currentColor"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M816 624h-1 1zM1024 992c0 17.7-14.3 32-32 32H240.3v-.6l-.3.6h-1c-35.9 0-69.8-14-95.6-39.5-26-25.9-40.4-60.1-40.4-96.5s14.4-70.6 40.4-96.5c26-25.8 60.3-39.8 96.6-39.5h575c17.3 0 32-14.7 32-32 0-17.4-14.7-32-32-32H432l48-64h336c52.5.5 95 43.4 95 96s-42.5 95.5-95 96H239c-18.9 0-36.9 7.4-50.5 21-13.8 13.7-21.5 31.8-21.5 51s7.6 37.3 21.5 51c13.7 13.6 31.6 21 50.5 21h.7l.3.6v-.6h752c17.7 0 32 14.3 32 32zM240.3 1024h-.3l.3-.6zM816 816h-1 1zM288.4 64.4c59.7 0 115.9 23.3 158.1 65.5C488.8 172.2 512 228.3 512 288c0 49.8-16.3 97.1-47 137l-.3.4-.3.4-176 236.4-181.1-243c-27.9-38.5-42.6-83.9-42.6-131.3 0-59.7 23.3-115.9 65.5-158.1 42.3-42.1 98.4-65.4 158.2-65.4m0-64C129.5.4.7 129.3.7 288.1c0 63.1 20.4 121.5 55 169.2l232.7 312.3 227.3-305.3c37.7-48.8 60.4-109.6 60.4-176.1C576 129.3 447.2.4 288.4.4zM288 211.8c44.1 0 80 35.9 80 80s-35.9 80-80 80-80-35.9-80-80 35.9-80 80-80m0-64c-79.5 0-144 64.5-144 144s64.5 144 144 144 144-64.5 144-144-64.5-144-144-144z"/></svg>
       <span>轨迹查看</span>
     </div>
     <div class="nav-item" data-page="stations" id="navStations">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="10" rx="1.5"/><circle cx="8" cy="8" r="2"/><line x1="8" y1="2" x2="8" y2="3.5"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M967.11 1024H739.56c-31.4 0-56.89-25.49-56.89-56.89V739.56c0-31.4 25.49-56.89 56.89-56.89h85.33V526.22H199.57v156.45h84.87c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89H56.89C25.49 1024 0 998.51 0 967.11V739.56c0-31.4 25.49-56.89 56.89-56.89h85.79V498.92v-1.14-1.14c0-15.08 12.23-27.31 27.31-27.31h313.57V341.33h-85.33c-31.4 0-56.89-25.49-56.89-56.89V56.89c0-31.4 25.49-56.89 56.89-56.89h227.55c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89h-85.33v128h314.03c15.08 0 27.31 12.23 27.31 27.31v1.14 1.14v183.79h85.33c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89z"/></svg>
       <span>站点管理</span>
     </div>
     <div class="nav-item" data-page="users" id="navUsers" style="display:none">
@@ -414,23 +423,27 @@ input:focus, select:focus{outline:none}
       <span>用户管理</span>
     </div>
     <div class="nav-item" data-page="personnel" id="navPersonnel">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="7"/><line x1="8" y1="4" x2="8" y2="8"/><line x1="8" y1="11" x2="8.01" y2="11"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M192 832a32 32 0 1 0 0 64h144a32 32 0 1 1 0 64H192a96 96 0 1 1 0-192h192a32 32 0 1 1 0 64H192zM288 544v256H224v-256h64zM960 480a32 32 0 0 1-32 32h-48a32 32 0 1 1 0-64H928a32 32 0 0 1 32 32zM192 480a32 32 0 0 1-32 32H96a32 32 0 1 1 0-64h64a32 32 0 0 1 32 32zM512 224a32 32 0 0 1-32-32V128a32 32 0 1 1 64 0v64a32 32 0 0 1-32 32zM256 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM832 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM672 544a96 96 0 1 0 0 192 96 96 0 0 0 0-192zm-160 96a160 160 0 1 1 320 0 160 160 0 0 1-320 0zM512 320a224 224 0 0 0-224 224H224a288 288 0 0 1 492.16-203.1 32 32 0 1 1-45.34 45.12A223.2 223.2 0 0 0 512 320zM688 800c-82.46 0-144 60.1-144 128a32 32 0 1 1-64 0c0-108.83 96.06-192 208-192s208 83.17 208 192a32 32 0 1 1-64 0c0-67.9-61.54-128-144-128z"/></svg>
       <span>告警联系人</span>
     </div>
     <div class="nav-item" data-page="whitelist" id="navWhitelist">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5.5 3.5l-3 3 3 3"/><path d="M2.5 6.5h11"/><circle cx="12" cy="12" r="1.5"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M742.4 1024c-155.14 0-281.6-126.46-281.6-281.6s126.46-281.6 281.6-281.6S1024 587.26 1024 742.4 897.54 1024 742.4 1024zm0-512c-126.98 0-230.4 103.42-230.4 230.4s103.42 230.4 230.4 230.4S972.8 869.38 972.8 742.4 869.38 512 742.4 512zM460.8 563.2c-155.14 0-281.6-126.46-281.6-281.6S305.66 0 460.8 0s281.6 126.46 281.6 281.6c0 39.42-8.19 77.31-23.55 112.64-5.63 12.8-20.99 18.94-33.79 12.8-12.8-5.63-18.94-20.99-12.8-33.79 12.8-29.18 19.46-59.9 19.46-92.16 0-126.98-103.42-230.4-230.4-230.4s-230.4 103.42-230.4 230.4 103.42 230.4 230.4 230.4c14.34 0 25.6 11.26 25.6 25.6S475.14 563.2 460.8 563.2zM51.2 1024H0c0-121.34 51.71-249.34 142.34-350.72C233.98 570.88 350.21 512 460.8 512v51.2c-202.75 0-409.6 232.45-409.6 460.8zM702.98 855.04c-6.66 0-13.31-2.56-17.92-7.68l-102.4-102.4c-10.24-10.24-10.24-26.11 0-36.35s26.11-10.24 36.35 0l102.4 102.4c10.24 10.24 10.24 26.11 0 36.35-5.12 5.12-11.78 7.68-18.43 7.68zM705.54 857.6c-6.66 0-13.31-2.56-17.92-7.68-10.24-10.24-10.24-26.11 0-36.35l179.2-179.2c10.24-10.24 26.11-10.24 36.35 0s10.24 26.11 0 36.35l-179.2 179.2c-5.12 5.12-11.78 7.68-18.43 7.68z"/></svg>
       <span>白名单</span>
     </div>
   </div>
 
   <div class="nav-section">
     <div class="nav-label">系统</div>
+    <div class="nav-item" data-page="devices" id="navDevices" style="display:none">
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M815.26 496.58h-79.14V325.15a13.15 13.15 0 0 0-13.15-13.18h-26.37a13.18 13.18 0 0 0-13.18 13.18v171.42H182.37a105.47 105.47 0 0 0-105.47 105.47v210.98a105.47 105.47 0 0 0 105.47 105.47h632.86a105.5 105.5 0 0 0 105.5-105.47V602.05a105.44 105.44 0 0 0-105.47-105.47zm52.74 316.42c0 29.12-23.62 52.74-52.74 52.74H182.37c-29.12 0-52.74-23.62-52.74-52.74V602.05c0-29.12 23.62-52.7 52.74-52.7h632.86c29.12 0 52.74 23.58 52.74 52.7v210.98h.03zM240.74 707.49a52.74 52.74 0 1 0 105.47 0 52.74 52.74 0 0 0-105.47 0zm184.6 0a52.74 52.74 0 1 0 105.47 0 52.74 52.74 0 0 0-105.47 0zM709.79 158.27a184.64 184.64 0 0 1 184.61 184.61h52.74a237.34 237.34 0 0 0-474.69 0h52.74a184.64 184.64 0 0 1 184.6-184.61zM709.79 211.01a131.84 131.84 0 0 0-131.84 131.87h52.7a79.1 79.1 0 1 1 158.24 0h52.74a131.84 131.84 0 0 0-131.84-131.87z"/></svg>
+      <span>设备管理</span>
+    </div>
     <div class="nav-item" data-page="licenses" id="navLicenses" style="display:none">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="10" height="8" rx="1"/><line x1="8" y1="2" x2="8" y2="5"/><circle cx="8" cy="9" r="1"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M671.74 64c-159.04 0-288 128.96-288 288 0 57.28 17.22 110.34 46.02 155.14l-347.78 347.78c-24 24-24 62.91 0 86.85 23.94 24 62.85 24 86.85 0l111.49-111.49 57.34 57.34c10.37 10.37 27.2 10.37 37.57 0 10.43-10.43 10.43-27.26 0-37.63l-57.34-57.34 90.37-90.37 57.34 57.34c10.37 10.37 27.2 10.37 37.63 0 10.37-10.43 10.37-27.26 0-37.63l-57.34-57.34 70.66-70.66C561.41 622.78 614.53 640 671.74 640c159.04 0 288-128.96 288-288S830.78 64 671.74 64zm0 384c-52.99 0-96-43.01-96-96s43.01-96 96-96 96 43.01 96 96-43.01 96-96 96z"/></svg>
       <span>密钥管理</span>
     </div>
     <div class="nav-item" data-page="audit" id="navAudit" style="display:none">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="7"/><line x1="8" y1="4" x2="8" y2="12"/><line x1="4" y1="8" x2="12" y2="8"/></svg>
+      <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M927 911.04H97c-16.57 0-30-13.43-30-30s13.43-30 30-30h830c16.57 0 30 13.43 30 30s-13.43 30-30 30zm-592.08-161.8v-250.5c0-23.16-18.84-42-42-42H137.25c-23.16 0-42 18.84-42 42v250.5c0 23.16 18.84 42 42 42h155.67c23.16 0 42-18.84 42-42zm-179.67-232.5h119.67v214.5H155.25v-214.5zm476.59 232.5V315.76c0-23.16-18.84-42-42-42H434.17c-23.16 0-42 18.84-42 42v433.49c0 23.16 18.84 42 42 42h155.67c23.16 0 42-18.84 42-42zM452.17 333.75h119.67v397.49H452.17V333.76zm476.59 415.49V154.96c0-23.16-18.84-42-42-42H731.09c-23.16 0-42 18.84-42 42v594.28c0 23.16 18.84 42 42 42h155.67c23.16 0 42-18.84 42-42zM749.08 172.96h119.67v558.28H749.08V172.96z"/></svg>
       <span>审计日志</span>
     </div>
   </div>
@@ -453,7 +466,7 @@ input:focus, select:focus{outline:none}
       <div class="name" id="sidebarUser">--</div>
       <div class="role-tag" id="sidebarRole">--</div>
     </div>
-    <a href="/logout" style="margin-left:auto;text-decoration:none;font-size:11px;font-weight:500" title="退出">退出</a>
+    <a href="#" onclick="event.preventDefault();fetch('/logout',{method:'POST'}).then(function(){location.href='/login'})" style="margin-left:auto;text-decoration:none;font-size:11px;font-weight:500" title="退出">退出</a>
   </div>
 </nav>
 
@@ -528,12 +541,12 @@ input:focus, select:focus{outline:none}
     <div class="panel-page active" id="page-drones">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="3" r="2"/><path d="M8 5v3M4 12l4-4 4 4"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M340.65 809.17a138.26 138.26 0 1 1-114.43-114.43 330 330 0 0 1 40.41-46.06 193.1 193.1 0 0 0-198.82 46.09c-75.21 75.21-75.21 197.59 0 272.81s197.6 75.22 272.83 0a193.1 193.1 0 0 0 46.1-198.75c-14.72 11.99-30.17 25.49-46.09 40.34zM764.81 641.69a330 330 0 0 1 39.8 46.32 138.27 138.27 0 1 1-114.77 114.84c-15.99-14.63-31.47-27.96-46.33-39.76a193.1 193.1 0 0 0 46.33 196.8c75.22 75.22 197.62 75.22 272.83 0s75.22-197.6 0-272.83a193.1 193.1 0 0 0-197.86-46.37zM692.82 227.86a138.27 138.27 0 1 1 114.7 114.67c-15.25 16.52-28.54 31.93-40.05 46.23a193.1 193.1 0 0 0 198.23-46.27c75.22-75.22 75.22-197.6 0-272.83s-197.62-75.22-272.83 0a193.1 193.1 0 0 0-46.24 198.33c13.95-11.26 29.32-24.53 46.19-40.13zM258.29 374.94a330 330 0 0 1-41.12-45.77 138.26 138.26 0 1 1 113.83-113.79c15.65 14.9 31 28.61 45.77 41.12a193.1 193.1 0 0 0-45.69-200.09c-75.18-75.22-197.6-75.22-272.78 0s-75.22 197.6 0 272.83a193.18 193.18 0 0 0 199.99 45.7zM518.34 460.18a56.33 56.33 0 1 0 39.91 16.49 56.01 56.01 0 0 0-39.91-16.49zM787.95 845.34c3.2 3.42 11.06 12.32 12.7 13.95l.82.79a8 8 0 0 0 1.43 1.3c19.2 17.26 46.82 18.59 62.94 2.42 15.13-15.13 14.95-40.39.61-59.32a170 170 0 0 0-12.24-12.17l-3.48-3c-44.13-40.88-188.14-180.73-185.3-262.66V525.04c-.4-82.2 141.6-220.08 185.35-260.61.54-.49 1.89-1.66 3.48-3.02a167 167 0 0 0 12.24-12.16c14.3-18.92 14.52-44.18-.62-59.32-16.12-16.12-43.74-14.85-62.94 2.42a8 8 0 0 0-1.43 1.3l-.81.77c-1.65 1.64-9.5 10.54-12.7 13.97-43.07 46.13-170.6 175.53-251.23 181.66-6.35.49-28.06.39-33.37.17-82.55-3.25-217.42-142.11-257.35-185.29l-3.02-3.48a164 164 0 0 0-12.16-12.24c-18.92-14.3-44.18-14.52-59.32.6-16.12 16.13-14.86 43.75 2.42 62.94a8.7 8.7 0 0 0 1.3 1.43l.77.8c1.65 1.66 10.54 9.5 13.96 12.7 46.3 45.98 170.22 168.06 182.27 248.9 1.3 8.7 1.22 44.21-1.12 55.23-17.16 80.73-136 197.73-179.81 238.63-3.42 3.22-12.32 11.06-13.96 12.7l-.77.82a8 8 0 0 0-1.3 1.43c-17.28 19.2-18.59 46.82-2.42 62.94 15.13 15.13 40.39 14.96 59.32.61a167 167 0 0 0 12.16-12.24c1.36-1.59 2.52-2.86 3.03-3.48 46.51-43.97 175.93-177.35 258.85-186.66 7.48-.84 33.96-.82 40.87-.16 80.71 7.45 206.9 135.54 249.7 181.31zM580.25 578.41a87.55 87.55 0 1 1 0-123.81 86.98 86.98 0 0 1 0 123.81z"/></svg>
           无人机列表 <span class="count-pill" id="droneCountPill">0</span>
         </div>
         <div class="toolbar">
           <input id="droneSearch" placeholder="搜索 ID / 型号..." oninput="updateDroneTable()" autocomplete="off">
-          <select id="statusFilter" onchange="updateDroneTable()">
+          <select id="statusFilter" onchange="updateDroneTable()" title="筛选状态">
             <option value="">全部状态</option><option value="active">正常</option><option value="warning">警告</option><option value="severe">严重</option><option value="critical">危险</option><option value="gone">离线</option>
           </select>
         </div>
@@ -541,45 +554,7 @@ input:focus, select:focus{outline:none}
           <div class="table-wrap">
             <table>
               <thead><tr><th>ID</th><th>机型</th><th>纬度</th><th>经度</th><th>高度</th><th>距离</th><th>最近电力线</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
-              <tbody id="droneTable" x-data="{ drones: [], search: '', statusFilter: '' }" x-init="
-                // Watch for updates from poll
-                setInterval(function(){
-                  var d = window._alpineDrones || [];
-                  var s = document.getElementById('droneSearch').value.toLowerCase();
-                  var f = document.getElementById('statusFilter').value;
-                  if(s) d = d.filter(function(dr){ var id=(dr.id||'').toLowerCase(), m=(dr.product_model||'').toLowerCase(); return id.includes(s)||m.includes(s) });
-                  if(f) d = d.filter(function(dr){ return (dr.status||'active')===f });
-                  $data.drones = d;
-                }, 800)
-              ">
-                <template x-for="dr in drones" :key="dr.id">
-                  <tr :class="{'row-critical': dr.status==='critical', 'row-severe': dr.status==='severe'}">
-                    <td class="mono" :title="dr.id">
-                      <svg class="drone-svg" :class="dr.status||'active'" width="16" height="16" viewBox="0 0 16 16" fill="none">
-                        <path d="M8 1L5 4h2v3L3 8l-2-1v1l2 1.5v2l5 2.5 5-2.5v-2l2-1.5V7l-2 1-4-1V4h2L8 1z" :stroke="({active:'#67c23a',warning:'#e6a23c',severe:'#f56c6c',critical:'#f56c6c',gone:'#c0c4cc'}[dr.status||'active'])" stroke-width="1.5"/>
-                        <circle cx="8" cy="8" r="1" :fill="({active:'#67c23a',warning:'#e6a23c',severe:'#f56c6c',critical:'#f56c6c',gone:'#c0c4cc'}[dr.status||'active'])"/>
-                      </svg>
-                      <span x-text="(dr.id||'?').length>14?(dr.id||'?').substring(0,14)+'...':(dr.id||'?')"></span>
-                    </td>
-                    <td style="font-weight:500" x-text="dr.product_model||'-'"></td>
-                    <td class="mono" x-text="(dr.last_lat||0).toFixed(5)"></td>
-                    <td class="mono" x-text="(dr.last_lon||0).toFixed(5)"></td>
-                    <td x-text="(dr.last_alt||0).toFixed(0)+' m'"></td>
-                    <td class="mono" style="font-weight:600" x-text="dr.min_distance!=null?dr.min_distance.toFixed(0)+' m':'-'"></td>
-                    <td x-text="dr.line_name||dr.nearest_line||'-'"></td>
-                    <td>
-                      <span class="tag" :class="{
-                        'tag-active': (dr.status||'active')==='active',
-                        'tag-warning': dr.status==='warning',
-                        'tag-severe': dr.status==='severe',
-                        'tag-critical': dr.status==='critical',
-                        'tag-gone': dr.status==='gone'
-                      }" x-text="({active:'正常',warning:'警告',severe:'严重',critical:'危险',gone:'离线'}[dr.status||'active'])"></span>
-                    </td>
-                    <td class="mono" x-text="(dr.last_seen||'').substring(11,19)"></td>
-                    <td><button class="btn btn-ghost btn-xs" @click="window.open('/?lat='+dr.last_lat+'&lon='+dr.last_lon+'&zoom=15','_blank')">定位</button></td>
-                  </tr>
-                </template></tbody>
+              <tbody id="droneTable"></tbody>
             </table>
           </div>
           <div class="empty-state" id="emptyMsg" style="display:none">
@@ -612,7 +587,7 @@ input:focus, select:focus{outline:none}
     <div class="panel-page" id="page-powerlines">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1,15 8,2 15,15"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M920.74 448.29H720.1l-37.81-191.97h112.42c17.64 0 31.26-14.37 31.26-31.82 0-17.96-14.12-31.82-31.26-31.82H669.68L641.96 52.04C635.91 22.27 610.2.71 580.45.71H442.82c-29.74 0-55.96 21.56-61.5 51.33l-27.73 140.64H229.07c-17.64 0-31.26 14.37-31.26 31.82 0 17.97 14.11 31.82 31.26 31.82h112.42l-37.81 191.97H103.04c-17.65 0-31.26 14.37-31.26 31.82 0 17.45 14.11 31.82 31.26 31.82h188.04L198.32 986.2v9.75c0 2.05.5 3.59 1.01 5.64.5 2.06 1.51 3.59 2.52 5.65 1.01 2.05 2.02 3.59 3.53 5.13.51 1.03 1.01 2.05 2.02 2.57.51.51 1.51 1.03 2.02 1.54 1.51 1.03 3.03 2.06 5.04 3.08 2.01 1.03 4.03 2.05 6.05 2.57 1.01 0 1.51 1.02 2.52 1.02h3.02c1.01 0 2.02.51 3.03.51 1 0 2.01-.51 3.53-.51 2.01 0 4.03-.51 6.05-1.02 2.01-.51 4.04-1.54 5.55-2.57 2.02-1.02 3.53-2.05 5.04-3.59 1.01-1.03 2.02-1.03 3.03-2.05L512.4 734.7l260.13 279.22c.5.51 1.01.51 1.51 1.03 2.02 2.05 4.53 3.59 7.06 4.62 1 .51 2.01 1.54 3.03 1.54 3.53 1.54 7.56 2.56 11.59 2.56 2.01 0 4.03 0 5.54-.51 1.01 0 1.51-1.02 2.52-1.02 2.02-.51 4.03-1.54 6.05-2.57l4.54-3.08c1-.51 1.51-1.03 2.52-1.54 1-1.03 1-2.05 2.01-2.57 1.52-1.54 2.53-3.08 3.53-5.13 1.01-2.05 2.01-3.59 2.52-5.65.51-2.05 1.01-3.59 1.01-5.64v-9.75L732.7 512.45h188.05c17.64 0 31.26-14.37 31.26-31.82-.01-17.45-13.62-32.34-31.27-32.34zM443.83 63.85h136.62l25.21 128.32H418.62l25.21-128.32zm-37.8 192.48h211.73l37.81 191.97H368.21l37.82-191.97zm227.36 256.12l-121.5 129.86L390.4 512.45h242.99zM281 890.22l65.53-332.09 122 130.89L281 890.22zm396.25-332.09l65.53 332.09-187.54-201.2 122.01-130.89z"/></svg>
           电力线管理
         </div>
         <div class="toolbar">
@@ -630,15 +605,15 @@ input:focus, select:focus{outline:none}
     <div class="panel-page" id="page-stations">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="10" height="10" rx="1.5"/><circle cx="8" cy="8" r="2"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M967.11 1024H739.56c-31.4 0-56.89-25.49-56.89-56.89V739.56c0-31.4 25.49-56.89 56.89-56.89h85.33V526.22H199.57v156.45h84.87c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89H56.89C25.49 1024 0 998.51 0 967.11V739.56c0-31.4 25.49-56.89 56.89-56.89h85.79V498.92v-1.14-1.14c0-15.08 12.23-27.31 27.31-27.31h313.57V341.33h-85.33c-31.4 0-56.89-25.49-56.89-56.89V56.89c0-31.4 25.49-56.89 56.89-56.89h227.55c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89h-85.33v128h314.03c15.08 0 27.31 12.23 27.31 27.31v1.14 1.14v183.79h85.33c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89z"/></svg>
           站点管理
         </div>
         <div class="toolbar">
           <button class="btn btn-primary btn-sm" onclick="openStModal()">+ 新增站点</button>
           <span class="sep"></span>
-          <input id="stFilterProv" placeholder="省" style="width:70px" oninput="filterStationList()">
-          <input id="stFilterCity" placeholder="市" style="width:80px" oninput="filterStationList()">
-          <input id="stFilterCounty" placeholder="区/县" style="width:80px" oninput="filterStationList()">
+          <select id="stFilterProv" style="width:100px" title="筛选省份"></select>
+          <select id="stFilterCity" style="width:110px" title="筛选城市"></select>
+          <select id="stFilterCounty" style="width:110px" title="筛选区县"></select>
           <input id="stFilterName" placeholder="搜索站点名..." style="width:140px" oninput="filterStationList()">
         </div>
         <div class="panel-body fill">
@@ -672,7 +647,7 @@ input:focus, select:focus{outline:none}
     <div class="panel-page" id="page-personnel">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="7"/><line x1="8" y1="4" x2="8" y2="8"/><line x1="8" y1="11" x2="8.01" y2="11"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M192 832a32 32 0 1 0 0 64h144a32 32 0 1 1 0 64H192a96 96 0 1 1 0-192h192a32 32 0 1 1 0 64H192zM288 544v256H224v-256h64zM960 480a32 32 0 0 1-32 32h-48a32 32 0 1 1 0-64H928a32 32 0 0 1 32 32zM192 480a32 32 0 0 1-32 32H96a32 32 0 1 1 0-64h64a32 32 0 0 1 32 32zM512 224a32 32 0 0 1-32-32V128a32 32 0 1 1 64 0v64a32 32 0 0 1-32 32zM256 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM832 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM672 544a96 96 0 1 0 0 192 96 96 0 0 0 0-192zm-160 96a160 160 0 1 1 320 0 160 160 0 0 1-320 0zM512 320a224 224 0 0 0-224 224H224a288 288 0 0 1 492.16-203.1 32 32 0 1 1-45.34 45.12A223.2 223.2 0 0 0 512 320zM688 800c-82.46 0-144 60.1-144 128a32 32 0 1 1-64 0c0-108.83 96.06-192 208-192s208 83.17 208 192a32 32 0 1 1-64 0c0-67.9-61.54-128-144-128z"/></svg>
           告警联系人
         </div>
         <div class="toolbar">
@@ -690,7 +665,7 @@ input:focus, select:focus{outline:none}
     <div class="panel-page" id="page-whitelist">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M5.5 3.5l-3 3 3 3"/><path d="M2.5 6.5h11"/><circle cx="12" cy="12" r="1.5"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M742.4 1024c-155.14 0-281.6-126.46-281.6-281.6s126.46-281.6 281.6-281.6S1024 587.26 1024 742.4 897.54 1024 742.4 1024zm0-512c-126.98 0-230.4 103.42-230.4 230.4s103.42 230.4 230.4 230.4S972.8 869.38 972.8 742.4 869.38 512 742.4 512zM460.8 563.2c-155.14 0-281.6-126.46-281.6-281.6S305.66 0 460.8 0s281.6 126.46 281.6 281.6c0 39.42-8.19 77.31-23.55 112.64-5.63 12.8-20.99 18.94-33.79 12.8-12.8-5.63-18.94-20.99-12.8-33.79 12.8-29.18 19.46-59.9 19.46-92.16 0-126.98-103.42-230.4-230.4-230.4s-230.4 103.42-230.4 230.4 103.42 230.4 230.4 230.4c14.34 0 25.6 11.26 25.6 25.6S475.14 563.2 460.8 563.2zM51.2 1024H0c0-121.34 51.71-249.34 142.34-350.72C233.98 570.88 350.21 512 460.8 512v51.2c-202.75 0-409.6 232.45-409.6 460.8zM702.98 855.04c-6.66 0-13.31-2.56-17.92-7.68l-102.4-102.4c-10.24-10.24-10.24-26.11 0-36.35s26.11-10.24 36.35 0l102.4 102.4c10.24 10.24 10.24 26.11 0 36.35-5.12 5.12-11.78 7.68-18.43 7.68zM705.54 857.6c-6.66 0-13.31-2.56-17.92-7.68-10.24-10.24-10.24-26.11 0-36.35l179.2-179.2c10.24-10.24 26.11-10.24 36.35 0s10.24 26.11 0 36.35l-179.2 179.2c-5.12 5.12-11.78 7.68-18.43 7.68z"/></svg>
           无人机白名单
         </div>
         <div class="toolbar">
@@ -708,15 +683,15 @@ input:focus, select:focus{outline:none}
     <div class="panel-page" id="page-trajectory">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="2,14 6,6 10,10 14,2"/><circle cx="14" cy="2" r="1.5" fill="currentColor"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M816 624h-1 1zM1024 992c0 17.7-14.3 32-32 32H240.3v-.6l-.3.6h-1c-35.9 0-69.8-14-95.6-39.5-26-25.9-40.4-60.1-40.4-96.5s14.4-70.6 40.4-96.5c26-25.8 60.3-39.8 96.6-39.5h575c17.3 0 32-14.7 32-32 0-17.4-14.7-32-32-32H432l48-64h336c52.5.5 95 43.4 95 96s-42.5 95.5-95 96H239c-18.9 0-36.9 7.4-50.5 21-13.8 13.7-21.5 31.8-21.5 51s7.6 37.3 21.5 51c13.7 13.6 31.6 21 50.5 21h.7l.3.6v-.6h752c17.7 0 32 14.3 32 32zM288.4 64.4c59.7 0 115.9 23.3 158.1 65.5C488.8 172.2 512 228.3 512 288c0 49.8-16.3 97.1-47 137l-.3.4-.3.4-176 236.4-181.1-243c-27.9-38.5-42.6-83.9-42.6-131.3 0-59.7 23.3-115.9 65.5-158.1 42.3-42.1 98.4-65.4 158.2-65.4m0-64C129.5.4.7 129.3.7 288.1c0 63.1 20.4 121.5 55 169.2l232.7 312.3 227.3-305.3c37.7-48.8 60.4-109.6 60.4-176.1C576 129.3 447.2.4 288.4.4zM288 211.8c44.1 0 80 35.9 80 80s-35.9 80-80 80-80-35.9-80-80 35.9-80 80-80m0-64c-79.5 0-144 64.5-144 144s64.5 144 144 144 144-64.5 144-144-64.5-144-144-144z"/></svg>
           轨迹查看 <span class="count-pill" id="trajCount">0</span>
         </div>
         <div class="toolbar">
           <input id="fDroneId" placeholder="搜索无人机 ID..." oninput="loadTrajectories()" autocomplete="off" style="min-width:180px">
           <span class="sep"></span>
-          <input type="date" id="fDateFrom" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
+          <input type="date" id="fDateFrom" lang="zh-CN" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
           <span style="font-size:12px;color:var(--text-secondary)">至</span>
-          <input type="date" id="fDateTo" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
+          <input type="date" id="fDateTo" lang="zh-CN" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
           <button class="btn btn-ghost btn-sm" onclick="clearTrajFilters()">清除</button>
           <button class="btn btn-primary btn-sm" onclick="loadTrajectories()">查询</button>
         </div>
@@ -747,11 +722,29 @@ input:focus, select:focus{outline:none}
       </div>
     </div>
 
+    <!-- ════ Devices Page ════ -->
+    <div class="panel-page" id="page-devices">
+      <div class="panel">
+        <div class="panel-header">
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M815.26 496.58h-79.14V325.15a13.15 13.15 0 0 0-13.15-13.18h-26.37a13.18 13.18 0 0 0-13.18 13.18v171.42H182.37a105.47 105.47 0 0 0-105.47 105.47v210.98a105.47 105.47 0 0 0 105.47 105.47h632.86a105.5 105.5 0 0 0 105.5-105.47V602.05a105.44 105.44 0 0 0-105.47-105.47zm52.74 316.42c0 29.12-23.62 52.74-52.74 52.74H182.37c-29.12 0-52.74-23.62-52.74-52.74V602.05c0-29.12 23.62-52.7 52.74-52.7h632.86c29.12 0 52.74 23.58 52.74 52.7v210.98h.03zM240.74 707.49a52.74 52.74 0 1 0 105.47 0 52.74 52.74 0 0 0-105.47 0zm184.6 0a52.74 52.74 0 1 0 105.47 0 52.74 52.74 0 0 0-105.47 0zM709.79 158.27a184.64 184.64 0 0 1 184.61 184.61h52.74a237.34 237.34 0 0 0-474.69 0h52.74a184.64 184.64 0 0 1 184.6-184.61zM709.79 211.01a131.84 131.84 0 0 0-131.84 131.87h52.7a79.1 79.1 0 1 1 158.24 0h52.74a131.84 131.84 0 0 0-131.84-131.87z"/></svg>
+          设备管理
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-primary btn-sm" onclick="openDevModal()">+ 注册设备</button>
+        </div>
+        <div class="panel-body fill">
+          <div class="crud-list" id="devList">
+            <div class="empty-state"><div class="msg">暂无设备</div><div class="sub">点击「注册设备」添加边缘设备</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ════ Licenses Page ════ -->
     <div class="panel-page" id="page-licenses">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="10" height="8" rx="1"/><line x1="8" y1="2" x2="8" y2="5"/><circle cx="8" cy="9" r="1"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M671.74 64c-159.04 0-288 128.96-288 288 0 57.28 17.22 110.34 46.02 155.14l-347.78 347.78c-24 24-24 62.91 0 86.85 23.94 24 62.85 24 86.85 0l111.49-111.49 57.34 57.34c10.37 10.37 27.2 10.37 37.57 0 10.43-10.43 10.43-27.26 0-37.63l-57.34-57.34 90.37-90.37 57.34 57.34c10.37 10.37 27.2 10.37 37.63 0 10.37-10.43 10.37-27.26 0-37.63l-57.34-57.34 70.66-70.66C561.41 622.78 614.53 640 671.74 640c159.04 0 288-128.96 288-288S830.78 64 671.74 64zm0 384c-52.99 0-96-43.01-96-96s43.01-96 96-96 96 43.01 96 96-43.01 96-96 96z"/></svg>
           密钥管理
         </div>
         <div class="toolbar">
@@ -769,7 +762,7 @@ input:focus, select:focus{outline:none}
     <div class="panel-page" id="page-audit">
       <div class="panel">
         <div class="panel-header">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="7"/><line x1="8" y1="4" x2="8" y2="12"/><line x1="4" y1="8" x2="12" y2="8"/></svg>
+          <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M927 911.04H97c-16.57 0-30-13.43-30-30s13.43-30 30-30h830c16.57 0 30 13.43 30 30s-13.43 30-30 30zm-592.08-161.8v-250.5c0-23.16-18.84-42-42-42H137.25c-23.16 0-42 18.84-42 42v250.5c0 23.16 18.84 42 42 42h155.67c23.16 0 42-18.84 42-42zm-179.67-232.5h119.67v214.5H155.25v-214.5zm476.59 232.5V315.76c0-23.16-18.84-42-42-42H434.17c-23.16 0-42 18.84-42 42v433.49c0 23.16 18.84 42 42 42h155.67c23.16 0 42-18.84 42-42zM452.17 333.75h119.67v397.49H452.17V333.76zm476.59 415.49V154.96c0-23.16-18.84-42-42-42H731.09c-23.16 0-42 18.84-42 42v594.28c0 23.16 18.84 42 42 42h155.67c23.16 0 42-18.84 42-42zM749.08 172.96h119.67v558.28H749.08V172.96z"/></svg>
           审计日志
         </div>
         <div class="toolbar">
@@ -808,7 +801,7 @@ input:focus, select:focus{outline:none}
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="10" height="8" rx="1"/><circle cx="8" cy="10" r="1.5"/><path d="M6 6V4a2 2 0 012-2 2 2 0 012 2v2"/></svg>
           修改密码
         </div>
-        <div style="padding:20px 24px;max-width:420px">
+        <div style="padding:20px 24px;max-width:420px;margin:0 auto;text-align:center">
           <div style="margin-bottom:12px">
             <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">当前密码</label>
             <input id="pwdOld" type="password" placeholder="输入当前密码" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color var(--transition)">
@@ -859,10 +852,18 @@ input:focus, select:focus{outline:none}
   <div class="modal-overlay" id="stModal">
     <div class="modal-dialog">
       <h3>站点</h3>
-      <div class="row"><input id="stName" placeholder="站点名称"><input id="stDevice" placeholder="关联设备名"></div>
+      <div class="row"><input id="stName" placeholder="站点名称"><select id="stDevice" style="flex:1;min-width:0"><option value="">关联设备…</option></select></div>
       <div class="row"><input id="stLocation" placeholder="位置描述"></div>
-      <div class="row"><input id="stProvince" placeholder="省"><input id="stCity" placeholder="市"><input id="stCounty" placeholder="区/县"></div>
+      <div class="row"><select id="stProvince" style="flex:1;min-width:0"></select><select id="stCity" style="flex:1;min-width:0"></select><select id="stCounty" style="flex:1;min-width:0"></select></div>
       <div class="row"><input id="stLat" placeholder="纬度" step="any"><input id="stLon" placeholder="经度" step="any"><input id="stAlt" placeholder="海拔(m)" step="any"></div>
+      <div class="row" style="justify-content:flex-end;margin-bottom:0">
+        <button id="stGeocodeBtn" class="btn btn-ghost btn-sm" type="button" onclick="doGeocode()">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-2px;margin-right:3px">
+            <circle cx="8" cy="6" r="3.5"/><path d="M8 10v4M6 14h4"/>
+          </svg>
+          从坐标获取位置
+        </button>
+      </div>
       <div class="modal-actions">
         <button class="primary" id="stSaveBtn" onclick="addStation()">保存</button>
         <button onclick="closeStModal()">关闭</button>
@@ -878,7 +879,7 @@ input:focus, select:focus{outline:none}
       <div class="row">
         <select id="uRole"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
         <select id="uScope"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
-        <input id="uStation" placeholder="站点 (可选)">
+        <select id="uStation"><option value="">全部站点</option></select>
       </div>
       <div class="modal-actions">
         <button class="primary" id="uSaveBtn" onclick="addUser()">保存</button>
@@ -909,6 +910,24 @@ input:focus, select:focus{outline:none}
       <div class="modal-actions">
         <button class="primary" onclick="addWhitelist()">保存</button>
         <button onclick="closeWlModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Device Modal -->
+  <div class="modal-overlay" id="devModal">
+    <div class="modal-dialog">
+      <h3>注册设备</h3>
+      <div class="row"><input id="devName" placeholder="设备名称 (如 edge-01)" style="flex:2"><input id="devStation" placeholder="关联站点 (可选)" style="flex:2"></div>
+      <div class="row" id="devTenantRow" style="display:none;margin-top:10px"><select id="devTenantId" style="flex:1;min-width:0"><option value="">选择租户…</option></select></div>
+      <div id="devResult" style="display:none;margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px;word-break:break-all">
+        <div style="color:#16a34a;font-weight:600;font-size:13px;margin-bottom:6px">注册成功! 请保存以下凭据 (仅显示一次)</div>
+        <div style="margin-bottom:4px"><b>Device Secret:</b> <code id="devSecretOut" style="font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;user-select:all"></code></div>
+        <div style="margin-top:8px;color:#6b7280;font-size:11px">mTLS 证书已签发，证书序列号: <span id="devCertSerial"></span></div>
+      </div>
+      <div class="modal-actions">
+        <button class="primary" id="devSaveBtn" onclick="addDevice()">注册</button>
+        <button onclick="closeDevModal()">关闭</button>
       </div>
     </div>
   </div>

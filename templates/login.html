@@ -62,10 +62,10 @@
     <div class="auth-error">{{ error }}</div>
     {% endif %}
 
-    <form method="POST" action="/login">
+    <form method="POST" action="/login" id="loginForm">
       <div class="auth-field">
         <label>用户名</label>
-        <input type="text" name="username" placeholder="输入用户名" autocomplete="username" required autofocus>
+        <input type="text" name="username" id="loginUser" placeholder="输入用户名" autocomplete="username" required autofocus>
       </div>
       <div class="auth-field">
         <label>密码</label>
@@ -75,10 +75,79 @@
     </form>
 
     <div class="auth-footnote">
+      <a href="#" id="forgotPwLink" style="font-size:12px;color:var(--brand)">忘记密码？</a>
+    </div>
+
+    <form id="resetPwForm" style="display:none;margin-top:16px;padding:16px;background:#fafbfc;border:1px solid var(--border);border-radius:8px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text-primary)">重置密码</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:12px;line-height:1.5">输入你的用户名和注册时使用的 License Key 验证身份</div>
+      <div class="auth-field">
+        <label>用户名</label>
+        <input type="text" id="resetUser" placeholder="输入用户名" required>
+      </div>
+      <div class="auth-field">
+        <label>License Key</label>
+        <input type="text" id="resetKey" placeholder="XXXX-XXXX-XXXX-XXXX" required style="text-transform:uppercase;letter-spacing:2px">
+      </div>
+      <div class="auth-field">
+        <label>新密码</label>
+        <input type="password" id="resetPw" placeholder="至少 6 位" required minlength="6">
+      </div>
+      <div id="resetMsg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button type="button" id="resetBtn" class="auth-submit" style="flex:1">重置密码</button>
+        <button type="button" id="resetCancel" class="auth-submit" style="flex:1;background:#e5e7eb;color:#374151">取消</button>
+      </div>
+    </form>
+
+    <div class="auth-footnote">
       没有账号？<a href="/register">注册</a>
       &middot; 杆塔端监控系统 &middot; v3.3
     </div>
   </div>
 </div>
 </div>
+<script>
+document.getElementById('forgotPwLink').addEventListener('click', function(e){
+  e.preventDefault();
+  document.getElementById('loginForm').style.display='none';
+  document.getElementById('resetPwForm').style.display='block';
+  document.getElementById('forgotPwLink').style.display='none';
+  document.getElementById('resetUser').value=document.getElementById('loginUser').value;
+});
+document.getElementById('resetCancel').addEventListener('click', function(){
+  document.getElementById('resetPwForm').style.display='none';
+  document.getElementById('loginForm').style.display='';
+  document.getElementById('forgotPwLink').style.display='';
+  document.getElementById('resetMsg').style.display='none';
+});
+document.getElementById('resetBtn').addEventListener('click', function(){
+  var btn=this; var msg=document.getElementById('resetMsg');
+  var username=document.getElementById('resetUser').value.trim();
+  var licenseKey=document.getElementById('resetKey').value.trim().toUpperCase();
+  var newPw=document.getElementById('resetPw').value;
+  msg.style.display='none';
+  if(!username||!licenseKey){msg.textContent='请填写用户名和 License Key';msg.style.color='#dc2626';msg.style.display='block';return}
+  if(newPw.length<6){msg.textContent='新密码至少 6 位';msg.style.color='#dc2626';msg.style.display='block';return}
+  btn.disabled=true; btn.textContent='提交中…';
+  fetch('/api/forgot-password',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:username,license_key:licenseKey,new_password:newPw})
+  }).then(function(r){return r.json()}).then(function(d){
+    btn.disabled=false; btn.textContent='重置密码';
+    if(d.error){msg.textContent=d.error;msg.style.color='#dc2626';msg.style.display='block';return}
+    msg.textContent=d.message+' 正在跳转…';msg.style.color='#16a34a';msg.style.display='block';
+    setTimeout(function(){
+      document.getElementById('resetPwForm').style.display='none';
+      document.getElementById('loginForm').style.display='';
+      document.getElementById('forgotPwLink').style.display='';
+      msg.style.display='none';
+    },2000);
+  }).catch(function(e){
+    btn.disabled=false; btn.textContent='重置密码';
+    msg.textContent='网络错误，请重试';msg.style.color='#dc2626';msg.style.display='block';
+  });
+});
+</script>
 {% endblock %}

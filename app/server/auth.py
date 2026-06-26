@@ -12,7 +12,7 @@ import threading
 import time
 
 import jwt
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from functools import wraps
 
 from logging_config import get_logger
@@ -151,5 +151,7 @@ def require_auth(f):
         if not device_name:
             return jsonify({"error": "token expired or invalid"}), 401
 
+        # 将 JWT 主体注入请求上下文，端点须使用 g.device_name 而非请求体中的 device
+        g.device_name = device_name
         return f(*args, **kwargs)
     return decorated

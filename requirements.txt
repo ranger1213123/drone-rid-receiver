@@ -31,9 +31,13 @@ paho-mqtt>=1.6.0
 
 # WebSocket 实时推送 (替代 AJAX 轮询)
 flask-socketio>=5.3
+eventlet>=0.33
 
 # 可选: PostgreSQL driver (生产环境)
 # psycopg2-binary>=2.9
+
+# 可选: 离线反向地理编码 (shapely + GeoJSON)
+shapely>=2.0.0
 
 # 可选: 阿里云短信 (专责人员告警通知)
 # alibabacloud_dysmsapi20170525>=3.0.0

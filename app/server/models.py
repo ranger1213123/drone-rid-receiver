@@ -222,6 +222,7 @@ class DeviceSecret(Base):
     revoked = Column(Boolean, default=False)
     revoked_at = Column(DateTime, nullable=True)
     station = Column(String, default="")
+    tenant_id = Column(Integer, nullable=True)  # 租户归属
     created_at = Column(DateTime)
 
 
@@ -328,9 +329,13 @@ def _migrate_schema(engine):
             for col in table.columns:
                 if col.name not in existing:
                     col_type_sql = _render_column_type(engine.dialect.name, col)
+                    # NOT NULL columns need a DEFAULT for existing rows in PostgreSQL
+                    default_clause = ""
+                    if not col.nullable and col.default is None and not col.primary_key:
+                        default_clause = _default_for_type(col)
                     sql = (
                         f"ALTER TABLE {table_name} ADD COLUMN "
-                        f"{col.name} {col_type_sql}"
+                        f"{col.name} {col_type_sql}{default_clause}"
                     )
                     conn.execute(sa.text(sql))
                     logger.warning(
@@ -361,6 +366,22 @@ def _render_column_type(dialect, col):
     return str(t.compile(dialect=_ce("sqlite:///").dialect if dialect == "sqlite" else None))
 
 
+def _default_for_type(col):
+    """Return a DEFAULT clause for a non-nullable column with no explicit default."""
+    from sqlalchemy import Integer, String, Float, DateTime, Text, Boolean
+    from datetime import datetime, timezone
+    t = col.type
+    if isinstance(t, (Integer, Float)):
+        return " DEFAULT 0"
+    if isinstance(t, Boolean):
+        return " DEFAULT 0"  # SQLite uses 0/1 for boolean
+    if isinstance(t, DateTime):
+        return " DEFAULT '1970-01-01T00:00:00'"
+    if isinstance(t, (String, Text)):
+        return " DEFAULT ''"
+    return ""
+
+
 def get_session():
     """获取当前线程的数据库会话"""
     if _Session is None:
@@ -386,7 +407,8 @@ def upsert_device(name: str, location: str = "",
         dev.lat = lat
         dev.lon = lon
         dev.alt = alt
-        dev.location = location
+        if location:
+            dev.location = location
         dev.status = "online"
     else:
         dev = Device(
@@ -394,6 +416,11 @@ def upsert_device(name: str, location: str = "",
             first_seen=now, last_seen=now, status="online",
         )
         sess.add(dev)
+    # 填充 tenant_id（来自设备密钥表）
+    if dev.tenant_id is None:
+        ds = sess.get(DeviceSecret, name)
+        if ds and ds.tenant_id is not None:
+            dev.tenant_id = ds.tenant_id
     sess.commit()
 
 
@@ -428,6 +455,11 @@ def upsert_drone(device_name: str, drone_id: str,
             model=model, max_alt_agl=height_agl, max_alt_asl=alt,
         )
         sess.add(drone)
+    # 填充 tenant_id（来自设备密钥表）
+    if drone.tenant_id is None:
+        ds = sess.get(DeviceSecret, device_name)
+        if ds and ds.tenant_id is not None:
+            drone.tenant_id = ds.tenant_id
     sess.commit()
 
 
@@ -633,14 +665,17 @@ def get_alert_stats() -> dict:
 
 def mark_stale_devices(timeout_seconds: int = 60):
     sess = get_session()
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
-    sess.query(Device).filter(Device.last_seen < cutoff).update(
-        {"status": "offline"}, synchronize_session=False
-    )
-    sess.query(Drone).filter(Drone.last_seen < cutoff).update(
-        {"status": "gone"}, synchronize_session=False
-    )
-    sess.commit()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)
+        sess.query(Device).filter(Device.last_seen < cutoff).update(
+            {"status": "offline"}, synchronize_session=False
+        )
+        sess.query(Drone).filter(Drone.last_seen < cutoff).update(
+            {"status": "gone"}, synchronize_session=False
+        )
+        sess.commit()
+    finally:
+        sess.close()
 
 
 # ── Power Line CRUD ──
@@ -825,11 +860,13 @@ def count_admin_users() -> int:
 
 def get_stations() -> list:
     sess = get_session()
+    devices = {d.name: d for d in sess.query(Device).all()}
     return [{
         'name': s.name, 'location': s.location or '',
         'province': s.province or '', 'city': s.city or '', 'county': s.county or '',
         'lat': s.lat or 0, 'lon': s.lon or 0, 'alt': s.alt or 0,
         'device_name': s.device_name or '',
+        'mqtt_online': devices[s.device_name].status == 'online' if s.device_name and s.device_name in devices else False,
         'tenant_id': s.tenant_id,
     } for s in sess.query(Station).all()]
 
@@ -844,8 +881,12 @@ def upsert_station(name: str, location: str = '', lat: float = 0, lon: float = 0
         s.province = province
         s.city = city
         s.county = county
-        s.lat = lat; s.lon = lon; s.alt = alt
-        s.device_name = device_name
+        if lat or lon:  # 只有传入非零坐标时才更新，避免地理编码覆盖已有 GPS
+            s.lat = lat; s.lon = lon
+        if alt:
+            s.alt = alt
+        if device_name is not None:
+            s.device_name = device_name
         if tenant_id is not None:
             s.tenant_id = tenant_id
     else:
@@ -916,8 +957,11 @@ def get_audit_logs(limit: int = 100) -> list:
 
 # ── Device Secrets ──
 
-def get_device_secrets() -> list:
+def get_device_secrets(tenant_id: int = None) -> list:
     sess = get_session()
+    q = sess.query(DeviceSecret)
+    if tenant_id is not None:
+        q = q.filter(DeviceSecret.tenant_id == tenant_id)
     return [{
         'device_name': d.device_name,
         'device_secret': d.device_secret,
@@ -927,18 +971,21 @@ def get_device_secrets() -> list:
         'cert_issued_at': d.cert_issued_at.isoformat() if d.cert_issued_at else '',
         'revoked': bool(d.revoked),
         'revoked_at': d.revoked_at.isoformat() if d.revoked_at else '',
+        'tenant_id': d.tenant_id,
         'created_at': d.created_at.isoformat() if d.created_at else '',
-    } for d in sess.query(DeviceSecret).all()]
+    } for d in q.all()]
 
 
 def upsert_device_secret(device_name: str, device_secret: str, station: str = '',
                         client_cert: str = None, cert_serial: str = None,
-                        cert_issued_at = None) -> bool:
+                        cert_issued_at = None, tenant_id: int = None) -> bool:
     sess = get_session()
     d = sess.get(DeviceSecret, device_name)
     if d:
         d.device_secret = device_secret
         d.station = station
+        if tenant_id is not None:
+            d.tenant_id = tenant_id
         if client_cert is not None:
             d.client_cert = client_cert
         if cert_serial is not None:
@@ -951,6 +998,7 @@ def upsert_device_secret(device_name: str, device_secret: str, station: str = ''
                          client_cert=client_cert,
                          cert_serial=cert_serial,
                          cert_issued_at=cert_issued_at,
+                         tenant_id=tenant_id,
                          created_at=datetime.now(timezone.utc))
         sess.add(d)
     sess.commit()
@@ -1102,16 +1150,25 @@ def is_drone_whitelisted(drone_id: str, tenant_id: int = None) -> bool:
     if not drone_id:
         return False
     sess = get_session()
-    q = sess.query(DroneWhitelist)
+    # 精确匹配
+    q = sess.query(DroneWhitelist).filter(
+        DroneWhitelist.sn == drone_id,
+        DroneWhitelist.match_mode == "exact",
+    )
     if tenant_id is not None:
         q = q.filter(DroneWhitelist.tenant_id == tenant_id)
-    for w in q.all():
-        if w.match_mode == "prefix":
-            if drone_id.startswith(w.sn):
-                return True
-        else:  # exact
-            if drone_id == w.sn:
-                return True
+    if q.first():
+        return True
+    # 前缀匹配: drone_id LIKE sn || '%'
+    from sqlalchemy import and_, literal
+    q2 = sess.query(DroneWhitelist).filter(
+        DroneWhitelist.match_mode == "prefix",
+    )
+    if tenant_id is not None:
+        q2 = q2.filter(DroneWhitelist.tenant_id == tenant_id)
+    for w in q2.all():
+        if drone_id.startswith(w.sn):
+            return True
     return False
 
 
@@ -1247,3 +1304,53 @@ def get_user_stations(username: str) -> list:
         if st:
             return [u.assigned_station]
     return []
+
+
+# ── Data Retention Cleanup ──
+
+def cleanup_old_data():
+    """定期清理过期数据: DronePosition (可配置天数), Alert (90天), AuditLog (90天).
+    由 __init__.py 的后台守护线程调用.
+    """
+    archive_enabled = get_setting("raw_archive_enabled", "true")
+    if archive_enabled != "true":
+        return {"skipped": True, "reason": "raw_archive_enabled is not true"}
+
+    retention_days = int(get_setting("raw_archive_retention_days", "30"))
+    alert_retention_days = 90
+    audit_retention_days = 90
+
+    from datetime import datetime, timezone, timedelta
+
+    sess = get_session()
+    result = {"drone_positions": 0, "alerts": 0, "audit_logs": 0}
+    try:
+        # DronePosition (原始报文轨迹，可配置保留天数)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+        deleted = sess.query(DronePosition).filter(
+            DronePosition.timestamp < cutoff
+        ).delete(synchronize_session=False)
+        result["drone_positions"] = deleted
+
+        # Alert (告警记录，固定 90 天)
+        alert_cutoff = datetime.now(timezone.utc) - timedelta(days=alert_retention_days)
+        deleted = sess.query(Alert).filter(
+            Alert.timestamp < alert_cutoff
+        ).delete(synchronize_session=False)
+        result["alerts"] = deleted
+
+        # AuditLog (操作审计，固定 90 天)
+        audit_cutoff = datetime.now(timezone.utc) - timedelta(days=audit_retention_days)
+        deleted = sess.query(AuditLog).filter(
+            AuditLog.timestamp < audit_cutoff
+        ).delete(synchronize_session=False)
+        result["audit_logs"] = deleted
+
+        sess.commit()
+    except Exception:
+        sess.rollback()
+        raise
+    finally:
+        sess.close()
+
+    return result

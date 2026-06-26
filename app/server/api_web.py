@@ -11,7 +11,7 @@ import threading
 from datetime import datetime
 from functools import wraps
 
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, g
 
 from .models import (
     get_devices, get_all_drones,
@@ -42,6 +42,39 @@ def _safe_float(val, default=0.0):
         return float(val)
     except (TypeError, ValueError):
         return default
+
+
+# ── Geocode utilities ──
+
+from .geocode import get_geocoder
+
+
+def _auto_geocode_station(station_name: str, lat: float, lon: float):
+    """Reverse geocode via offline shapely+GeoJSON and write province/city/county."""
+    if not lat or not lon:
+        return
+    geocoder = get_geocoder()
+    if not geocoder.available:
+        return
+    try:
+        parsed = geocoder.reverse(lat, lon)
+    except Exception:
+        return
+    if not parsed:
+        return
+    prov = (parsed.get("province") or "").strip()
+    city = (parsed.get("city") or "").strip()
+    county = (parsed.get("county") or "").strip()
+    if not prov and not city and not county:
+        return
+
+    from .models import upsert_station
+    upsert_station(
+        name=station_name,
+        province=prov,
+        city=city,
+        county=county,
+    )
 
 
 def _compute_conductor_alt(alt_input, tower_h, voltage_level):
@@ -265,15 +298,16 @@ def api_modify_powerline(pl_id):
     if not target:
         if request.method == "DELETE":
             return jsonify({"error": "电力线不存在"}), 404
-        # PUT may create new if upsert, check device permission
+        # PUT — allow upsert; tenant check below uses empty dict
         data = request.json or {}
         dev = (data.get("device_name") or "").strip() or None
         ok, err_resp, err_status = _check_device_permission(dev)
         if not ok:
             return err_resp, err_status
+        target = {}  # placeholder for upsert path
 
     # tenant 隔离: 验证已有电力线归属
-    if target:
+    if target and target.get("id") is not None:
         ok, err_resp, err_status = _check_device_permission(target.get("device_name") or "")
         if not ok:
             return err_resp, err_status
@@ -362,7 +396,7 @@ def api_import_powerlines():
 @require_auth
 def api_powerlines_sync():
     """边缘设备轮询电力线配置 (JWT device auth)"""
-    device_name = request.args.get("device_name", "").strip() or None
+    device_name = g.device_name
     lines = get_power_lines(device_name=device_name)
     # 简化的版本号: 取最后更新时间
     max_updated = max(
@@ -470,24 +504,35 @@ def api_stations():
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "站点名称不能为空"}), 400
-        # tenant_admin 只能更新自己租户的站点
+        # tenant_admin 只能更新自己租户的站点，且不得转移站点到其他租户
         if u.get("role") == "tenant_admin":
             stations = get_stations()
             target = next((s for s in stations if s["name"] == name), None)
             if not target or target.get("tenant_id") != u.get("tenant_id"):
                 return jsonify({"error": "站点不存在或不属于您的租户"}), 403
+            new_tenant_id = data.get("tenant_id")
+            if new_tenant_id is not None and int(new_tenant_id) != u.get("tenant_id"):
+                return jsonify({"error": "不允许将站点转移到其他租户"}), 403
+        new_lat = _safe_float(data.get("lat"))
+        new_lon = _safe_float(data.get("lon"))
+        tenant_id = data.get("tenant_id")
+        if u.get("role") == "tenant_admin":
+            tenant_id = u["tenant_id"]
         upsert_station(
             name=name,
             location=(data.get("location") or "").strip(),
             province=(data.get("province") or "").strip(),
             city=(data.get("city") or "").strip(),
             county=(data.get("county") or "").strip(),
-            lat=_safe_float(data.get("lat")),
-            lon=_safe_float(data.get("lon")),
+            lat=new_lat,
+            lon=new_lon,
             alt=_safe_float(data.get("alt")),
             device_name=(data.get("device_name") or "").strip() or None,
-            tenant_id=data.get("tenant_id"),
+            tenant_id=tenant_id,
         )
+        # Auto-geocode if coordinates changed (only if province is still empty)
+        if new_lat and new_lon and not (data.get("province") or "").strip():
+            _auto_geocode_station(name, new_lat, new_lon)
         add_audit_log(u["username"], "UPDATE", "stations", None,
                       f"编辑站点: {name}")
         return jsonify({"status": "ok"})
@@ -511,6 +556,37 @@ def api_stations():
         add_audit_log(u["username"], "DELETE", "stations", None,
                       f"删除站点: {name}")
     return jsonify({"status": "ok" if ok else "not found"})
+
+
+# ── Geocode ──
+
+@bp.route("/api/geocode", methods=["POST"])
+@require_web_auth
+def api_geocode():
+    """Reverse geocode lat/lon to province/city/county via offline shapely+GeoJSON."""
+    data = request.json or {}
+    lat = _safe_float(data.get("lat"))
+    lon = _safe_float(data.get("lon"))
+    if not lat or not lon:
+        return jsonify({"error": "请提供有效的经纬度坐标"}), 400
+
+    geocoder = get_geocoder()
+    if not geocoder.available:
+        return jsonify({"error": "离线地理编码服务未就绪，请检查数据文件"}), 503
+
+    try:
+        parsed = geocoder.reverse(lat, lon)
+    except Exception:
+        return jsonify({"error": "地理编码查询失败"}), 500
+
+    if not parsed:
+        return jsonify({"error": "该坐标无对应地址信息"}), 404
+
+    return jsonify({
+        "province": parsed["province"],
+        "city": parsed["city"],
+        "county": parsed["county"],
+    })
 
 
 # ── Users ──
@@ -646,9 +722,10 @@ def api_change_password():
 @bp.route("/api/users/<username>/reset-password", methods=["POST"])
 @require_web_auth
 def api_reset_user_password(username):
-    """管理员重置用户密码"""
+    """管理员/租户管理员重置用户密码"""
     u = session["user"]
-    if u.get("role") != "admin":
+    role = u.get("role", "")
+    if role not in ("admin", "tenant_admin"):
         return jsonify({"error": "需要管理员权限"}), 403
     if not _rate_limit(f"resetpw:{u['username']}", max_requests=5, window_sec=300):
         return jsonify({"error": "重置次数过多，请 5 分钟后再试"}), 429
@@ -664,11 +741,59 @@ def api_reset_user_password(username):
         target = sess.get(WebUser, username)
         if not target:
             return jsonify({"error": "用户不存在"}), 404
+        # tenant_admin 只能重置自己租户下的用户
+        if role == "tenant_admin" and target.tenant_id != u.get("tenant_id"):
+            return jsonify({"error": "只能重置本租户下的用户"}), 403
         target.password_hash = generate_password_hash(new_pw)
         sess.commit()
         add_audit_log(u["username"], "RESET_PASSWORD", "web_users", None,
                       f"重置用户 {username} 的密码")
         return jsonify({"status": "ok", "message": f"已重置 {username} 的密码"})
+    finally:
+        sess.close()
+
+
+# ── Public Password Reset (self-service, no auth) ──
+
+@bp.route("/api/forgot-password", methods=["POST"])
+def api_forgot_password():
+    """自助重置密码: 通过 license_key 验证身份后重置"""
+    if not _rate_limit("forgotpw:global", max_requests=20, window_sec=300):
+        return jsonify({"error": "重置请求过于频繁，请 5 分钟后再试"}), 429
+
+    data = request.json or {}
+    username = (data.get("username") or "").strip()
+    license_key = (data.get("license_key") or "").strip().upper()
+    new_password = (data.get("new_password") or "").strip()
+
+    if not username or not license_key:
+        return jsonify({"error": "请填写用户名和 License Key"}), 400
+
+    if not _rate_limit(f"forgotpw:user:{username}", max_requests=5, window_sec=900):
+        return jsonify({"error": "该用户重置请求过于频繁，请 15 分钟后再试"}), 429
+    if len(new_password) < 6:
+        return jsonify({"error": "新密码至少 6 位"}), 400
+
+    from .models import get_session, WebUser, Tenant
+    sess = get_session()
+    try:
+        user = sess.get(WebUser, username)
+        if not user:
+            return jsonify({"error": "用户不存在"}), 404
+        if not user.tenant_id:
+            return jsonify({"error": "该用户无关联租户，请联系系统管理员"}), 403
+
+        tenant = sess.get(Tenant, user.tenant_id)
+        if not tenant or tenant.license_key != license_key:
+            return jsonify({"error": "License Key 不匹配"}), 403
+        if not tenant.is_active:
+            return jsonify({"error": "该租户已被停用"}), 403
+
+        user.password_hash = generate_password_hash(new_password)
+        sess.commit()
+        add_audit_log(username, "FORGOT_PASSWORD", "web_users", None,
+                      f"用户自助重置密码 via license_key")
+        return jsonify({"status": "ok", "message": "密码重置成功，请登录"})
     finally:
         sess.close()
 
@@ -699,7 +824,7 @@ def api_tenant_info():
         "current_users": count_users_in_tenant(tid),
         "contact": tenant.contact or "",
         "is_active": tenant.is_active,
-        "stations": [{"name": s.name, "location": s.location or ""} for s in stations],
+        "stations": [{"name": s["name"], "location": s.get("location") or ""} for s in stations],
     })
 
 
@@ -1083,7 +1208,6 @@ def api_settings():
             "debounce_out": "10",
             "sms_enabled": "false",
             "sms_alert_phones": "",
-            "pilot_notify_enabled": "false",
             "raw_archive_enabled": "true",
             "raw_archive_retention_days": "30",
         }
@@ -1135,18 +1259,32 @@ def api_stats_dashboard():
             devices = [d for d in devices if d["name"] in station_devs]
             drones = [d for d in drones if d["device_name"] in station_devs]
 
-        # 构建站点摘要：使用第一个实际站点/设备数据
-        primary_station = stations[0] if stations else {}
+        # 构建站点摘要列表（全国视图展示所有站点）
+        station_list = []
+        for st in stations:
+            dev = next((d for d in devices if d["name"] == st.get("device_name")), None)
+            station_list.append({
+                "name": st.get("name", ""),
+                "device_name": st.get("device_name") or (dev["name"] if dev else "cloud"),
+                "device_location": st.get("location") or st.get("name") or "云服务器",
+                "location": st.get("location") or st.get("name") or "云服务器",
+                "position": {
+                    "lat": st.get("lat", 0),
+                    "lon": st.get("lon", 0),
+                    "alt": st.get("alt", 0),
+                },
+                "mqtt_online": dev["status"] == "online" if dev else False,
+            })
+
+        # 主站点信息（向后兼容，用于站点视图）
+        primary_station = station_list[0] if station_list else {}
         primary_device = devices[0] if devices else {}
         station_info = {
-            "device_name": primary_device.get("name") or "cloud",
+            "device_name": primary_station.get("device_name") or primary_device.get("name") or "cloud",
             "device_location": primary_station.get("location") or primary_station.get("name") or "云服务器",
-            "position": {
-                "lat": primary_station.get("lat", 0),
-                "lon": primary_station.get("lon", 0),
-                "alt": primary_station.get("alt", 0),
-            },
-            "mqtt_online": primary_device.get("status") == "online",
+            "location": primary_station.get("location") or primary_station.get("name") or "云服务器",
+            "position": primary_station.get("position", {"lat": 0, "lon": 0, "alt": 0}),
+            "mqtt_online": primary_station.get("mqtt_online", False),
             "pl_count": len(get_power_lines()),
             "drone_count": len(drones),
         }
@@ -1158,6 +1296,7 @@ def api_stats_dashboard():
             ),
             "station": station_info,
             "stations": stations,
+            "station_list": station_list,
         })
     except Exception as e:
         logger.error("stats/dashboard error: %s", e)
@@ -1166,16 +1305,29 @@ def api_stats_dashboard():
 
 # ── Device Provisioning ──
 
+def _require_device_admin(f):
+    """允许 admin 或 tenant_admin 访问设备管理接口"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session:
+            return jsonify({"error": "未登录"}), 401
+        if session["user"].get("role") not in ("admin", "tenant_admin"):
+            return jsonify({"error": "需要管理员或租户管理员权限"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 @bp.route("/api/devices/provision", methods=["POST"])
-@require_admin
+@_require_device_admin
 def api_provision_device():
-    """管理员注册新边缘设备: 生成 secret + 签发 mTLS 证书 + 关联站点"""
+    """管理员/租户管理员注册新边缘设备: 生成 secret + 签发 mTLS 证书 + 关联站点"""
     if not _rate_limit(f"provision:{session['user']['username']}", max_requests=10, window_sec=3600):
         return jsonify({"error": "设备注册次数过多，请 1 小时后再试"}), 429
     import secrets
     from datetime import datetime, timezone
     from .cert_manager import get_cert_manager
 
+    u = session["user"]
     data = request.json or {}
     device_name = (data.get("device_name") or "").strip()
     station = (data.get("station") or "").strip()
@@ -1184,6 +1336,24 @@ def api_provision_device():
         return jsonify({"error": "device_name 不能为空"}), 400
     if len(device_name) < 2 or len(device_name) > 64:
         return jsonify({"error": "device_name 长度 2-64"}), 400
+
+    # tenant_admin 自动绑定到自己的租户, admin 必须选择租户
+    if u.get("role") == "tenant_admin":
+        tenant_id = u.get("tenant_id")
+    else:
+        tenant_id = data.get("tenant_id")
+        if not tenant_id:
+            return jsonify({"error": "请选择所属租户（admin 注册设备必须绑定租户）"}), 400
+        # 验证租户存在
+        from .models import get_tenants as _gt
+        valid_ids = {t["id"] for t in _gt()}
+        if int(tenant_id) not in valid_ids:
+            return jsonify({"error": f"租户 #{tenant_id} 不存在，请先创建租户"}), 400
+
+    from .models import get_device_secrets as _gds
+    existing_devices = {d["device_name"] for d in _gds()}
+    if device_name in existing_devices:
+        return jsonify({"error": f"设备 {device_name} 已注册，请先删除或吊销"}), 409
 
     # 生成随机密钥
     device_secret = secrets.token_hex(24)
@@ -1198,17 +1368,18 @@ def api_provision_device():
     upsert_device_secret(device_name, device_secret, station,
                          client_cert=cert_data["cert"],
                          cert_serial=cert_data["serial"],
-                         cert_issued_at=datetime.now(timezone.utc))
+                         cert_issued_at=datetime.now(timezone.utc),
+                         tenant_id=tenant_id)
 
-    # 自动创建对应站点
+    # 自动创建对应站点 (绑定租户)
     if station:
         from .models import get_stations, upsert_station
         stations = get_stations()
         if not any(s["name"] == station for s in stations):
-            upsert_station(name=station, device_name=device_name)
+            upsert_station(name=station, device_name=device_name, tenant_id=tenant_id)
 
     add_audit_log(session["user"]["username"], "PROVISION", "device_secrets", None,
-                  f"注册设备: {device_name} → {station or '(无站点)'} cert={cert_data['serial']}")
+                  f"注册设备: {device_name} → {station or '(无站点)'} tenant={tenant_id} cert={cert_data['serial']}")
 
     return jsonify({
         "status": "ok",
@@ -1222,10 +1393,12 @@ def api_provision_device():
 
 
 @bp.route("/api/devices", methods=["GET"])
-@require_admin
+@_require_device_admin
 def api_list_devices():
-    """列出所有注册设备及其密钥信息"""
-    device_secrets = get_device_secrets()
+    """列出设备及其密钥信息 — admin 看全部, tenant_admin 只看自己租户的"""
+    u = session["user"]
+    tid = None if u.get("role") == "admin" else u.get("tenant_id")
+    device_secrets = get_device_secrets(tenant_id=tid)
     stations = get_stations()
     station_map = {s["device_name"]: s["name"] for s in stations if s["device_name"]}
 
@@ -1236,12 +1409,19 @@ def api_list_devices():
         "cert_issued_at": d.get("cert_issued_at") or "",
         "revoked": d.get("revoked", False),
         "created_at": d.get("created_at") or "",
+        "tenant_id": d.get("tenant_id"),
     } for d in device_secrets])
 
 
 @bp.route("/api/devices/<device_name>", methods=["DELETE"])
-@require_admin
+@_require_device_admin
 def api_delete_device(device_name):
+    """删除设备 — 租户管理员只能删除自己租户的设备"""
+    u = session["user"]
+    if u.get("role") == "tenant_admin":
+        devices = get_device_secrets(tenant_id=u.get("tenant_id"))
+        if not any(d["device_name"] == device_name for d in devices):
+            return jsonify({"error": "设备不存在或不属于您的租户"}), 403
     ok = delete_device_secret(device_name)
     if ok:
         add_audit_log(session["user"]["username"], "DELETE", "device_secrets", None,
@@ -1250,9 +1430,14 @@ def api_delete_device(device_name):
 
 
 @bp.route("/api/devices/<device_name>/revoke", methods=["POST"])
-@require_admin
+@_require_device_admin
 def api_revoke_device(device_name):
-    """吊销设备证书"""
+    """吊销设备证书 — 租户管理员只能吊销自己租户的设备"""
+    u = session["user"]
+    if u.get("role") == "tenant_admin":
+        devices = get_device_secrets(tenant_id=u.get("tenant_id"))
+        if not any(d["device_name"] == device_name for d in devices):
+            return jsonify({"error": "设备不存在或不属于您的租户"}), 403
     try:
         from .cert_manager import get_cert_manager
         cm = get_cert_manager()

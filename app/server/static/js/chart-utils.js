@@ -9,6 +9,10 @@ var ChartUtils = (function() {
   var _cachedHours = null;
   var _cachedHour = -1;
 
+  // rAF-deferred chart creation cache
+  var _charts = {};
+  var _pending = {};
+
   function _getHours() {
     var now = new Date();
     var h = now.getHours();
@@ -46,41 +50,49 @@ var ChartUtils = (function() {
       }
     });
 
-    // Update existing chart in-place (fastest path)
-    if (existingChart) {
-      existingChart.data.labels = hours;
-      existingChart.data.datasets[0].data = warnData;
-      existingChart.data.datasets[1].data = sevData;
-      existingChart.data.datasets[2].data = critData;
-      existingChart.update('none');
-      return existingChart;
+    // Use rAF-created chart if available
+    var chart = existingChart || _charts[canvasId] || null;
+
+    if (chart) {
+      chart.data.labels = hours;
+      chart.data.datasets[0].data = warnData;
+      chart.data.datasets[1].data = sevData;
+      chart.data.datasets[2].data = critData;
+      chart.update('none');
+      return chart;
     }
 
-    // Create new chart — use rAF to ensure layout is settled
-    var ctx = canvas.getContext('2d');
-    var chart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: hours,
-        datasets: [
-          { label: '警告', data: warnData, borderColor: '#ca8a04', backgroundColor: 'rgba(202,138,4,.08)', fill: true, tension: 0, pointRadius: 0, borderWidth: 1.5 },
-          { label: '严重', data: sevData, borderColor: '#ea580c', backgroundColor: 'rgba(234,88,12,.08)', fill: true, tension: 0, pointRadius: 0, borderWidth: 1.5 },
-          { label: '危险', data: critData, borderColor: '#dc262e', backgroundColor: 'rgba(220,38,38,.08)', fill: true, tension: 0, pointRadius: 0, borderWidth: 2 }
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        resizeDelay: 100,
-        animation: false,
-        interaction: { intersect: false, mode: 'index' },
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 9 }, usePointStyle: true } } },
-        scales: {
-          x: { ticks: { font: { size: 8 }, maxTicksLimit: compact ? 4 : 6, autoSkip: true }, grid: { display: false } },
-          y: { beginAtZero: true, ticks: { font: { size: 8 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
-        }
-      }
-    });
-    return chart;
+    // Defer creation via rAF to ensure layout is settled before Chart.js reads dimensions
+    if (!_pending[canvasId]) {
+      _pending[canvasId] = true;
+      var ctx = canvas.getContext('2d');
+      var compactFlag = compact;
+      requestAnimationFrame(function() {
+        _pending[canvasId] = false;
+        _charts[canvasId] = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: hours,
+            datasets: [
+              { label: '警告', data: warnData, borderColor: '#ca8a04', backgroundColor: 'rgba(202,138,4,.08)', fill: true, tension: 0, pointRadius: 0, borderWidth: 1.5 },
+              { label: '严重', data: sevData, borderColor: '#ea580c', backgroundColor: 'rgba(234,88,12,.08)', fill: true, tension: 0, pointRadius: 0, borderWidth: 1.5 },
+              { label: '危险', data: critData, borderColor: '#dc262e', backgroundColor: 'rgba(220,38,38,.08)', fill: true, tension: 0, pointRadius: 0, borderWidth: 2 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 10, font: { size: 9 }, usePointStyle: true } } },
+            scales: {
+              x: { ticks: { font: { size: 8 }, maxTicksLimit: compactFlag ? 4 : 6, autoSkip: true }, grid: { display: false } },
+              y: { beginAtZero: true, ticks: { font: { size: 8 }, stepSize: 1 }, grid: { color: '#f0f0f0' } }
+            }
+          }
+        });
+      });
+    }
+    return null;
   }
 
   function buildModelBars(containerId, models) {
@@ -94,7 +106,7 @@ var ChartUtils = (function() {
     for (var i = 0; i < models.length; i++) {
       var m = models[i];
       var pct = Math.max(4, Math.round(m.count / max * 100));
-      html += '<div class="model-bar"><span class="m-name" title="' + attr(m.name) + '">' + esc(m.name) + '</span><div class="m-track"><div class="m-fill" style="width:' + pct + '%"></div></div><span class="m-cnt">' + esc(m.count) + '</span></div>';
+      html += '<div class="model-bar"><span class="m-name" title="' + attr(m.model) + '">' + esc(m.model) + '</span><div class="m-track"><div class="m-fill" style="width:' + pct + '%"></div></div><span class="m-cnt">' + esc(m.count) + '</span></div>';
     }
     div.innerHTML = html;
   }

@@ -7,6 +7,7 @@ from flask import Blueprint, jsonify, request, session
 from .models import (
     get_devices, get_all_drones, get_recent_alerts,
     get_user_stations, get_stations,
+    get_power_lines,
 )
 from .auth import _verify_token
 
@@ -102,7 +103,7 @@ def api_status():
         } for a in alerts],
         "backhaul": None,       # 云端无边缘回传, 前端 if(bh) 守卫兼容
         "alert_count": len(alerts),
-        "pl_count": 0,          # 由 /api/powerlines 独立获取
+        "pl_count": len(get_power_lines()),
     }
 
     # Web session: 附加 current_user

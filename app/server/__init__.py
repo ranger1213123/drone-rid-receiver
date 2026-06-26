@@ -9,9 +9,13 @@ import secrets
 from datetime import datetime
 
 from flask import Flask, jsonify
+from flask_socketio import SocketIO
 from markupsafe import Markup
 
 from .models import init_db, close_db
+
+# ── WebSocket 实时推送 (模块级，蓝图通过 from . import socketio 引用) ──
+socketio = SocketIO()
 
 
 def create_app(database_url: str = "sqlite:///data/center.db",
@@ -35,6 +39,29 @@ def create_app(database_url: str = "sqlite:///data/center.db",
 
     _stale_thread = _threading.Thread(target=_stale_cleaner, daemon=True, name="stale-cleaner")
     _stale_thread.start()
+
+    # ── 后台线程: 定期清理过期数据 ──
+    from .models import cleanup_old_data as _cleanup_old_data
+
+    def _data_cleaner():
+        while True:
+            _time.sleep(6 * 3600)  # 每 6 小时
+            try:
+                result = _cleanup_old_data()
+                if not result.get("skipped"):
+                    from logging_config import get_logger as _get_logger
+                    _logger = _get_logger(__name__)
+                    _logger.info(
+                        "data_cleaner: drones=%d alerts=%d audit=%d",
+                        result.get("drone_positions", 0),
+                        result.get("alerts", 0),
+                        result.get("audit_logs", 0),
+                    )
+            except Exception:
+                pass
+
+    _cleanup_thread = _threading.Thread(target=_data_cleaner, daemon=True, name="data-cleaner")
+    _cleanup_thread.start()
 
     app = Flask(
         __name__,
@@ -160,11 +187,28 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     # 初始化数据库
     init_db(database_url, pool_size=pool_size)
 
-    # 首次启动: 创建默认管理员
+    # 首次启动: 创建默认管理员 (生产环境仅告警，不自动创建弱密码账户)
     from .models import count_admin_users, upsert_web_user
     if count_admin_users() == 0:
-        upsert_web_user("admin", "admin123", "admin", "")
-        app.logger.info("已创建默认管理员账户 admin / admin123")
+        if _is_prod:
+            app.logger.error(
+                "生产环境无管理员账户！请通过管理接口创建。"
+                "设置 ADMIN_USER/ADMIN_PASS 环境变量以自动创建。"
+            )
+        else:
+            upsert_web_user("admin", "admin123", "admin", "")
+            app.logger.info("已创建默认管理员账户 admin / admin123")
+
+    # 初始化 WebSocket
+    socketio.init_app(app, cors_allowed_origins='*')
+
+    # 验证离线地理编码器可用性
+    from .geocode import get_geocoder
+    geocoder = get_geocoder()
+    if geocoder.available:
+        app.logger.info("离线地理编码器已就绪")
+    else:
+        app.logger.warning("离线地理编码器不可用 — 省会/城市/区县将不会自动填充")
 
     # ── 健康检查 (无需鉴权，供 K8s 探针使用) ──
     @app.route("/api/health")
@@ -206,6 +250,14 @@ def create_app(database_url: str = "sqlite:///data/center.db",
             _web_secret = secrets.token_hex(32)
             app.logger.warning("无法持久化 session key，使用临时密钥(重启后所有用户需重新登录)")
     app.secret_key = _web_secret
+
+    # 安全响应头
+    @app.after_request
+    def add_security_headers(resp):
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
+        if 'Cache-Control' not in resp.headers:
+            resp.headers['Cache-Control'] = 'no-store'
+        return resp
 
     # 请求结束时释放数据库会话
     @app.teardown_appcontext

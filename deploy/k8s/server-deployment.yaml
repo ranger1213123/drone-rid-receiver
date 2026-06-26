@@ -29,13 +29,13 @@ spec:
             - containerPort: 5000
               name: http
           env:
-            - name: DATABASE_URL
-              value: "postgresql://drone_rid:$(DB_PASSWORD)@postgres:5432/drone_rid_center"
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: drone-rid-secret
                   key: DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://drone_rid:$(DB_PASSWORD)@postgres:5432/drone_rid_center"
             - name: JWT_SECRET_KEY
               valueFrom:
                 secretKeyRef:

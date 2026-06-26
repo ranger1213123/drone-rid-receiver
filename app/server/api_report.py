@@ -1,18 +1,25 @@
-"""POST /api/report, /api/report_alert — 含云侧 SMS"""
+"""POST /api/report, /api/report_alert — 含云侧 SMS + 阈值分类 + 去重 + 白名单"""
 
 import os
+import time as _time
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 
 from .models import (
     upsert_device, upsert_drone, update_drone_status, add_alert,
     get_personnel_by_station, get_all_alert_phones,
+    get_setting, is_drone_whitelisted,
 )
+from . import socketio
 from .auth import require_auth
 from logging_config import get_logger
 
 bp = Blueprint("report", __name__)
 logger = get_logger(__name__)
+
+# ── 告警去重冷却 (模块级状态) ──
+_alert_cooldown: dict = {}       # {(drone_id, level): last_alert_time}
+_ALERT_COOLDOWN_SEC = 30.0
 
 # ── SMS 网关 (懒加载) ──
 _sms_gateway = None
@@ -92,7 +99,7 @@ def api_report():
         if not data:
             return jsonify({"error": "empty body"}), 400
 
-        device_name = data.get("device", "unknown")
+        device_name = g.device_name
         drone_id = data.get("drone_id", "")
         lat = data.get("latitude", 0)
         lon = data.get("longitude", 0)
@@ -108,6 +115,14 @@ def api_report():
             if distance is not None:
                 update_drone_status(device_name, drone_id, distance,
                                     line_name, status)
+            # WebSocket 实时推送
+            socketio.emit('drone_update', {
+                'drone_id': drone_id,
+                'lat': lat, 'lon': lon, 'alt': alt,
+                'distance': distance or 0,
+                'nearest_line': line_name,
+                'status': status,
+            })
 
         return jsonify({"status": "ok"})
     except Exception as e:
@@ -123,7 +138,7 @@ def api_report_alert():
         if not data:
             return jsonify({"error": "empty body"}), 400
 
-        device_name = data.get("device", "unknown")
+        device_name = g.device_name
         drone_id = data.get("drone_id", "")
         level = data.get("level", "warning")
         distance = data.get("distance", 0)
@@ -132,17 +147,77 @@ def api_report_alert():
         lon = data.get("longitude", 0)
         alt = data.get("altitude", 0)
 
-        message = f"[{level}] {drone_id} 接近 {line_name} 距离{distance:.0f}m"
+        # ── 服务器阈值重分类 ──
+        t_warn = int(get_setting("threshold_warning", "200"))
+        t_sev = int(get_setting("threshold_severe", "100"))
+        t_crit = int(get_setting("threshold_critical", "50"))
+        d = float(distance) if distance else 0
+        if d <= t_crit:
+            level = "critical"
+        elif d <= t_sev:
+            level = "severe"
+        elif d <= t_warn:
+            level = "warning"
+        elif not level:
+            level = "active"
 
         upsert_device(device_name, lat=lat, lon=lon, alt=alt)
-        add_alert(device_name, drone_id, level, distance, line_name, message)
-        if drone_id:
-            upsert_drone(device_name, drone_id, lat, lon, alt)
-            update_drone_status(device_name, drone_id, distance, line_name, level)
 
-        # 云侧 SMS
-        _notify_station_personnel(device_name, drone_id, level, distance,
-                                  line_name, lat, lon)
+        # ── 白名单检查 ──
+        if is_drone_whitelisted(drone_id):
+            logger.info("Whitelisted drone %s: alert suppressed", drone_id)
+            # 仍然更新无人机位置
+            if drone_id:
+                upsert_drone(device_name, drone_id, lat, lon, alt)
+                update_drone_status(device_name, drone_id, distance, line_name, level)
+                socketio.emit('drone_update', {
+                    'drone_id': drone_id, 'lat': lat, 'lon': lon, 'alt': alt,
+                    'distance': distance or 0, 'nearest_line': line_name, 'status': level,
+                })
+            return jsonify({"status": "ok", "whitelisted": True})
+
+        # ── 告警去重 ──
+        _cooldown_key = (drone_id, level)
+        _now = _time.time()
+        _last = _alert_cooldown.get(_cooldown_key, 0)
+        if _now - _last >= _ALERT_COOLDOWN_SEC:
+            _alert_cooldown[_cooldown_key] = _now
+
+            # 清理超过 120 秒的旧冷却条目
+            stale = [k for k, v in _alert_cooldown.items() if _now - v > 120]
+            for k in stale:
+                del _alert_cooldown[k]
+
+            message = f"[{level}] {drone_id} 接近 {line_name} 距离{d:.0f}m"
+            add_alert(device_name, drone_id, level, distance, line_name, message)
+
+            if drone_id:
+                upsert_drone(device_name, drone_id, lat, lon, alt)
+                update_drone_status(device_name, drone_id, distance, line_name, level)
+
+            # 云侧 SMS
+            _notify_station_personnel(device_name, drone_id, level, distance,
+                                      line_name, lat, lon)
+
+            # WebSocket 实时推送
+            if drone_id:
+                socketio.emit('drone_update', {
+                    'drone_id': drone_id, 'lat': lat, 'lon': lon, 'alt': alt,
+                    'distance': distance or 0, 'nearest_line': line_name, 'status': level,
+                })
+            socketio.emit('alert_update', {
+                'drone_id': drone_id, 'level': level,
+                'line_name': line_name, 'distance': d,
+            })
+        else:
+            # 跳过重复告警，但更新位置
+            if drone_id:
+                upsert_drone(device_name, drone_id, lat, lon, alt)
+                update_drone_status(device_name, drone_id, distance, line_name, level)
+                socketio.emit('drone_update', {
+                    'drone_id': drone_id, 'lat': lat, 'lon': lon, 'alt': alt,
+                    'distance': distance or 0, 'nearest_line': line_name, 'status': level,
+                })
 
         return jsonify({"status": "ok"})
     except Exception as e:

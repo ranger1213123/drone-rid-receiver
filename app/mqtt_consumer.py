@@ -273,19 +273,23 @@ class MqttConsumer:
             logger.warning("JSON 解析失败: topic=%s", topic)
             return
 
-        with self._buffer_lock:
-            if msg_type == "report":
-                self._buffer_report(device_name, payload)
-            elif msg_type == "alert":
-                self._buffer_alert(device_name, payload)
-            elif msg_type == "heartbeat":
-                self._buffer_heartbeat(device_name, payload)
-            elif msg_type == "status":
-                self._buffer_status(device_name, payload)
-            elif msg_type == "config_sync":
-                self._handle_config_sync(device_name, payload)
-            elif msg_type == "raw":
-                self._buffer_raw(device_name, payload)
+        try:
+            with self._buffer_lock:
+                if msg_type == "report":
+                    self._buffer_report(device_name, payload)
+                elif msg_type == "alert":
+                    self._buffer_alert(device_name, payload)
+                elif msg_type == "heartbeat":
+                    self._buffer_heartbeat(device_name, payload)
+                elif msg_type == "status":
+                    self._buffer_status(device_name, payload)
+                elif msg_type == "config_sync":
+                    self._handle_config_sync(device_name, payload)
+                elif msg_type == "raw":
+                    self._buffer_raw(device_name, payload)
+        except Exception as e:
+            logger.error("消息处理失败: topic=%s err=%s", topic, e)
+            return
 
         # 指标: 按 topic 类型计数 + buffer 容量
         messages_total.labels(topic_type=msg_type).inc()
@@ -784,23 +788,13 @@ class MqttConsumer:
             drones = list(self._buffer['drones'].values())
             status_updates = list(self._buffer['status_updates'])
             alerts = list(self._buffer['alerts'])
-            self._buffer = {
-                'devices': {}, 'drones': {},
-                'status_updates': [], 'alerts': [],
-            }
 
         # 从 CloudAlertProcessor 提取告警
         cloud_alerts = self.alert_processor.drain_alerts()
         if cloud_alerts:
             alerts.extend(cloud_alerts)
-            # 按等级计数
             for a in cloud_alerts:
                 alerts_generated.labels(level=a['level']).inc()
-
-        # 更新 buffer gauges (flush 后归零)
-        buffer_devices.set(0)
-        buffer_drones.set(0)
-        buffer_alerts.set(0)
 
         if not any([devices, drones, status_updates, alerts]):
             flushes_total.inc()
@@ -836,7 +830,19 @@ class MqttConsumer:
             write_errors_total.inc()
             logger.error("数据库连接失败: %s", e)
 
-        # SMS 通知 — DB 写入成功后才发送，异常不影响主流程
+        if db_ok:
+            # 写入成功后才清空 buffer
+            with self._buffer_lock:
+                self._buffer['devices'] = {k: v for k, v in self._buffer['devices'].items() if k not in {d['name'] for d in devices}}
+                self._buffer['drones'] = {k: v for k, v in self._buffer['drones'].items() if k not in {(d['id'], d['device_name']) for d in drones}}
+                self._buffer['status_updates'] = self._buffer['status_updates'][len(status_updates):]
+                self._buffer['alerts'] = self._buffer['alerts'][len(alerts):]
+            # 更新 buffer gauges
+            buffer_devices.set(len(self._buffer['devices']))
+            buffer_drones.set(len(self._buffer['drones']))
+            buffer_alerts.set(len(self._buffer['alerts']))
+
+        # SMS 通知 — DB 写入成功后才发送
         if db_ok and alerts:
             try:
                 self._notify_alerts_sms(alerts)

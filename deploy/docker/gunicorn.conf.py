@@ -1,9 +1,8 @@
-"""Gunicorn 生产配置 — 中心服务器"""
+"""Gunicorn 生产配置 — 中心服务器 (eventlet worker for WebSocket)"""
 
 bind = "0.0.0.0:5000"
-workers = 4
-worker_class = "sync"
-threads = 2
+workers = 1
+worker_class = "eventlet"
 timeout = 30
 keepalive = 5
 max_requests = 5000

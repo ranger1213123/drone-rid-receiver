@@ -257,11 +257,13 @@ body.sta-mode .nat-only{display:none!important}
 
 /* Back to national button */
 .back-btn{
-  display:flex; align-items:center; gap:6px; padding:8px 14px;
-  font-size:11px; font-weight:500; color:var(--blue); cursor:pointer;
-  border-bottom:1px solid var(--border); user-select:none;
+  display:flex; align-items:center; gap:6px; padding:10px 16px;
+  font-size:12px; font-weight:600; color:#fff; cursor:pointer;
+  background:var(--blue); user-select:none;
+  border-bottom:1px solid rgba(255,255,255,.15);
+  transition:background var(--transition);
 }
-.back-btn:hover{background:var(--blue-bg)}
+.back-btn:hover{background:#1d4ed8}
 
 /* Leaflet popup */
 .leaflet-popup-content{font-size:11px;font-family:inherit;margin:8px 12px}
@@ -276,7 +278,7 @@ body.sta-mode .nat-only{display:none!important}
 .popup-btn.traj-active{background:var(--blue);color:#fff}
 
 /* ═══════════ Modal (power line CRUD) ═══════════ */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 .modal-overlay.show{display:flex}
 .modal-dialog{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
@@ -356,15 +358,12 @@ body.sta-mode .nat-only{display:none!important}
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <span id="userBadge" style="font-size:10px;padding:3px 8px;border-radius:10px;background:var(--blue-bg);color:var(--blue);font-weight:500"></span>
-        <a href="/logout" title="退出登录" style="color:var(--muted);text-decoration:none;font-size:14px">⏻</a>
+        <a href="#" onclick="event.preventDefault();fetch('/logout',{method:'POST'}).then(function(){location.href='/login'})" title="退出登录" style="color:var(--muted);text-decoration:none;font-size:14px">⏻</a>
       </div>
     </div>
     <div class="ctrl-row">
-      <select id="modeSelect">
-        <option value="simulated">模拟演示</option><option value="ble">BLE 蓝牙</option><option value="wifi">WiFi</option>
-      </select>
-
-      <button class="btn-sm" onclick="openPlModal()" title="管理电力线">⚙</button>
+      <button class="btn-sm" onclick="openPlModal()" style="gap:4px"><svg width="14" height="14" viewBox="0 0 1024 1024" fill="currentColor"><path d="M920.74 448.29H720.1l-37.81-191.97h112.42c17.64 0 31.26-14.37 31.26-31.82 0-17.96-14.12-31.82-31.26-31.82H669.68L641.96 52.04C635.91 22.27 610.2.71 580.45.71H442.82c-29.74 0-55.96 21.56-61.5 51.33l-27.73 140.64H229.07c-17.64 0-31.26 14.37-31.26 31.82 0 17.97 14.11 31.82 31.26 31.82h112.42l-37.81 191.97H103.04c-17.65 0-31.26 14.37-31.26 31.82 0 17.45 14.11 31.82 31.26 31.82h188.04L198.32 986.2v9.75c0 2.05.5 3.59 1.01 5.64.5 2.06 1.51 3.59 2.52 5.65 1.01 2.05 2.02 3.59 3.53 5.13.51 1.03 1.01 2.05 2.02 2.57.51.51 1.51 1.03 2.02 1.54 1.51 1.03 3.03 2.06 5.04 3.08 2.01 1.03 4.03 2.05 6.05 2.57 1.01 0 1.51 1.02 2.52 1.02h3.02c1.01 0 2.02.51 3.03.51 1 0 2.01-.51 3.53-.51 2.01 0 4.03-.51 6.05-1.02 2.01-.51 4.04-1.54 5.55-2.57 2.02-1.02 3.53-2.05 5.04-3.59 1.01-1.03 2.02-1.03 3.03-2.05L512.4 734.7l260.13 279.22c.5.51 1.01.51 1.51 1.03 2.02 2.05 4.53 3.59 7.06 4.62 1 .51 2.01 1.54 3.03 1.54 3.53 1.54 7.56 2.56 11.59 2.56 2.01 0 4.03 0 5.54-.51 1.01 0 1.51-1.02 2.52-1.02 2.02-.51 4.03-1.54 6.05-2.57l4.54-3.08c1-.51 1.51-1.03 2.52-1.54 1-1.03 1-2.05 2.01-2.57 1.52-1.54 2.53-3.08 3.53-5.13 1.01-2.05 2.01-3.59 2.52-5.65.51-2.05 1.01-3.59 1.01-5.64v-9.75L732.7 512.45h188.05c17.64 0 31.26-14.37 31.26-31.82-.01-17.45-13.62-32.34-31.27-32.34zM443.83 63.85h136.62l25.21 128.32H418.62l25.21-128.32zm-37.8 192.48h211.73l37.81 191.97H368.21l37.82-191.97zm227.36 256.12l-121.5 129.86L390.4 512.45h242.99zM281 890.22l65.53-332.09 122 130.89L281 890.22zm396.25-332.09l65.53 332.09-187.54-201.2 122.01-130.89z"/></svg> 电力线</button>
+      <button class="btn-sm nat-only" id="stMgrBtn" onclick="openStModal()" style="gap:4px"><svg width="14" height="14" viewBox="0 0 1024 1024" fill="currentColor"><path d="M967.11 1024H739.56c-31.4 0-56.89-25.49-56.89-56.89V739.56c0-31.4 25.49-56.89 56.89-56.89h85.33V526.22H199.57v156.45h84.87c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89H56.89C25.49 1024 0 998.51 0 967.11V739.56c0-31.4 25.49-56.89 56.89-56.89h85.79V498.92v-1.14-1.14c0-15.08 12.23-27.31 27.31-27.31h313.57V341.33h-85.33c-31.4 0-56.89-25.49-56.89-56.89V56.89c0-31.4 25.49-56.89 56.89-56.89h227.55c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89h-85.33v128h314.03c15.08 0 27.31 12.23 27.31 27.31v1.14 1.14v183.79h85.33c31.4 0 56.89 25.49 56.89 56.89v227.55c0 31.4-25.49 56.89-56.89 56.89z"/></svg> 站点</button>
     </div>
 
     <!-- Quick stats row (both modes) -->
@@ -491,7 +490,7 @@ body.sta-mode .nat-only{display:none!important}
 
 
           <button class="btn-sm" onclick="openPwdModal()" style="text-align:left">修改密码</button>
-          <button class="btn-sm" style="text-align:left"><a href="/logout" style="color:inherit;text-decoration:none">退出登录</a></button>
+          <button class="btn-sm" onclick="event.preventDefault();fetch('/logout',{method:'POST'}).then(function(){location.href='/login'})" style="text-align:left">退出登录</button>
         </div>
       </div>
 
@@ -587,7 +586,7 @@ body.sta-mode .nat-only{display:none!important}
       <div class="bt-stat bt-crit"><div class="btv" id="btNatAlerts">0</div><div class="btl">今日预警</div></div>
     </div>
     <div style="display:flex;align-items:center;gap:14px">
-      <div class="comm-pill"><span class="comm-dot" id="commNat4g"></span><span>MQTT</span></div>
+      <div class="comm-pill"><span class="comm-dot" id="commNat4gDot"></span><span>MQTT</span></div>
       <span style="font-size:10px;color:var(--muted)" id="commNatLabel">--</span>
       <span style="font-size:10px;color:var(--muted)" id="footerNatTime">--</span>
     </div>
@@ -675,8 +674,8 @@ body.sta-mode .nat-only{display:none!important}
         <option value="">全部等级</option><option value="critical">危险</option><option value="severe">严重</option><option value="warning">警告</option>
       </select>
       <input id="histDrone" placeholder="无人机 ID (可选)" style="flex:1;padding:5px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
-      <input id="histFrom" type="date" style="padding:5px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;width:120px" title="起始日期">
-      <input id="histTo" type="date" style="padding:5px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;width:120px" title="结束日期">
+      <input id="histFrom" type="date" lang="zh-CN" style="padding:5px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;width:120px" title="起始日期">
+      <input id="histTo" type="date" lang="zh-CN" style="padding:5px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;width:120px" title="结束日期">
       <button class="btn-sm primary" onclick="refreshHistory()">搜索</button>
     </div>
     <div id="histList" style="max-height:380px;overflow-y:auto;border-top:1px solid var(--border)"><div class="empty-state">加载中...</div></div>
@@ -712,7 +711,6 @@ body.sta-mode .nat-only{display:none!important}
     <!-- Other -->
     <h3 style="margin-top:10px">其他</h3>
     <div style="display:flex;gap:14px;align-items:center">
-      <label style="margin:0"><input type="checkbox" id="cfgPilotEn" style="width:auto"> 飞手推送</label>
       <label style="margin:0"><input type="checkbox" id="cfgArchiveEn" style="width:auto"> 原始报文存档</label>
       <div style="flex:1"><label>保留天数</label><input id="cfgRetention" type="number"></div>
     </div>
@@ -733,7 +731,7 @@ body.sta-mode .nat-only{display:none!important}
     <label>密码</label><input id="usrPass" type="password" placeholder="登录密码">
     <div class="row">
       <div style="flex:1"><label>角色</label><select id="usrRole" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="user">操作员</option><option value="tenant_admin">租户管理员</option><option value="admin">管理员</option></select></div>
-      <div style="flex:1"><label>所属站点</label><input id="usrStation" placeholder="站点名称"></div>
+      <div style="flex:1"><label>所属站点</label><select id="usrStation" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">全部站点</option></select></div>
     </div>
     <div class="modal-actions">
       <button class="primary" id="usrSubmitBtn" onclick="addUser()">添加</button>
@@ -749,14 +747,19 @@ body.sta-mode .nat-only{display:none!important}
     <h3>站点管理</h3>
     <div id="stModalList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
     <div style="display:flex;gap:4px;margin-bottom:8px">
-      <input id="stFilterProv" placeholder="省" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" oninput="filterStModalList()">
-      <input id="stFilterCity" placeholder="市" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" oninput="filterStModalList()">
+      <select id="stFilterProv" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" onchange="onStFilterProvChange()"><option value="">全部省</option></select>
+      <select id="stFilterCity" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" onchange="onStFilterCityChange()"><option value="">全部市</option></select>
+      <select id="stFilterCounty" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)"><option value="">全部区/县</option></select>
       <input id="stFilterName" placeholder="站点名" style="flex:1;padding:5px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm)" oninput="filterStModalList()">
     </div>
     <h3 style="margin-top:8px" id="stFormTitle">新增站点</h3>
     <label>站点名称</label><input id="stName" placeholder="例如: NW-F2">
+    <label>关联设备</label>
+    <select id="stDeviceMap" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
+      <option value="">选择设备…</option>
+    </select>
     <label>省市县</label>
-    <div class="row"><input id="stProvince" placeholder="省"><input id="stCity" placeholder="市"><input id="stCounty" placeholder="区/县"></div>
+    <div class="row"><select id="stProvince" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择省</option></select><select id="stCity" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择市</option></select><select id="stCounty" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择区/县</option></select></div>
     <label>位置描述</label><input id="stLocation" placeholder="例如: 文一西路-杆塔#05">
     <label>坐标 (纬度, 经度, 海拔)</label>
     <div class="row"><input id="stLat" placeholder="纬度"><input id="stLon" placeholder="经度"><input id="stAlt" placeholder="海拔"></div>

@@ -69,7 +69,7 @@ def login():
     return render_template("login.html", error="用户名或密码错误")
 
 
-@bp.route("/logout")
+@bp.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     return redirect(url_for("dashboard.login"))

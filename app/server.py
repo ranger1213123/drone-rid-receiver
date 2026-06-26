@@ -13,7 +13,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 
-from app.server import create_app
+from app.server import create_app, socketio
 from logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -48,7 +48,7 @@ def main():
     logger.info("按 Ctrl+C 停止")
 
     try:
-        app.run(host=args.host, port=args.port, debug=False, threaded=True)
+        socketio.run(app, host=args.host, port=args.port, debug=False)
     except KeyboardInterrupt:
         pass
     finally:

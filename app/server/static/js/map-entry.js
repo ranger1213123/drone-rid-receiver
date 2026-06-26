@@ -5,6 +5,7 @@
 import './api.js';
 import './ui.js';
 import './chart-utils.js';
+import regionData from './region-data.js';
 import * as L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 window.L = L;
@@ -152,20 +153,21 @@ function buildModelBars(models){
   var max=models[0].count;
   div.innerHTML=models.map(function(m){
     var pct=Math.max(4,Math.round(m.count/max*100));
-    return '<div class="model-bar"><span class="m-name" title="'+UI.escapeHtml(m.name)+'">'+UI.escapeHtml(m.name)+'</span><div class="m-track"><div class="m-fill" style="width:'+pct+'%"></div></div><span class="m-cnt">'+m.count+'</span></div>';
+    return '<div class="model-bar"><span class="m-name" title="'+UI.escapeHtml(m.model)+'">'+UI.escapeHtml(m.model)+'</span><div class="m-track"><div class="m-fill" style="width:'+pct+'%"></div></div><span class="m-cnt">'+m.count+'</span></div>';
   }).join('');
 }
 
 // ═══════════ Station info grid ═══════════
-function buildStationGrid(gridId, s){
+function buildStationGrid(gridId, stations){
   var g=document.getElementById(gridId);
   if(!g) return;
-  var pos=s.position||{};
-  g.innerHTML=[
-    ['设备',UI.escapeHtml(s.device_name||'--')],['位置',UI.escapeHtml(s.device_location||'--')],
-    ['坐标',pos.lat!=null?pos.lat.toFixed(4)+', '+pos.lon.toFixed(4):'--'],
-    ['MQTT',s.mqtt_online?'在线':'离线'],
-  ].map(function(r){return '<div class="station-item"><div class="sk">'+r[0]+'</div><div class="sv">'+r[1]+'</div></div>'}).join('');
+  var list = Array.isArray(stations) ? stations : [stations];
+  g.innerHTML=list.map(function(s){
+    var pos=s.position||{};
+    var rows=[['设备',UI.escapeHtml(s.device_name||'--')],['位置',UI.escapeHtml(s.location||'--')],['坐标',pos.lat!=null?pos.lat.toFixed(4)+', '+pos.lon.toFixed(4):'--'],['MQTT',s.mqtt_online?'在线':'离线']];
+    var header='<div class="station-item full" style="font-weight:600;font-size:11px;color:var(--blue);padding-top:4px;border-top:1px solid var(--border)">'+UI.escapeHtml(s.name||s.device_name||'--')+'</div>';
+    return header+rows.map(function(r){return '<div class="station-item"><div class="sk">'+r[0]+'</div><div class="sv">'+r[1]+'</div></div>'}).join('');
+  }).join('');
 }
 
 // ═══════════ Station markers — national overview ═══════════
@@ -200,7 +202,7 @@ function renderNationalStationCards(stations){
     var lat=st.lat!=null?st.lat:(st.position?st.position.lat:0);
     var lon=st.lon!=null?st.lon:(st.position?st.position.lon:0);
     var name=st.name||st.device_name||'站点';
-    var loc=st.location||st.device_location||'';
+    var loc=st.location||'';
     var mqttLabel=st.mqtt_online?'MQTT 在线':'MQTT 离线';
     return '<div class="station-card" data-enter-station="'+i+'">'
       +'<div class="s-name">'+UI.escapeHtml(name)+'</div>'
@@ -223,13 +225,13 @@ function renderNationalAlerts(drones){
     var order={critical:0,severe:1,warning:2};
     return (order[a.status]||9)-(order[b.status]||9);
   });
-  var key=alerts.map(function(d){return d.id+'|'+d.status}).join(',');
+  var key=alerts.map(function(d){return d.id+'|'+d.status+'|'+(d.min_distance||0).toFixed(0)+'|'+d.last_seen+'|'+d.model}).join(',');
   if(renderNationalAlerts._key===key) return;
   renderNationalAlerts._key=key;
   if(!alerts.length){div.innerHTML='<div class="empty-state">暂无预警</div>';return;}
   div.innerHTML=alerts.map(function(dr){
     var s=dr.status||'active';
-    var model=dr.product_model||'';
+    var model=dr.model||'';
     var time=(dr.last_seen||'').substring(11,19);
     var stationName=(cachedDashboard&&cachedDashboard.station)?cachedDashboard.station.device_name:'站点';
     return '<div class="alert-row" data-enter-station-from-alert="">'
@@ -249,11 +251,11 @@ function renderDroneList(){
   if(searchTerm){
     drones=drones.filter(function(dr){
       var id=(dr.id||'').toLowerCase();
-      var model=(dr.product_model||'').toLowerCase();
+      var model=(dr.model||'').toLowerCase();
       return id.includes(searchTerm)||model.includes(searchTerm);
     });
   }
-  var key=drones.map(function(d){return d.id+'|'+d.status+'|'+(d.min_distance||0).toFixed(0)}).join(',')+'||'+searchTerm;
+  var key=drones.map(function(d){return d.id+'|'+d.status+'|'+(d.min_distance||0).toFixed(0)+'|'+d.last_seen+'|'+d.model+'|'+(d.last_lat||0).toFixed(4)+'|'+(d.last_lon||0).toFixed(4)}).join(',')+'||'+searchTerm;
   if(renderDroneList._key===key) return;
   renderDroneList._key=key;
   var listDiv=document.getElementById('droneList');
@@ -265,7 +267,7 @@ function renderDroneList(){
     var s=dr.status||'active';
     var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
     var time=(dr.last_seen||'').substring(11,19);
-    var model=dr.product_model||'';
+    var model=dr.model||'';
     var idShort=dr.id.length>14?dr.id.substring(0,14)+'...':dr.id;
     return '<div class="drone-row" data-fly-to="'+dr.last_lat+','+dr.last_lon+'">'
       +'<span class="d-icon '+s+'"></span>'
@@ -293,7 +295,7 @@ function renderStationAlerts(drones){
     return (order[a.status]||9)-(order[b.status]||9);
   });
   document.getElementById('staAlertCount').textContent=alerts.length||'';
-  var key=alerts.map(function(d){return d.id+'|'+d.status}).join(',');
+  var key=alerts.map(function(d){return d.id+'|'+d.status+'|'+(d.min_distance||0).toFixed(0)+'|'+d.last_seen}).join(',');
   if(renderStationAlerts._key===key) return;
   renderStationAlerts._key=key;
   if(!alerts.length){div.innerHTML='<div class="empty-state">暂无预警</div>';return;}
@@ -303,7 +305,7 @@ function renderStationAlerts(drones){
     var time=(dr.last_seen||'').substring(11,19);
     return '<div class="alert-row" data-fly-to="'+dr.last_lat+','+dr.last_lon+'">'
       +'<span class="al-dot '+s+'"></span>'
-      +'<div class="al-info"><div class="al-id">'+UI.escapeHtml(dr.id)+'</div><div class="al-sub">'+UI.escapeHtml(dr.line_name)+' · '+time+'</div></div>'
+      +'<div class="al-info"><div class="al-id">'+UI.escapeHtml(dr.id)+'</div><div class="al-sub">'+UI.escapeHtml(dr.line_name||dr.nearest_line||'--')+' · '+time+'</div></div>'
       +'<span class="al-dist">'+dist+'</span></div>';
   }).join('');
 }
@@ -349,7 +351,7 @@ window.loadPowerLines = function(){
     }
     document.getElementById('plItems').innerHTML=html;
     if(bufZonesVisible) buildBufferZones();
-  });
+  }).catch(catchErr('加载电力线失败'));
 };
 
 // Delegate for power line mini fly-to-bounds
@@ -379,7 +381,7 @@ function showTrajectory(droneId){
       trajPolylines[droneId]={line:line,start:sm,end:em};
       activeTrajDrone=droneId;
       map.fitBounds(line.getBounds(),{padding:[80,80],maxZoom:16});
-    });
+    }).catch(function(){}); // 轨迹可视化失败时静默忽略
 }
 
 function removeTrajectory(id){
@@ -394,7 +396,7 @@ function popupContent(dr){
   var s=dr.status||'active';
   var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+' m':'--';
   var alt=dr.last_alt!=null?dr.last_alt.toFixed(0)+' m':'--';
-  var model=dr.product_model||'';
+  var model=dr.model||'';
   var isActive=activeTrajDrone===dr.id;
   return '<b>'+UI.escapeHtml(dr.id)+'</b>'
     +(model?'<div class="popup-row"><span>型号:</span><span style="color:var(--blue)">'+UI.escapeHtml(model)+'</span></div>':'')
@@ -403,7 +405,7 @@ function popupContent(dr){
     +'<div class="popup-row"><span>纬度:</span><span>'+(dr.last_lat||0).toFixed(5)+'</span></div>'
     +'<div class="popup-row"><span>高度:</span><span>'+alt+'</span></div>'
     +'<div class="popup-row"><span>距离:</span><span>'+dist+'</span></div>'
-    +'<div class="popup-row"><span>最近电力线:</span><span>'+UI.escapeHtml(dr.line_name||'--')+'</span></div>'
+    +'<div class="popup-row"><span>最近电力线:</span><span>'+UI.escapeHtml(dr.line_name||dr.nearest_line||'--')+'</span></div>'
     +'<button class="popup-btn'+(isActive?' traj-active':'')+'" data-toggle-traj="'+UI.escapeAttr(dr.id)+'">'+(isActive?'隐藏轨迹':'显示轨迹')+'</button>';
 }
 
@@ -443,7 +445,7 @@ function refreshPlModalList(){
         +'<span class="pl-del" data-edit-pl-modal="'+lid+'" style="color:var(--blue);margin-right:4px;cursor:pointer">✎</span>'
         +'<span class="pl-del" data-del-pl-modal="'+lid+'" style="cursor:pointer">×</span></div>';
     }).join('');
-  });
+  }).catch(catchErr('加载电力线失败'));
 }
 
 var _editingPlId=-1;
@@ -467,7 +469,7 @@ window.editPowerLine = function(lineId){
       +'</span>'
       +'<span class="pl-del" data-save-pl="'+lineId+'" style="color:var(--green);margin-right:4px;cursor:pointer">✓</span>'
       +'<span class="pl-del" data-cancel-edit-pl="" style="cursor:pointer">✗</span>';
-  });
+  }).catch(catchErr('加载电力线失败'));
 };
 
 // Delegate for plEditInpVl onchange
@@ -543,17 +545,87 @@ window.delPowerLine = function(lineId){
 var _stations=[];
 var _editingStName=null;
 
+// ── Region cascade helpers (shared with station modal) ──
+function _findProvince(name) { return regionData.find(function(p){ return p[0]===name; }); }
+function _findCity(prov, name) { return prov[1].find(function(c){ return c[0]===name; }); }
+function _popProvinceSelect(selId, placeholder) {
+  var sel = document.getElementById(selId);
+  sel.innerHTML = '<option value="">'+ (placeholder||'选择省') +'</option>';
+  regionData.forEach(function(p){ sel.innerHTML += '<option value="'+p[0]+'">'+p[0]+'</option>'; });
+}
+function _onProvinceChange(provSelId, citySelId, countySelId, placeholder) {
+  var prov = document.getElementById(provSelId).value;
+  var citySel = document.getElementById(citySelId);
+  var countySel = document.getElementById(countySelId);
+  citySel.innerHTML = '<option value="">'+ (placeholder||'选择市') +'</option>';
+  countySel.innerHTML = '<option value="">选择区/县</option>';
+  if (!prov) return;
+  var p = _findProvince(prov);
+  if (!p) return;
+  p[1].forEach(function(c){ citySel.innerHTML += '<option value="'+c[0]+'">'+c[0]+'</option>'; });
+}
+function _onCityChange(provSelId, citySelId, countySelId) {
+  var prov = document.getElementById(provSelId).value;
+  var city = document.getElementById(citySelId).value;
+  var countySel = document.getElementById(countySelId);
+  countySel.innerHTML = '<option value="">选择区/县</option>';
+  if (!prov || !city) return;
+  var p = _findProvince(prov);
+  if (!p) return;
+  var c = _findCity(p, city);
+  if (!c) return;
+  c[1].forEach(function(x){ countySel.innerHTML += '<option value="'+x+'">'+x+'</option>'; });
+}
+function _setRegionValues(province, city, county) {
+  document.getElementById('stProvince').value = province || '';
+  if (province) {
+    _onProvinceChange('stProvince', 'stCity', 'stCounty', '选择市');
+    document.getElementById('stCity').value = city || '';
+    if (city) {
+      _onCityChange('stProvince', 'stCity', 'stCounty');
+      document.getElementById('stCounty').value = county || '';
+    }
+  }
+}
+
+window.onStFilterProvChange = function(){
+  _onProvinceChange('stFilterProv', 'stFilterCity', 'stFilterCounty', '全部市');
+  filterStModalList();
+};
+window.onStFilterCityChange = function(){
+  _onCityChange('stFilterProv', 'stFilterCity', 'stFilterCounty');
+  filterStModalList();
+};
+
 window.openStModal = function(){
+  _popProvinceSelect('stProvince', '选择省');
+  _popProvinceSelect('stFilterProv', '全部省');
+  document.getElementById('stFilterCity').innerHTML = '<option value="">全部市</option>';
+  document.getElementById('stFilterCounty').innerHTML = '<option value="">全部区/县</option>';
   document.getElementById('stModal').classList.add('show');
+  _populateDeviceSelect();
   refreshStModalList();
 };
 window.closeStModal = function(){document.getElementById('stModal').classList.remove('show');_resetStForm()};
 
+function _populateDeviceSelect(){
+  Api.get('/api/devices').then(function(devices){
+    var sel = document.getElementById('stDeviceMap');
+    sel.innerHTML = '<option value="">选择设备…</option>';
+    (devices||[]).forEach(function(d){
+      if(!d.revoked) sel.innerHTML += '<option value="'+UI.escapeAttr(d.device_name)+'">'+UI.escapeHtml(d.device_name)+(d.station?' ('+UI.escapeHtml(d.station)+')':'')+'</option>';
+    });
+  }).catch(function(){});
+}
+
 window._resetStForm = function(){
   _editingStName=null;
   document.getElementById('stName').value='';document.getElementById('stName').readOnly=false;
+  document.getElementById('stDeviceMap').value='';
   document.getElementById('stLocation').value='';
-  document.getElementById('stProvince').value='';document.getElementById('stCity').value='';document.getElementById('stCounty').value='';
+  _popProvinceSelect('stProvince', '选择省');
+  document.getElementById('stCity').innerHTML='<option value="">选择市</option>';
+  document.getElementById('stCounty').innerHTML='<option value="">选择区/县</option>';
   document.getElementById('stLat').value='';document.getElementById('stLon').value='';document.getElementById('stAlt').value='';
   document.getElementById('stFormTitle').textContent='新增站点';
   document.getElementById('stSubmitBtn').textContent='添加';
@@ -570,12 +642,14 @@ function _stLocationLabel(s){
 }
 
 window.filterStModalList = function(){
-  var prov=(document.getElementById('stFilterProv').value||'').trim().toLowerCase();
-  var city=(document.getElementById('stFilterCity').value||'').trim().toLowerCase();
+  var prov=document.getElementById('stFilterProv').value;
+  var city=document.getElementById('stFilterCity').value;
+  var county=document.getElementById('stFilterCounty').value;
   var name=(document.getElementById('stFilterName').value||'').trim().toLowerCase();
   var filtered=_stations.filter(function(s){
-    if(prov && (s.province||'').toLowerCase().indexOf(prov)<0) return false;
-    if(city && (s.city||'').toLowerCase().indexOf(city)<0) return false;
+    if(prov && (s.province||'')!==prov) return false;
+    if(city && (s.city||'')!==city) return false;
+    if(county && (s.county||'')!==county) return false;
     if(name && s.name.toLowerCase().indexOf(name)<0 && (s.location||'').toLowerCase().indexOf(name)<0) return false;
     return true;
   });
@@ -586,7 +660,7 @@ function refreshStModalList(){
   Api.get('/api/stations').then(function(stations){
     _stations=stations||[];
     renderStModalList(_stations);
-  });
+  }).catch(catchErr('加载站点列表失败'));
 }
 
 function renderStModalList(list){
@@ -604,10 +678,10 @@ window.editStation = function(name){
   _editingStName=s.name;
   document.getElementById('stName').value=s.name;
   document.getElementById('stName').readOnly=true;
+  document.getElementById('stDeviceMap').value=s.device_name||'';
   document.getElementById('stLocation').value=s.location||'';
-  document.getElementById('stProvince').value=s.province||'';
-  document.getElementById('stCity').value=s.city||'';
-  document.getElementById('stCounty').value=s.county||'';
+  _popProvinceSelect('stProvince', '选择省');
+  _setRegionValues(s.province||'', s.city||'', s.county||'');
   document.getElementById('stLat').value=s.lat||0;
   document.getElementById('stLon').value=s.lon||0;
   document.getElementById('stAlt').value=s.alt||0;
@@ -620,6 +694,7 @@ window.editStation = function(name){
 window.addStation = function(){
   var data={
     name:document.getElementById('stName').value.trim(),
+    device_name:document.getElementById('stDeviceMap').value.trim(),
     location:document.getElementById('stLocation').value.trim(),
     province:document.getElementById('stProvince').value.trim(),
     city:document.getElementById('stCity').value.trim(),
@@ -658,8 +733,19 @@ window.delStation = function(name){
 var _users=[];
 var _editingUsername=null;
 
+function _populateUsrStationSelect(){
+  Api.get('/api/stations').then(function(stations){
+    var sel = document.getElementById('usrStation');
+    sel.innerHTML = '<option value="">全部站点</option>';
+    (stations||[]).forEach(function(s){
+      sel.innerHTML += '<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+(s.location?' ('+UI.escapeHtml(s.location)+')':'')+'</option>';
+    });
+  }).catch(function(){});
+}
+
 window.openUsrModal = function(){
   document.getElementById('usrModal').classList.add('show');
+  _populateUsrStationSelect();
   refreshUsrModalList();
 };
 window.closeUsrModal = function(){document.getElementById('usrModal').classList.remove('show');_resetUsrForm()};
@@ -670,7 +756,8 @@ window._resetUsrForm = function(){
   document.getElementById('usrName').readOnly=false;
   document.getElementById('usrPass').value='';
   document.getElementById('usrRole').value='user';
-  document.getElementById('usrStation').value='';
+  var usrSel = document.getElementById('usrStation');
+  if(usrSel) usrSel.value='';
   document.getElementById('usrFormTitle').textContent='新增用户';
   document.getElementById('usrSubmitBtn').textContent='添加';
   var cancelBtn=document.getElementById('usrCancelEditBtn');
@@ -700,7 +787,8 @@ window.editUser = function(idx){
   document.getElementById('usrPass').value='';
   document.getElementById('usrPass').placeholder='留空则不改密码';
   document.getElementById('usrRole').value=u.role||'user';
-  document.getElementById('usrStation').value=u.assigned_station||u.station||'';
+  var usrSel = document.getElementById('usrStation');
+  if(usrSel) usrSel.value = u.assigned_station||u.station||'';
   document.getElementById('usrFormTitle').textContent='编辑用户: '+u.username;
   document.getElementById('usrSubmitBtn').textContent='保存';
   var cancelBtn=document.getElementById('usrCancelEditBtn');
@@ -708,11 +796,12 @@ window.editUser = function(idx){
 };
 
 window.addUser = function(){
+  var usrSel = document.getElementById('usrStation');
   var data={
     username:document.getElementById('usrName').value,
     password:document.getElementById('usrPass').value,
     role:document.getElementById('usrRole').value,
-    station:document.getElementById('usrStation').value
+    station: usrSel ? usrSel.value : ''
   };
   if(!data.username){UI.Message.warning('用户名不能为空');return}
   if(!_editingUsername&&!data.password){UI.Message.warning('密码不能为空');return}
@@ -812,7 +901,7 @@ window.openPersonnelModal = function(){
     if (!stName) stName = currentUser.assigned_station || currentUser.station || '';
     if (stName) sel.value = stName;
     refreshPersonnelList();
-  });
+  }).catch(catchErr('加载站点列表失败'));
 };
 
 window.closePersonnelModal = function(){document.getElementById('personnelModal').classList.remove('show')};
@@ -872,7 +961,6 @@ window.openCfgModal = function(){
     document.getElementById('cfgFlapOut').value=s.debounce_out||10;
     document.getElementById('cfgSmsEn').checked=s.sms_enabled==='true';
     document.getElementById('cfgSmsPhones').value=(s.sms_alert_phones||'').split(',').join('\n');
-    document.getElementById('cfgPilotEn').checked=s.pilot_notify_enabled==='true';
     document.getElementById('cfgArchiveEn').checked=s.raw_archive_enabled!=='false';
     document.getElementById('cfgRetention').value=s.raw_archive_retention_days||30;
   });
@@ -890,7 +978,6 @@ window.saveSettings = function(){
     debounce_out: String(parseFloat(document.getElementById('cfgFlapOut').value)||10),
     sms_enabled: document.getElementById('cfgSmsEn').checked?'true':'false',
     sms_alert_phones: phones,
-    pilot_notify_enabled: document.getElementById('cfgPilotEn').checked?'true':'false',
     raw_archive_enabled: document.getElementById('cfgArchiveEn').checked?'true':'false',
     raw_archive_retention_days: String(parseInt(document.getElementById('cfgRetention').value)||30)
   };
@@ -992,10 +1079,10 @@ function refreshAudit(){
       html+='<td style="padding:6px 4px">'+UI.escapeHtml(r.timestamp)+'</td>';
       html+='<td style="padding:6px 4px">'+UI.escapeHtml(r.operation)+'</td>';
       html+='<td style="padding:6px 4px">'+UI.escapeHtml(r.table_name||'')+(r.record_id?' #'+r.record_id:'')+'</td>';
-      html+='<td style="padding:6px 4px">'+UI.escapeHtml(r.operator)+'</td>';
+      html+='<td style="padding:6px 4px">'+UI.escapeHtml(r.username)+'</td>';
       html+='</tr>';
-      if(r.details){
-        html+='<tr style="border-bottom:1px solid var(--border);background:var(--surface2)"><td colspan="4" style="padding:4px 8px;font-size:10px;color:var(--muted)">'+UI.escapeHtml(r.details)+'</td></tr>';
+      if(r.detail){
+        html+='<tr style="border-bottom:1px solid var(--border);background:var(--surface2)"><td colspan="4" style="padding:4px 8px;font-size:10px;color:var(--muted)">'+UI.escapeHtml(r.detail)+'</td></tr>';
       }
     });
     html+='</tbody></table>';
@@ -1050,7 +1137,7 @@ function refreshTenantInfo(){
 function applyRBACVisibility(){
   var isAdmin=currentUser.role==='admin';
   var isTenantAdmin=currentUser.role==='tenant_admin';
-  document.querySelectorAll('#addStationBtn,#stMgrBtn2,#usrMgrBtn').forEach(function(b){
+  document.querySelectorAll('#addStationBtn,#stMgrBtn,#stMgrBtn2,#usrMgrBtn').forEach(function(b){
     b.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
   });
   document.getElementById('cfgMgrBtn').style.display=isAdmin?'inline-block':'none';
@@ -1119,7 +1206,7 @@ function buildBufferZones(){
       var warn=L.polyline(latlngs,{color:'rgba(202,138,4,0.04)', weight:34, opacity:1, smoothFactor:1, interactive:false}).addTo(map);
       bufZoneLayers.push(warn);
     });
-  });
+  }).catch(catchErr('加载电力线失败'));
 }
 
 // Event delegation: click outside modal to close, modal action buttons
@@ -1182,7 +1269,7 @@ window.updateAll = function(){
         if(cur!==prev&&(cur==='critical'||cur==='severe')){
           playAlertBeep(cur);
           if(window.Notification&&Notification.permission==='granted'){
-            new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
+            new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.nearest_line||dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
           }
         }
         prevAlertLevels[dr.id]=cur;
@@ -1208,7 +1295,7 @@ window.updateAll = function(){
         if(cur!==prev&&(cur==='critical'||cur==='severe')){
           playAlertBeep(cur);
           if(window.Notification&&Notification.permission==='granted'){
-            new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
+            new Notification('['+(cur==='critical'?'危险':'严重')+'] '+dr.id,{body:'距离 '+(dr.nearest_line||dr.line_name||'?')+' '+(dr.min_distance||0).toFixed(0)+'m',tag:dr.id});
           }
         }
         prevAlertLevels[dr.id]=cur;
@@ -1255,7 +1342,7 @@ window.updateAll = function(){
       if(s.error) return;
       cachedDashboard=s;
 
-      buildStationGrid('natStationGrid', s.station);
+      buildStationGrid('natStationGrid', s.station_list||[s.station]);
       buildStationGrid('staStationGrid', s.station);
 
       renderNationalStationCards(s.stations);
@@ -1315,13 +1402,13 @@ function initSocket(){
         cachedDrones[i].last_lon=d.lon;
         cachedDrones[i].last_alt=d.alt;
         cachedDrones[i].min_distance=d.distance;
-        cachedDrones[i].line_name=d.line;
+        cachedDrones[i].nearest_line=d.nearest_line;
         cachedDrones[i].status=d.status;
         found=true; break;
       }
     }
     if(!found){
-      cachedDrones.push({id:d.drone_id,last_lat:d.lat,last_lon:d.lon,last_alt:d.alt,min_distance:d.distance,line_name:d.line,status:d.status});
+      cachedDrones.push({id:d.drone_id,last_lat:d.lat,last_lon:d.lon,last_alt:d.alt,min_distance:d.distance,nearest_line:d.nearest_line,status:d.status});
     }
     var key='_ws_upd_'+d.drone_id;
     if(!updateAll[key]||Date.now()-updateAll[key]>1000){
@@ -1418,6 +1505,13 @@ function schedulePoll(){
 
 // ═══════════ Event Delegation for data-* buttons ═══════════
 (function setupDelegation() {
+  // Region cascade: stProvince → stCity
+  document.addEventListener('change', function(e){
+    var t=e.target;
+    if(t.id==='stProvince'){ _onProvinceChange('stProvince','stCity','stCounty','选择市'); }
+    else if(t.id==='stCity'){ _onCityChange('stProvince','stCity','stCounty'); }
+    else if(t.id==='stFilterCounty'){ filterStModalList(); }
+  });
   // Station cards: enter station view
   UI.delegate(document.getElementById('natStationList'), 'click', '[data-enter-station]', function() {
     var idx = parseInt(this.dataset.enterStation);

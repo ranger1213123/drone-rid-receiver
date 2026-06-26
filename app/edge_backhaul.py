@@ -90,25 +90,11 @@ def main():
 
     backhaul.start()
 
-    # 心跳变量
-    heartbeat_interval = config.get("backhaul", {}).get("http", {}).get("heartbeat_interval", 30)
-    last_heartbeat = 0
-
     running = setup_signal_handlers(stop_callback=backhaul.stop)
     logger.info("回传服务已启动 | device=%s | mqtt=%s",
                 device_name, "enabled" if mqtt_channel else "disabled")
 
     while running[0]:
-        now = time.time()
-
-        # outbox drain (MQTT 在线时)
-        backhaul.flush_if_needed()
-
-        # 心跳
-        if now - last_heartbeat >= heartbeat_interval:
-            backhaul.send_heartbeat()
-            last_heartbeat = now
-
         time.sleep(1)
 
     backhaul.stop()

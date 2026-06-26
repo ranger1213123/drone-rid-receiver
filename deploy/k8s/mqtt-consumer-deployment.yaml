@@ -30,11 +30,13 @@ spec:
             - containerPort: 8080
               name: health
           env:
-            - name: DATABASE_URL
+            - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: drone-rid-secret
-                  key: CONSUMER_DATABASE_URL
+                  key: DB_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql://drone_rid:$(DB_PASSWORD)@postgres:5432/drone_rid_center"
             - name: MQTT_BROKER_HOST
               value: "emqx.drone-rid.svc.cluster.local"
             - name: MQTT_BROKER_PORT

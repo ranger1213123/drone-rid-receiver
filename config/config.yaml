@@ -127,6 +127,8 @@ map:
   tile_terrain: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
 
 web_auth:
+  # WARNING: 仅供边缘设备本地调试使用。生产环境务必修改 secret_key 和用户密码。
+  # 云端使用 DB web_users 表管理用户，不受此配置影响。
   secret_key: change-me-in-production
   users:
   - username: admin

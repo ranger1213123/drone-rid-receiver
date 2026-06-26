@@ -6,8 +6,7 @@ metadata:
   labels:
     app: drone-rid
 data:
-  # 中心数据库 URL (PostgreSQL 密码由 Secret 注入)
-  DATABASE_URL: "postgresql://drone_rid:$(DB_PASSWORD)@postgres:5432/drone_rid_center"
+  # DATABASE_URL 由 Deployment env 注入 (引用 Secret 中的 DB_PASSWORD)
   JWT_EXPIRE_SECONDS: "86400"
 
   # 应用配置 (云端服务器)
