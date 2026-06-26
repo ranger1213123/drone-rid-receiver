@@ -19,22 +19,27 @@
                               MQTT (mTLS)
                                     │
                                     ▼
-┌──────────────────── 云端服务器 (K8s 部署) ──────────────────────────────┐
-│                                                                          │
-│  mqtt-consumer.service    Flask Web 服务           PostgreSQL           │
-│  ┌──────────────┐       ┌─────────────┐      ┌──────────────┐          │
-│  │ MQTT 订阅    │       │ REST API    │      │ 设备状态      │          │
-│  │ 批量写入DB   │       │ 聚合仪表盘   │      │ 告警记录      │          │
-│  │ 配置下发     │       │ 电力线管理   │      │ 轨迹数据      │          │
-│  └──────────────┘       └─────────────┘      └──────────────┘          │
-│                                                                          │
-└──────────────────────────────────────────────────────────────────────────┘
+┌──────────────────── 云端服务器 (K8s 部署) ───────────────────────────┐
+│                                                                        │
+│  mqtt-consumer.service    Flask + SocketIO        SQLite / PostgreSQL │
+│  ┌──────────────┐       ┌─────────────────┐    ┌──────────────┐      │
+│  │ MQTT 订阅    │       │ REST API + WS   │    │ 设备状态      │      │
+│  │ 批量写入DB   │       │ 实时推送        │    │ 告警记录      │      │
+│  │ 配置下发     │       │ 多租户 RBAC     │    │ 轨迹数据      │      │
+│  └──────────────┘       └─────────────────┘    └──────────────┘      │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 **三层微服务（边缘侧）**：
 - **Receiver** — BLE/WiFi/ESP32 信号捕获，原始报文写入 SQLite
 - **Pipeline** — 协议解析 → 3D 距离计算 → 告警判定 → 轨迹记录 → 结果入 outbox
 - **Backhaul** — MQTT mTLS 上行回传 + 下行配置同步，断网时 outbox 持久化积压
+
+**云端服务**：
+- **Flask Web** — REST API + Jinja2 模板渲染，JWT + Session 双重认证
+- **SocketIO** — WebSocket 实时推送无人机位置更新和告警事件
+- **MQTT Consumer** — 订阅边缘设备上行数据，批量写入数据库
 
 ## 功能
 
@@ -70,13 +75,33 @@
 - **Outbox 模式**: MQTT 中断时消息入 SQLite outbox，重连后自动补传
 - **无降级链路**: 杆塔设备有稳定供电和 4G/5G，不做 SMS/北斗降级
 
+### Web 仪表盘
+- **实时监控**: SocketIO 推送，地图/列表双视图，Leaflet 交互地图
+- **多租户 RBAC**: 系统管理员 / 租户管理员 / 站点用户，数据范围隔离
+- **CRUD 管理**: 电力线、站点、用户、白名单、设备、密钥、告警联系人
+- **24h 预警趋势**: Chart.js 折线图，三级告警分色，rAF 延迟渲染
+- **离线地理编码**: 经纬度自动逆解析 → 省/市/区县
+- **响应式布局**: Element Plus 风格侧边栏，支持移动端
+- **安全防护**: JWT + Session 认证，CSRF 保护，速率限制，安全响应头
+
 ### 其他
 - 轨迹记录（≤200m 警告区内自动记录）
 - 原始报文存档 + 哈希链防篡改
 - 飞手推送通知（UOM / 控制台）
-- 空域管理（电子围栏、多边形判定）
-- Web 仪表盘（Flask，电力线 CRUD，实时监控）
-- GUI 桌面版（tkinter）
+- 短信告警通知（SMS 网关）
+- 无人机白名单（精确/前缀匹配，命中不触发告警）
+- 设备证书管理（签发/吊销）
+
+## 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| **前端** | Leaflet, Chart.js, Socket.IO Client, Alpine.js, Vite 多入口构建 |
+| **后端** | Flask, Flask-SocketIO, Flask-Login, PyJWT, APScheduler |
+| **数据库** | SQLite (边缘) / PostgreSQL (云端可选)，SQLAlchemy ORM |
+| **消息** | MQTT (paho-mqtt, mTLS), WebSocket (SocketIO) |
+| **部署** | Docker, Kubernetes (Deployment + ConfigMap + Secret) |
+| **边缘** | systemd 三服务, ARM Linux, BLE/WiFi/ESP32 |
 
 ## 快速开始
 
@@ -84,13 +109,15 @@
 
 ```bash
 pip install -r requirements.txt
+npm install
+npm run build
 ```
 
-### 开发模式（Windows / Linux）
+### 开发模式
 
 ```bash
-# Web 仪表盘 (推荐)
-python app/web.py
+# Web 仪表盘 (推荐，含 SocketIO 实时推送)
+python app/server.py --port 8080
 
 # CLI 终端
 python app/cli.py --mode simulated
@@ -103,28 +130,28 @@ python app/gui_launcher.py
 
 ```bash
 # 三服务独立运行
-python -m app.edge_receiver  --config /etc/drone-rid/config.yaml --mode ble
-python -m app.edge_pipeline   --config /etc/drone-rid/config.yaml
-python -m app.edge_backhaul   --config /etc/drone-rid/config.yaml
+python -m app.edge_receiver  --config config/config.yaml --mode ble
+python -m app.edge_pipeline   --config config/config.yaml
+python -m app.edge_backhaul   --config config/config.yaml
 
 # 或一体化无头模式
-python -m app.headless --config /etc/drone-rid/config.yaml --mode ble
+python -m app.headless --config config/config.yaml --mode ble
 ```
 
 ### 云端服务
 
 ```bash
-# Flask 聚合服务
+# Flask 聚合服务 (SocketIO)
 python app/server.py --port 8080
 
 # MQTT Consumer (K8s 多副本)
-python -m app.mqtt_consumer --config /etc/drone-rid/cloud.yaml
+python -m app.mqtt_consumer --config config/config.yaml
 ```
 
 ### 测试
 
 ```bash
-python -m pytest tests/ -v    # 97 项测试
+python -m pytest tests/ -v
 ```
 
 ## 配置
@@ -147,7 +174,6 @@ python -m pytest tests/ -v    # 97 项测试
 | `mqtt.tls.enabled` | mTLS 双向认证 | true |
 | `trajectory.min_interval` | 轨迹记录最小间隔 (s) | 2.0 |
 | `trajectory.max_points_per_drone` | 单机最大轨迹点数 | 1000 |
-| `raw_archive.retention_days` | 原始报文保留天数 | 30 |
 
 电力线配置：`config/power_lines.yaml`
 
@@ -162,6 +188,9 @@ power_lines:
     sag: 12.5                     # 手动指定, -1 则自动估算
 ```
 
+Web 用户配置：`config/web_users.yaml`
+站点配置：`config/stations.yaml`
+
 ## 项目结构
 
 ```
@@ -175,26 +204,43 @@ drone-rid-receiver/
 │   ├── edge_pipeline.py          # 边缘服务 B: 数据处理
 │   ├── edge_backhaul.py          # 边缘服务 C: 数据回传
 │   ├── mqtt_consumer.py          # 云端 MQTT Consumer
-│   ├── server.py                 # 云端聚合服务
-│   └── server/                   # 云端子模块 (API/认证/仪表盘/ORM)
-│       ├── api_heartbeat.py
-│       ├── api_report.py
-│       ├── api_status.py
-│       ├── api_web.py
-│       ├── auth.py
-│       ├── cert_manager.py
-│       ├── dashboard.py
-│       └── models.py
+│   ├── server.py                 # 云端聚合服务 (SocketIO)
+│   └── server/                   # 云端子模块 (7 Blueprint + ORM)
+│       ├── __init__.py           # App 工厂 + SocketIO + 后台线程
+│       ├── api_heartbeat.py      # 设备心跳 + 配置下发
+│       ├── api_report.py         # 无人机上报 + 告警 (阈值/去重/白名单)
+│       ├── api_status.py         # 状态聚合 API
+│       ├── api_trajectory.py     # 轨迹查询 API
+│       ├── api_web.py            # Web CRUD API + Settings
+│       ├── auth.py               # JWT/Session 认证 + CSRF
+│       ├── cert_manager.py       # 设备证书管理
+│       ├── dashboard.py          # 仪表盘页面路由
+│       ├── geocode.py            # 离线地理编码器
+│       ├── models.py             # SQLAlchemy ORM (13 表)
+│       └── static/               # 前端静态资源
+│           ├── js/               # ES 模块 (Vite 多入口)
+│           │   ├── map-entry.js      # 地图页入口
+│           │   ├── dashboard-entry.js # 仪表盘页入口
+│           │   ├── chart-utils.js    # Chart.js 工具
+│           │   ├── map-utils.js      # 地图工具函数
+│           │   ├── ui.js             # 共享 UI 工具
+│           │   ├── api.js            # HTTP 请求封装
+│           │   ├── region-data.js    # 行政区划数据
+│           │   └── vendor.js         # 第三方库入口
+│           ├── css/
+│           │   └── reset.css         # CSS 重置 + 共享样式
+│           └── dist/                 # Vite 构建输出
 ├── core/                         # 核心业务逻辑
 │   ├── pipeline.py               # 数据处理管道
 │   ├── powerline.py              # 电力线管理 + 3D 距离 + 垂度估算
 │   ├── alert.py                  # 告警系统 (阈值/去重/升级)
+│   ├── cloud_alert.py            # 云端告警引擎
 │   ├── anti_flapping.py          # 告警防抖状态机
 │   ├── trajectory.py             # 轨迹记录器
 │   ├── backhaul.py               # MQTT 回传 + Outbox 管理
 │   ├── mqtt_client.py            # MQTT mTLS 客户端
+│   ├── live_feed.py              # 实时数据推送
 │   ├── coords.py                 # GCJ-02 ↔ WGS-84 坐标转换
-│   ├── airspace.py               # 空域管理 (电子围栏)
 │   ├── pilot_notify.py           # 飞手推送通知
 │   ├── sms_gateway.py            # 短信网关 (阿里云/模拟)
 │   ├── beidou.py                 # 北斗定位 + 短报文 (保留)
@@ -211,25 +257,42 @@ drone-rid-receiver/
 │   ├── ble.py                    # BLE 蓝牙接收器
 │   ├── wifi.py                   # WiFi 接收器 (Linux raw socket)
 │   ├── serial.py                 # ESP32 串口接收器
-│   └── simulated.py             # 模拟数据生成器
+│   ├── serial_scanner.py         # 串口扫描工具
+│   └── simulated.py              # 模拟数据生成器
 ├── display/                      # 展示层
 │   ├── terminal.py               # CLI ANSI 终端渲染
-│   └── gui/
-│       ├── window.py             # tkinter 主窗口
-│       └── powerline.py          # 电力线录入对话框
+│   └── gui/                      # tkinter GUI
 ├── storage/                      # 数据持久化
 │   └── database.py               # SQLite (边缘) + 迁移 + Outbox
-├── config/
-│   ├── config.yaml               # 主配置文件
+├── templates/                    # Jinja2 模板
+│   ├── base.html                 # 基础布局
+│   ├── dashboard.html            # 仪表盘 (列表视图)
+│   ├── map.html                  # 地图视图
+│   ├── login.html                # 登录页
+│   └── register.html             # 注册页
+├── deploy/                       # 部署配置
+│   ├── docker/                   # Docker + Gunicorn
+│   └── k8s/                      # K8s Deployment/ConfigMap/Secret
+├── scripts/                      # 工具脚本
+│   ├── build_region_index.py     # 离线地理编码索引构建
+│   └── download_geojson.py       # GeoJSON 地图数据下载
+├── config/                       # 配置文件
+│   ├── config.yaml               # 主配置
 │   ├── power_lines.yaml          # 电力线坐标
 │   ├── web_users.yaml            # Web 用户
-│   └── stations.yaml             # 站点配置
-├── tests/
-│   ├── test_system.py            # 系统测试 (77 项)
-│   ├── test_protocols.py         # 协议解析测试 (20 项)
-│   └── test_powerline.py         # 电力线/垂度/距离测试
+│   ├── stations.yaml             # 站点配置
+│   └── data/                     # 地理数据
 ├── data/                         # 数据库 + 日志 (运行生成)
-└── reference/                    # 参考实现 (WiFi/ESP32)
+├── tests/                        # 测试
+│   ├── test_system.py
+│   ├── test_protocols.py
+│   ├── test_powerline.py
+│   ├── test_api_integration.py
+│   ├── test_sdrtu_consumer.py
+│   └── conftest.py
+├── package.json                  # Node 依赖 (Vite/Chart.js/Leaflet/SocketIO)
+├── vite.config.js                # Vite 构建配置
+└── wsgi.py                       # WSGI 入口
 ```
 
 ## 技术要点
@@ -245,8 +308,17 @@ drone-rid-receiver/
 - 冷却机制控制同级告警频率（30s/60s/120s）
 - 级别升级绕过冷却立即触发
 - 防抖仅管理进出转换，持续 INSIDE 交由冷却接管
+- HTTP 告警路径: 阈值重判定 → 白名单跳过 → 冷却去重，三层保护
 
 ### 数据不丢失
 - MQTT 中断 → 消息写入 SQLite outbox → 重连后 FIFO 补传
 - 原始报文存档 + SHA-256 哈希链，支持事后审计与篡改检测
 - 所有边缘状态（告警/轨迹/outbox）均在 SQLite 中持久化
+- 云端定期清理过期数据（后台线程，可配置保留策略）
+
+### 安全
+- JWT (边缘设备) + Session (Web 用户) 双重认证
+- 多租户 RBAC: 管理员 / 租户管理员 / 站点用户，数据范围隔离
+- CSRF 保护，API 速率限制，安全响应头 (nosniff, no-store)
+- 设备证书签发/吊销，mTLS 双向认证
+- 生产环境强制要求 JWT_SECRET_KEY 配置
