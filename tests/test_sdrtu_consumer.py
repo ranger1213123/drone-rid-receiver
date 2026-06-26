@@ -223,3 +223,115 @@ class TestSdrtuTranslation(TestCase):
         drone = self.consumer._buffer['drones'][key]
         self.assertEqual(drone["device_name"], "EXD001")
         self.assertEqual(drone["last_lat"], 30.61517)
+
+    # ═══════ BLE Raw hex 解析 (SDRTU 新格式) ═══════
+
+    def _build_ble_hex(self, counter=0, version=2, basic_id="TEST12345",
+                       lat=30.5, lon=104.1, alt_geo=500.0, id_type=1, ua_type=2):
+        """构造 ASTM F3411 BLE 数据包的 hex 字符串 (用于测试)"""
+        import struct
+        buf = bytearray()
+        # BLE header: counter + version
+        buf.append(counter & 0x07)
+        buf.append(version & 0x0F)
+
+        # Basic ID message (msg_type=0x0, len=22)
+        buf.append(0x00)  # header: msg_type=0
+        bm = bytearray(22)
+        bm[0] = ((ua_type & 0x0F) << 4) | (id_type & 0x0F)
+        bid_bytes = basic_id.encode('ascii')
+        bm[2:2 + len(bid_bytes)] = bid_bytes
+        buf.extend(bm)
+
+        # Location message (msg_type=0x1, len=25)
+        buf.append(0x01)  # header: msg_type=1
+        lm = bytearray(25)
+        # parse_location_astm reads payload at:
+        #   data[6:10] = lat (int32 LE / 1e7)
+        #   data[10:14] = lon (int32 LE / 1e7)
+        #   data[16:18] = alt_g (uint16 LE / 0.5)
+        struct.pack_into('<i', lm, 6, int(lat * 1e7))
+        struct.pack_into('<i', lm, 10, int(lon * 1e7))
+        struct.pack_into('<H', lm, 16, int(alt_geo / 0.5))
+        buf.extend(lm)
+
+        return buf.hex()
+
+    def test_ble_raw_parses_basic_id_and_location(self):
+        """BLE hex → 解析出 drone_id + lat/lon/alt"""
+        hex_str = self._build_ble_hex(
+            basic_id="1581F8PJC245B0001KRC",
+            lat=30.61517, lon=104.06742, alt_geo=469.0,
+        )
+        payload = {
+            "dev_id": "EXD001", "raw_hex": hex_str,
+            "len": len(bytes.fromhex(hex_str)), "count": 1,
+            "type": "ble_raw",
+        }
+        reports = self.consumer._translate_ble_raw_to_reports("EXD001", payload)
+        self.assertGreaterEqual(len(reports), 1,
+            f"Should find at least 1 drone, got {len(reports)}")
+        r = reports[0]
+        self.assertEqual(r["drone_id"], "1581F8PJC245B0001KRC")
+        self.assertAlmostEqual(r["latitude"], 30.61517, places=5)
+        self.assertAlmostEqual(r["longitude"], 104.06742, places=5)
+        self.assertAlmostEqual(r["altitude"], 469.0, delta=1.0)
+
+    def test_ble_raw_skips_duplicate_drone_ids(self):
+        """同一 drone_id 在同一个 hex 块中只取首次出现的位置"""
+        # 两个相同 drone 的包拼接
+        hex1 = self._build_ble_hex(basic_id="DRONE01", lat=30.0, lon=104.0, alt_geo=100)
+        hex2 = self._build_ble_hex(basic_id="DRONE01", lat=31.0, lon=105.0, alt_geo=200)
+        payload = {
+            "dev_id": "EXD001", "raw_hex": hex1 + hex2,
+            "len": 0, "count": 1, "type": "ble_raw",
+        }
+        reports = self.consumer._translate_ble_raw_to_reports("EXD001", payload)
+        self.assertEqual(len(reports), 1,
+            f"Should deduplicate, got {len(reports)}")
+        self.assertEqual(reports[0]["latitude"], 30.0)
+
+    def test_ble_raw_empty_hex(self):
+        """空 hex 返回空列表"""
+        reports = self.consumer._translate_ble_raw_to_reports(
+            "EXD001", {"dev_id": "EXD001", "raw_hex": "", "len": 0, "count": 1, "type": "ble_raw"}
+        )
+        self.assertEqual(reports, [])
+
+    def test_ble_raw_invalid_hex_returns_empty(self):
+        """非法 hex 返回空列表 (不抛异常)"""
+        reports = self.consumer._translate_ble_raw_to_reports(
+            "EXD001", {"dev_id": "EXD001", "raw_hex": "ZZZZ", "len": 2, "count": 1, "type": "ble_raw"}
+        )
+        self.assertEqual(reports, [])
+
+    def test_ble_raw_version_filter(self):
+        """版本号 > 3 的偏移被跳过"""
+        # 构造: 在有效包前面插入 2 字节随机数据 (版本=0xF > 3)
+        valid_hex = self._build_ble_hex(basic_id="DRONE01", lat=30.0, lon=104.0, alt_geo=100)
+        junk = "ffff"  # byte0=0xFF, byte1=0xFF (version=0xF > 3, 被跳过)
+        payload = {
+            "dev_id": "EXD001", "raw_hex": junk + valid_hex,
+            "len": 0, "count": 1, "type": "ble_raw",
+        }
+        reports = self.consumer._translate_ble_raw_to_reports("EXD001", payload)
+        self.assertGreaterEqual(len(reports), 1,
+            f"Should find drone after skipping junk, got {len(reports)}")
+
+    def test_buffer_raw_ble_dispatches_to_parser(self):
+        """_buffer_raw 识别 type=ble_raw 并调用 BLE 解析器"""
+        hex_str = self._build_ble_hex(
+            basic_id="1581F8PJC245B0001KRC",
+            lat=30.61517, lon=104.06742, alt_geo=469.0,
+        )
+        payload = {
+            "dev_id": "EXD001", "raw_hex": hex_str,
+            "len": len(bytes.fromhex(hex_str)), "count": 5,
+            "type": "ble_raw",
+        }
+        # 不挂载电力线 → 直接进入 buffer
+        self.consumer._buffer_raw("EXD001", payload)
+        self.assertIn("EXD001", self.consumer._buffer['devices'])
+        key = ("1581F8PJC245B0001KRC", "EXD001")
+        self.assertIn(key, self.consumer._buffer['drones'],
+            f"Drone should be in buffer, keys: {list(self.consumer._buffer['drones'].keys())}")

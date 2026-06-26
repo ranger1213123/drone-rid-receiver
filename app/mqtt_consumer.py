@@ -19,6 +19,12 @@ MQTT Consumer — 独立云端服务 (K8s Deployment)
 import json
 import logging
 import os
+import sys
+from pathlib import Path
+
+# 确保项目根目录在 Python path 中 (兼容直接 python app/mqtt_consumer.py 运行)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import threading
 import time
 from collections import defaultdict
@@ -30,6 +36,8 @@ import paho.mqtt.client as mqtt
 from core.powerline import PowerLineManager
 from core.cloud_alert import CloudAlertProcessor
 from core.sms_gateway import create_sms_gateway
+from core.parser.astm import _MSG_LENGTHS, _ASTM_DECODERS
+from core.parser.types import ParsedRID, MSG_BASIC_ID, MSG_LOCATION, MSG_SELF_ID, MSG_SYSTEM, MSG_OPERATOR_ID
 
 from prometheus_client import Counter, Gauge, Histogram, generate_latest, CollectorRegistry
 
@@ -153,6 +161,8 @@ class MqttConsumer:
     def __init__(self):
         self._broker_host = os.environ.get("MQTT_BROKER_HOST", "localhost")
         self._broker_port = int(os.environ.get("MQTT_BROKER_PORT", "8883"))
+        self._broker_user = os.environ.get("MQTT_BROKER_USER", "")
+        self._broker_pass = os.environ.get("MQTT_BROKER_PASS", "")
         self._ca_cert = os.environ.get("MQTT_TLS_CA_CERT", "")
         self._client_cert = os.environ.get("MQTT_TLS_CLIENT_CERT", "")
         self._client_key = os.environ.get("MQTT_TLS_CLIENT_KEY", "")
@@ -202,6 +212,10 @@ class MqttConsumer:
         )
         self._client.reconnect_delay_set(min_delay=1, max_delay=60)
 
+        # 用户名密码认证
+        if self._broker_user:
+            self._client.username_pw_set(self._broker_user, self._broker_pass)
+
         # mTLS
         if self._ca_cert and self._client_cert and self._client_key:
             self._client.tls_set(
@@ -249,6 +263,8 @@ class MqttConsumer:
             client.subscribe("$share/consumer/drone/+/status", qos=1)
             client.subscribe("$share/consumer/drone/+/raw", qos=1)   # DevelopLink SDRTU 透传
             client.subscribe("drone/+/config_sync", qos=1)  # 非共享，每个 consumer 都可回复
+            # 普通订阅兜底 (非 K8s 环境 / broker 不支持共享订阅)
+            client.subscribe("drone/+/raw", qos=1)
         else:
             logger.warning("MQTT 连接失败: rc=%d", rc)
 
@@ -297,7 +313,7 @@ class MqttConsumer:
         buffer_drones.set(len(self._buffer['drones']))
         buffer_alerts.set(len(self._buffer['alerts']))
 
-        if self._buffer_size() >= self._batch_size:
+        if self.buffer_size() >= self._batch_size:
             self._flush()
 
     # ── Buffer 逻辑 ──
@@ -685,56 +701,228 @@ class MqttConsumer:
                     return True
         return False
 
+    # ── SDRTU BLE Raw (hex 编码 ASTM F3411 二进制) ──
+
+    def _try_parse_ble_packet(self, data: bytes, start: int):
+        """从 data[start+2] 开始尝试解析 ASTM 消息 (跳过 counter+version 头).
+
+        SDRTU 收到的 BLE 数据首字节高位常被置位 (如 0x80),
+        所以不依赖 _parse_astm_pack 的 counter 范围检查, 直接按消息结构解析。
+
+        遇到重复的 Basic ID 或 Location 消息时停止 (下一个 BLE 包边界)。
+        返回 (ParsedRID, bytes_consumed)
+        """
+        result = ParsedRID()
+        offset = start + 2
+        msg_count = 0
+        seen_types = set()
+
+        while offset < len(data) - 1:
+            header = data[offset]
+            msg_type = header & 0x0F
+            msg_len = _MSG_LENGTHS.get(msg_type, 0)
+
+            if msg_len == 0 or msg_type > 5:
+                break
+            # 遇到重复的 Basic ID 或 Location → 下一个 BLE 包, 停止
+            if msg_type in (MSG_BASIC_ID, MSG_LOCATION) and msg_type in seen_types:
+                break
+            if offset + 1 + msg_len > len(data):
+                break
+
+            payload = data[offset + 1: offset + 1 + msg_len]
+            decoder = _ASTM_DECODERS.get(msg_type)
+
+            if decoder and len(payload) >= 1:
+                try:
+                    parsed = decoder(payload)
+                    if msg_type == MSG_BASIC_ID:
+                        result.basic_id = parsed
+                    elif msg_type == MSG_LOCATION:
+                        result.location = parsed
+                    elif msg_type == MSG_SELF_ID:
+                        result.self_id = parsed
+                    elif msg_type == MSG_SYSTEM:
+                        result.system = parsed
+                    elif msg_type == MSG_OPERATOR_ID:
+                        result.operator_id = parsed
+                except Exception:
+                    pass
+
+            seen_types.add(msg_type)
+            offset += 1 + msg_len
+            msg_count += 1
+
+        consumed = offset - start if msg_count > 0 else 0
+        return result, consumed
+
+    def _extract_embedded_json(self, data: bytes, device_name: str) -> dict:
+        """从混合二进制流中提取 ESP32 嵌入的 JSON 心跳."""
+        import re
+        try:
+            text = data.decode('ascii', errors='ignore')
+            for match in re.finditer(r'\{[^{}]*\}', text):
+                try:
+                    obj = json.loads(match.group())
+                    if obj.get("devId"):
+                        logger.debug("Embedded ESP32 heartbeat: dev=%s count=%s",
+                                     obj.get("devId"), obj.get("count", 0))
+                        return obj
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        except Exception:
+            pass
+        return {}
+
+    def _validate_rid_result(self, drone_id: str, lat: float, lon: float) -> bool:
+        """校验解析结果是否合理，过滤随机字节误匹配"""
+        if not drone_id or len(drone_id) < 4:
+            return False
+        # drone_id 应以 ASCII 字母/数字为主
+        ascii_count = sum(1 for c in drone_id if c.isascii() and (c.isalnum() or c in '-_'))
+        if ascii_count < len(drone_id) * 0.8:
+            return False
+        # 坐标合理范围 (WGS-84 中国区域 ± 宽松边界)
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return False
+        if lat == 0.0 and lon == 0.0:
+            return False
+        return True
+
+    def _translate_ble_raw_to_reports(self, device_name: str, payload: dict) -> list:
+        """将 SDRTU hex 编码的 BLE 二进制解码为 report dict 列表.
+
+        输入: {"dev_id":"EXD001","raw_hex":"80c0e0...","len":8192,"count":N,"type":"ble_raw"}
+        输出: [report, ...]  每个 report 对应一架无人机的单次位置
+        """
+        hex_str = payload.get("raw_hex", "")
+        if not hex_str:
+            return []
+
+        try:
+            raw_bytes = bytes.fromhex(hex_str)
+        except ValueError:
+            logger.warning("Hex decode failed for device=%s", device_name)
+            return []
+
+        reports = []
+        seen_ids = set()
+        i = 0
+        n = len(raw_bytes)
+
+        while i < n - 4:
+            # 版本号在 byte 1 低 4 位, ASTM F3411 协议版本 0-2
+            version = raw_bytes[i + 1] & 0x0F if i + 1 < n else 0xFF
+            if version > 3:
+                i += 1
+                continue
+            # 第一个消息类型必须在 0-5 (进一步过滤随机字节)
+            first_msg_type = raw_bytes[i + 2] & 0x0F if i + 2 < n else 0xFF
+            if first_msg_type > 5:
+                i += 1
+                continue
+
+            parsed, consumed = self._try_parse_ble_packet(raw_bytes, i)
+            if parsed.drone_id and parsed.has_location:
+                drone_id = parsed.drone_id
+                loc = parsed.location
+                if not self._validate_rid_result(drone_id, loc.latitude, loc.longitude):
+                    i += 1
+                    continue
+                if drone_id not in seen_ids:
+                    seen_ids.add(drone_id)
+                    loc = parsed.location
+                    alt = loc.altitude_geodetic if loc.altitude_geodetic != 0 else loc.altitude_pressure
+                    reports.append({
+                        "drone_id": drone_id,
+                        "latitude": loc.latitude,
+                        "longitude": loc.longitude,
+                        "altitude": alt if alt != 0 else 0.0,
+                        "distance_to_line": None,
+                        "nearest_line": "",
+                        "status": "active",
+                        "device": device_name,
+                        "rssi": 0,
+                        "heading": getattr(loc, 'track_angle', 0) or 0,
+                        "speed": loc.speed_horizontal,
+                        "status_code": loc.status,
+                        "height_agl": loc.height_agl,
+                        "model": parsed.drone_model,
+                    })
+                i += max(consumed, 2)  # 跳过已解析的完整报文, 最少前进 1 字节
+            else:
+                i += 1
+
+        return reports
+
     def _buffer_raw(self, device_name: str, payload: dict):
         """处理 SDRTU raw 格式消息
 
-        心跳 → 只更新设备在线状态
-        数据 → 翻译为 report 格式, 注入距离计算 + 告警判定, 再复用 _buffer_report
+        type="ble_raw" → hex 解码 + ASTM F3411 解析 → report 管线
+        type=其他/无 → 透传 ESP32 JSON 格式 (兼容旧版)
         """
         now = datetime.now(timezone.utc)
 
         # 总是更新设备心跳
-        dev_id = payload.get("devId", device_name)
+        dev_id = payload.get("devId", payload.get("dev_id", device_name))
         self._buffer['devices'][device_name] = {
             'name': device_name,
             'last_seen': now,
             'status': 'online',
         }
 
+        # 根据 type 字段选择解析器
+        if payload.get("type") == "ble_raw":
+            # 提取嵌入的 JSON 心跳 (ESP32 interleaved)
+            embedded = {}
+            try:
+                hex_str = payload.get("raw_hex", "")
+                if hex_str:
+                    embedded = self._extract_embedded_json(bytes.fromhex(hex_str), device_name)
+            except Exception:
+                pass
+            reports = self._translate_ble_raw_to_reports(device_name, payload)
+            if reports:
+                logger.info("BLE raw: %d drones parsed, device=%s", len(reports), device_name)
+            for report in reports:
+                self._process_report(device_name, report)
+            return
+
         report = self._translate_raw_to_report(device_name, payload)
         if report:
-            # ── 白名单检查: 匹配的 SN 跳过告警 ──
-            self._ensure_whitelist_loaded()
-            if self._is_whitelisted(report["drone_id"]):
-                # 仅更新位置, 不触发告警
-                report["distance_to_line"] = None
-                report["nearest_line"] = ""
-                report["status"] = "active"
-                self._buffer_report(device_name, report)
-                return
+            self._process_report(device_name, report)
 
-            # ── 云端距离计算 + 告警 ──
-            self._ensure_pl_loaded()
-            if self.pl_manager and self.pl_manager.lines:
-                line, dist = self.pl_manager.find_nearest_line(
-                    report["latitude"], report["longitude"], report["altitude"]
-                )
-                if line:
-                    report["distance_to_line"] = dist
-                    report["nearest_line"] = line.name
-                    level = self.alert_processor.process(
-                        drone_id=report["drone_id"],
-                        distance=dist,
-                        line_name=line.name,
-                        line_id=line.line_id,
-                        drone_alt=report["altitude"],
-                        drone_lat=report["latitude"],
-                        drone_lon=report["longitude"],
-                        device_name=device_name,
-                    )
-                    if level:
-                        report["status"] = level
+    def _process_report(self, device_name: str, report: dict):
+        """共享管线: 白名单检查 → 距离计算 → 告警判定 → 写入 buffer"""
+        self._ensure_whitelist_loaded()
+        if self._is_whitelisted(report["drone_id"]):
+            report["distance_to_line"] = None
+            report["nearest_line"] = ""
+            report["status"] = "active"
             self._buffer_report(device_name, report)
+            return
+
+        self._ensure_pl_loaded()
+        if self.pl_manager and self.pl_manager.lines:
+            line, dist = self.pl_manager.find_nearest_line(
+                report["latitude"], report["longitude"], report["altitude"]
+            )
+            if line:
+                report["distance_to_line"] = dist
+                report["nearest_line"] = line.name
+                level = self.alert_processor.process(
+                    drone_id=report["drone_id"],
+                    distance=dist,
+                    line_name=line.name,
+                    line_id=line.line_id,
+                    drone_alt=report["altitude"],
+                    drone_lat=report["latitude"],
+                    drone_lon=report["longitude"],
+                    device_name=device_name,
+                )
+                if level:
+                    report["status"] = level
+        self._buffer_report(device_name, report)
 
     def _handle_config_sync(self, device_name: str, payload: dict):
         """设备重连后版本号比对，按需推送电力线配置"""
@@ -818,7 +1006,7 @@ class MqttConsumer:
                 db_ok = True
                 batch_write_latency.observe(time.time() - _db_t0)
                 self.last_flush_time = datetime.now().isoformat()
-                logger.debug("批量写入: devices=%d drones=%d alerts=%d",
+                logger.info("批量写入: devices=%d drones=%d alerts=%d",
                             len(devices), len(drones), len(alerts))
             except Exception as e:
                 session.rollback()
@@ -897,7 +1085,13 @@ class MqttConsumer:
             else:
                 merged[key].update({k: v for k, v in d.items() if v})
 
-        stmt = pg_insert(Drone).values(list(merged.values()))
+        # Drone 表没有 nearby_lines 列 (该字段仅写入 DronePosition 历史)
+        drone_values = []
+        for d in merged.values():
+            d_clean = {k: v for k, v in d.items() if k != 'nearby_lines'}
+            drone_values.append(d_clean)
+
+        stmt = pg_insert(Drone).values(drone_values)
         stmt = stmt.on_conflict_do_update(
             index_elements=['id', 'device_name'],
             set_={
