@@ -40,29 +40,6 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     _stale_thread = _threading.Thread(target=_stale_cleaner, daemon=True, name="stale-cleaner")
     _stale_thread.start()
 
-    # ── 后台线程: 定期清理过期数据 ──
-    from .models import cleanup_old_data as _cleanup_old_data
-
-    def _data_cleaner():
-        while True:
-            _time.sleep(6 * 3600)  # 每 6 小时
-            try:
-                result = _cleanup_old_data()
-                if not result.get("skipped"):
-                    from logging_config import get_logger as _get_logger
-                    _logger = _get_logger(__name__)
-                    _logger.info(
-                        "data_cleaner: drones=%d alerts=%d audit=%d",
-                        result.get("drone_positions", 0),
-                        result.get("alerts", 0),
-                        result.get("audit_logs", 0),
-                    )
-            except Exception:
-                pass
-
-    _cleanup_thread = _threading.Thread(target=_data_cleaner, daemon=True, name="data-cleaner")
-    _cleanup_thread.start()
-
     app = Flask(
         __name__,
         template_folder=str(_Path(__file__).resolve().parent.parent.parent / "templates"),
@@ -132,28 +109,16 @@ def create_app(database_url: str = "sqlite:///data/center.db",
         tags.append(f'<script type="module" src="/static/dist/{item["file"]}"></script>')
         return Markup("\n".join(tags))
 
-    # 地图瓦片 URL 配置: 环境变量 > 硬编码默认值 (K8s ConfigMap 注入)
-    _tile_urls = {
-        "standard": os.environ.get(
-            "MAP_TILE_STANDARD",
-            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        ),
-        "satellite": os.environ.get(
-            "MAP_TILE_SATELLITE",
-            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        ),
-        "terrain": os.environ.get(
-            "MAP_TILE_TERRAIN",
-            "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-        ),
-    }
-
     @app.context_processor
     def inject_vite_helpers():
         return {
             "vite_asset": _vite_asset,
             "vite_tags": _vite_tags,
-            "tile_urls": _tile_urls,
+            "tile_urls": {
+                "standard": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "satellite": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                "terrain": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+            },
         }
 
     # 生产环境安全检查: JWT_SECRET_KEY 必须配置
@@ -187,28 +152,11 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     # 初始化数据库
     init_db(database_url, pool_size=pool_size)
 
-    # 首次启动: 创建默认管理员 (生产环境仅告警，不自动创建弱密码账户)
+    # 首次启动: 创建默认管理员
     from .models import count_admin_users, upsert_web_user
     if count_admin_users() == 0:
-        if _is_prod:
-            app.logger.error(
-                "生产环境无管理员账户！请通过管理接口创建。"
-                "设置 ADMIN_USER/ADMIN_PASS 环境变量以自动创建。"
-            )
-        else:
-            upsert_web_user("admin", "admin123", "admin", "")
-            app.logger.info("已创建默认管理员账户 admin / admin123")
-
-    # 初始化 WebSocket
-    socketio.init_app(app, cors_allowed_origins='*')
-
-    # 验证离线地理编码器可用性
-    from .geocode import get_geocoder
-    geocoder = get_geocoder()
-    if geocoder.available:
-        app.logger.info("离线地理编码器已就绪")
-    else:
-        app.logger.warning("离线地理编码器不可用 — 省会/城市/区县将不会自动填充")
+        upsert_web_user("admin", "admin123", "admin", "")
+        app.logger.info("已创建默认管理员账户 admin / admin123")
 
     # ── 健康检查 (无需鉴权，供 K8s 探针使用) ──
     @app.route("/api/health")
@@ -226,6 +174,7 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     from .api_web import bp as web_bp
     from .api_trajectory import bp as trajectory_bp
     from .dashboard import bp as dashboard_bp
+    from .tile_server import bp as tile_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(report_bp)
@@ -234,6 +183,7 @@ def create_app(database_url: str = "sqlite:///data/center.db",
     app.register_blueprint(web_bp)
     app.register_blueprint(trajectory_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(tile_bp)
 
     # Web session secret key — 优先环境变量，其次持久化文件
     _web_secret = _os.environ.get("WEB_SECRET_KEY", "")
@@ -251,13 +201,8 @@ def create_app(database_url: str = "sqlite:///data/center.db",
             app.logger.warning("无法持久化 session key，使用临时密钥(重启后所有用户需重新登录)")
     app.secret_key = _web_secret
 
-    # 安全响应头
-    @app.after_request
-    def add_security_headers(resp):
-        resp.headers['X-Content-Type-Options'] = 'nosniff'
-        if 'Cache-Control' not in resp.headers:
-            resp.headers['Cache-Control'] = 'no-store'
-        return resp
+    # WebSocket 实时推送
+    socketio.init_app(app, cors_allowed_origins='*')
 
     # 请求结束时释放数据库会话
     @app.teardown_appcontext

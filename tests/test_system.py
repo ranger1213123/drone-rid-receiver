@@ -572,39 +572,6 @@ class TestSMSGateway(unittest.TestCase):
 
 
 
-class TestPilotNotify(unittest.TestCase):
-    """飞手推送测试"""
-
-    def setUp(self):
-        self.log_path = os.path.join(tempfile.gettempdir(), "test_pilot_notify.log")
-
-    def tearDown(self):
-        if os.path.exists(self.log_path):
-            os.unlink(self.log_path)
-
-    def test_console_notifier_logs_to_file(self):
-        from core.pilot_notify import ConsolePilotNotifier
-        notifier = ConsolePilotNotifier(log_path=self.log_path)
-        self.assertTrue(notifier.notify("DRONE-1", "critical", "立即返航"))
-        self.assertTrue(os.path.exists(self.log_path))
-        with open(self.log_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        self.assertIn("DRONE-1", content)
-        self.assertIn("CRITICAL", content)
-
-    def test_uom_graceful_without_credentials(self):
-        from core.pilot_notify import UOMFlightServiceNotifier
-        notifier = UOMFlightServiceNotifier("", "")
-        result = notifier.notify("DRONE-1", "warning", "test")
-        self.assertIsInstance(result, bool)
-        self.assertFalse(result)  # 空凭据应该返回 False
-
-    def test_uom_sign_generation(self):
-        from core.pilot_notify import _generate_sign
-        sign = _generate_sign("test_key", "20250101000000", '{"test":1}')
-        self.assertEqual(len(sign), 32)
-
-
 class TestDatabaseMigration(unittest.TestCase):
     """数据库 Schema v2 迁移测试"""
 

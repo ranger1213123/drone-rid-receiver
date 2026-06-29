@@ -61,10 +61,18 @@ window.addEventListener('unhandledrejection',function(e){
 var map = L.map('map', {attributionControl: false, zoomControl: false, preferCanvas: true}).setView([35, 105], 4.5);
 L.control.zoom({position:'bottomright'}).addTo(map);
 var T = window.__TILE_URLS || {};
+function _cfg(c, fallbackUrl, fallbackZoom){
+  if(!c || typeof c==='string') c = {url: c||fallbackUrl};
+  var subs = c.subdomains && c.subdomains.length ? c.subdomains : undefined;
+  return {url: c.url||fallbackUrl, subdomains: subs, maxZoom: c.maxZoom||fallbackZoom||19};
+}
+var _s = _cfg(T.standard, '/tiles/{z}/{x}/{y}.png', 18);
+var _v = _cfg(T.satellite, '/tiles/{z}/{x}/{y}.png', 18);
+var _t = _cfg(T.terrain, 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', 17);
 var baseLayers={
-  '标准地图': L.tileLayer(T.standard || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}),
-  '卫星影像': L.tileLayer(T.satellite || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:18,attribution:'Esri,Maxar,Earthstar Geographics'}),
-  '地形图': L.tileLayer(T.terrain || 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'&copy; OpenTopoMap'})
+  '标准地图': L.tileLayer(_s.url, {maxZoom:_s.maxZoom, subdomains:_s.subdomains}),
+  '卫星影像': L.tileLayer(_v.url, {maxZoom:_v.maxZoom, subdomains:_v.subdomains}),
+  '地形图': L.tileLayer(_t.url, {maxZoom:_t.maxZoom, subdomains:_t.subdomains})
 };
 baseLayers['标准地图'].addTo(map);
 
@@ -428,7 +436,11 @@ window.openPlModal = function(){
   document.getElementById('plModal').classList.add('show');
   refreshPlModalList();
 };
-window.closePlModal = function(){document.getElementById('plModal').classList.remove('show')};
+window.closePlModal = function(){
+  document.getElementById('plModal').classList.remove('show');
+  var fnEl = document.getElementById('plFileName'); if(fnEl) fnEl.textContent='';
+  var fi = document.getElementById('plFileInput'); if(fi) fi.value='';
+};
 
 function refreshPlModalList(){
   Api.get('/api/powerlines').then(function(lines){
@@ -610,7 +622,7 @@ window.closeStModal = function(){document.getElementById('stModal').classList.re
 
 function _populateDeviceSelect(){
   Api.get('/api/devices').then(function(devices){
-    var sel = document.getElementById('stDeviceMap');
+    var sel = document.getElementById('stDevice');
     sel.innerHTML = '<option value="">选择设备…</option>';
     (devices||[]).forEach(function(d){
       if(!d.revoked) sel.innerHTML += '<option value="'+UI.escapeAttr(d.device_name)+'">'+UI.escapeHtml(d.device_name)+(d.station?' ('+UI.escapeHtml(d.station)+')':'')+'</option>';
@@ -621,7 +633,7 @@ function _populateDeviceSelect(){
 window._resetStForm = function(){
   _editingStName=null;
   document.getElementById('stName').value='';document.getElementById('stName').readOnly=false;
-  document.getElementById('stDeviceMap').value='';
+  document.getElementById('stDevice').value='';
   document.getElementById('stLocation').value='';
   _popProvinceSelect('stProvince', '选择省');
   document.getElementById('stCity').innerHTML='<option value="">选择市</option>';
@@ -678,7 +690,7 @@ window.editStation = function(name){
   _editingStName=s.name;
   document.getElementById('stName').value=s.name;
   document.getElementById('stName').readOnly=true;
-  document.getElementById('stDeviceMap').value=s.device_name||'';
+  document.getElementById('stDevice').value=s.device_name||'';
   document.getElementById('stLocation').value=s.location||'';
   _popProvinceSelect('stProvince', '选择省');
   _setRegionValues(s.province||'', s.city||'', s.county||'');
@@ -694,7 +706,7 @@ window.editStation = function(name){
 window.addStation = function(){
   var data={
     name:document.getElementById('stName').value.trim(),
-    device_name:document.getElementById('stDeviceMap').value.trim(),
+    device_name:document.getElementById('stDevice').value.trim(),
     location:document.getElementById('stLocation').value.trim(),
     province:document.getElementById('stProvince').value.trim(),
     city:document.getElementById('stCity').value.trim(),
@@ -734,8 +746,9 @@ var _users=[];
 var _editingUsername=null;
 
 function _populateUsrStationSelect(){
-  Api.get('/api/stations').then(function(stations){
+  return Api.get('/api/stations').then(function(stations){
     var sel = document.getElementById('usrStation');
+    if(!sel) return;
     sel.innerHTML = '<option value="">全部站点</option>';
     (stations||[]).forEach(function(s){
       sel.innerHTML += '<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+(s.location?' ('+UI.escapeHtml(s.location)+')':'')+'</option>';
@@ -755,9 +768,12 @@ window._resetUsrForm = function(){
   document.getElementById('usrName').value='';
   document.getElementById('usrName').readOnly=false;
   document.getElementById('usrPass').value='';
+  document.getElementById('usrPass').placeholder='登录密码';
   document.getElementById('usrRole').value='user';
   var usrSel = document.getElementById('usrStation');
   if(usrSel) usrSel.value='';
+  var scopeSel = document.getElementById('usrScope');
+  if(scopeSel) scopeSel.value='station';
   document.getElementById('usrFormTitle').textContent='新增用户';
   document.getElementById('usrSubmitBtn').textContent='添加';
   var cancelBtn=document.getElementById('usrCancelEditBtn');
@@ -787,8 +803,12 @@ window.editUser = function(idx){
   document.getElementById('usrPass').value='';
   document.getElementById('usrPass').placeholder='留空则不改密码';
   document.getElementById('usrRole').value=u.role||'user';
-  var usrSel = document.getElementById('usrStation');
-  if(usrSel) usrSel.value = u.assigned_station||u.station||'';
+  var scopeSel = document.getElementById('usrScope');
+  if(scopeSel) scopeSel.value = u.scope||'station';
+  _populateUsrStationSelect().then(function(){
+    var usrSel = document.getElementById('usrStation');
+    if(usrSel) usrSel.value = u.assigned_station||u.station||'';
+  });
   document.getElementById('usrFormTitle').textContent='编辑用户: '+u.username;
   document.getElementById('usrSubmitBtn').textContent='保存';
   var cancelBtn=document.getElementById('usrCancelEditBtn');
@@ -797,11 +817,13 @@ window.editUser = function(idx){
 
 window.addUser = function(){
   var usrSel = document.getElementById('usrStation');
+  var scopeSel = document.getElementById('usrScope');
   var data={
     username:document.getElementById('usrName').value,
     password:document.getElementById('usrPass').value,
     role:document.getElementById('usrRole').value,
-    station: usrSel ? usrSel.value : ''
+    station: usrSel ? usrSel.value : '',
+    scope: scopeSel ? scopeSel.value : 'station'
   };
   if(!data.username){UI.Message.warning('用户名不能为空');return}
   if(!_editingUsername&&!data.password){UI.Message.warning('密码不能为空');return}
@@ -926,15 +948,15 @@ window.addPersonnel = function(){
   var sel = document.getElementById('personnelStationSelect');
   var stName = sel ? sel.value : '';
   if (!stName) { UI.Message.warning('请选择关联站点'); return; }
-  var name = document.getElementById('persName').value.trim();
-  var phone = document.getElementById('persPhone').value.trim();
+  var name = document.getElementById('psName').value.trim();
+  var phone = document.getElementById('psPhone').value.trim();
   if (!name || !phone) { UI.Message.warning('请填写姓名和联系电话'); return; }
   if (!/^1\d{10}$/.test(phone)) { UI.Message.warning('请输入合法的11位手机号码'); return; }
 
   Api.post('/api/personnel', {station_name:stName, name:name, phone:phone}).then(function(res){
     if(res.error){UI.toast(res.error,'error');return}
-    document.getElementById('persName').value='';
-    document.getElementById('persPhone').value='';
+    document.getElementById('psName').value='';
+    document.getElementById('psPhone').value='';
     refreshPersonnelList();
   }).catch(catchErr('添加联系人失败'));
 };
@@ -1046,13 +1068,48 @@ window.refreshHistory = function(){
 // ═══════════ Alert Sound (delegated to UI module) ═══════════
 var playAlertBeep = UI.beep;
 
+// ═══════════ Power Line File Upload + Import ═══════════
+window.handlePlFileUpload = function(){
+  var input = document.getElementById('plFileInput');
+  var file = input && input.files && input.files[0];
+  if(!file){ UI.Message.warning('请选择文件'); return; }
+  var name = file.name.toLowerCase();
+  if(name.endsWith('.csv')){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      document.getElementById('plCsv').value = e.target.result;
+      document.getElementById('plFileName').textContent = file.name;
+    };
+    reader.readAsText(file);
+  } else if(name.endsWith('.xlsx') || name.endsWith('.xls')){
+    document.getElementById('plFileName').textContent = file.name + ' (解析中...)';
+    var reader = new FileReader();
+    reader.onload = function(e){
+      import('xlsx').then(function(XLSX){
+        var wb = XLSX.read(e.target.result, {type:'array'});
+        var csvText = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+        document.getElementById('plCsv').value = csvText;
+        document.getElementById('plFileName').textContent = file.name + ' (' + (csvText.trim().split('\n').length) + ' 行)';
+      }).catch(function(err){
+        UI.toast('解析 Excel 文件失败: ' + (err.message||''), 'error');
+        document.getElementById('plFileName').textContent = '';
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    UI.Message.warning('不支持的格式，请选择 .csv、.xlsx 或 .xls 文件');
+  }
+};
+
 window.importPowerLinesCsv = function(){
   var csvText=document.getElementById('plCsv').value.trim();
-  if(!csvText){UI.Message.warning('请粘贴 CSV 内容');return}
+  if(!csvText){UI.Message.warning('请粘贴 CSV 内容或选择文件上传');return}
   Api.post('/api/powerlines/import', {csv:csvText}).then(function(res){
     if(res.error){UI.toast(res.error,'error');return}
     UI.toast('成功导入 '+res.imported+' 条电力线', 'ok');
     document.getElementById('plCsv').value='';
+    document.getElementById('plFileName').textContent='';
+    var fi = document.getElementById('plFileInput'); if(fi) fi.value='';
     refreshPlModalList();
     loadPowerLines();
   }).catch(catchErr('导入电力线失败'));
@@ -1107,12 +1164,15 @@ window.changePassword = function(){
 
 // ═══════════ Admin Reset User Password ═══════════
 window.resetUserPassword = function(username){
-  var newPw=prompt('为 '+username+' 设置新密码 (至少6位):');
-  if(!newPw||newPw.length<6){showToast('密码至少6位','warn');return}
-  Api.post('/api/users/'+encodeURIComponent(username)+'/reset-password', {new_password:newPw}).then(function(res){
-    if(res.error){showToast(res.error,'error');return}
-    showToast('密码已重置','ok');
-  }).catch(catchErr('重置密码失败'));
+  UI.Message.confirm('确定要重置用户 '+username+' 的密码吗？').then(function(ok){
+    if(!ok) return;
+    var chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    var newPw=''; for(var i=0;i<10;i++) newPw+=chars[Math.floor(Math.random()*chars.length)];
+    Api.post('/api/users/'+encodeURIComponent(username)+'/reset-password', {new_password:newPw}).then(function(res){
+      if(res.error){showToast(res.error,'error');return}
+      UI.toast('密码已重置为: '+newPw, 'ok');
+    }).catch(catchErr('重置密码失败'));
+  });
 };
 
 // ═══════════ Tenant Info ═══════════
@@ -1142,10 +1202,129 @@ function applyRBACVisibility(){
   });
   document.getElementById('cfgMgrBtn').style.display=isAdmin?'inline-block':'none';
   document.getElementById('licMgrBtn').style.display=isAdmin?'inline-block':'none';
+  document.getElementById('wlMgrBtn').style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
+  document.getElementById('devMgrBtn').style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
   var audBtn=document.querySelector('[onclick="openAudModal()"]');
   if(audBtn) audBtn.style.display=isAdmin?'inline-block':'none';
   refreshTenantInfo();
 }
+
+// ═══════════ Whitelist Management ═══════════
+window.openWlModal = function(){
+  document.getElementById('wlModal').classList.add('show');
+  loadWhitelist();
+};
+window.closeWlModal = function(){
+  document.getElementById('wlModal').classList.remove('show');
+  document.getElementById('wlSn').value='';
+  document.getElementById('wlNote').value='';
+};
+window.loadWhitelist = function(){
+  Api.get('/api/whitelist').then(function(d){
+    var div=document.getElementById('wlModalList');
+    if(!d||!d.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无白名单</div>';return}
+    div.innerHTML=d.map(function(w){
+      return '<div class="pl-entry"><span><b>'+UI.escapeHtml(w.sn)+'</b> <span style="font-size:10px;color:var(--muted)">'+(w.match_mode==='prefix'?'前缀':'精确')+' · '+UI.escapeHtml(w.note||'--')+'</span></span><span class="pl-del" data-del-wl="'+w.id+'" style="cursor:pointer">×</span></div>';
+    }).join('');
+  });
+};
+window.addWhitelist = function(){
+  var data={sn:document.getElementById('wlSn').value.trim(),match_mode:document.getElementById('wlMode').value,note:document.getElementById('wlNote').value.trim()};
+  if(!data.sn){UI.Message.warning('SN 不能为空');return}
+  Api.post('/api/whitelist', data).then(function(res){
+    if(res.error){UI.toast(res.error,'error');return}
+    closeWlModal(); loadWhitelist();
+  });
+};
+window.delWhitelist = function(id){
+  UI.Message.confirm('确定移除此白名单？').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/whitelist', {id:id}).then(function(){loadWhitelist()});
+  });
+};
+
+// ═══════════ Device Management ═══════════
+window.openDevModal = function(){
+  document.getElementById('devModal').classList.add('show');
+  loadDevices();
+};
+window.closeDevModal = function(){
+  document.getElementById('devModal').classList.remove('show');
+  document.getElementById('devResult').style.display='none';
+  document.getElementById('devName').value='';
+  document.getElementById('devStation').value='';
+};
+window.loadDevices = function(){
+  Api.get('/api/devices').then(function(devices){
+    var div=document.getElementById('devModalList');
+    if(!devices||!devices.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无设备</div>';return}
+    div.innerHTML=devices.map(function(d){
+      var status=d.revoked?'<span style="color:#ef4444">已吊销</span>':'<span style="color:#22c55e">正常</span>';
+      var actions='';
+      if(!d.revoked){actions+='<span style="font-size:11px;color:#ca8a04;cursor:pointer;margin-right:4px" data-revoke-dev="'+UI.escapeAttr(d.device_name)+'">吊销</span>';}
+      actions+='<span class="pl-del" data-del-dev="'+UI.escapeAttr(d.device_name)+'" style="cursor:pointer">×</span>';
+      return '<div class="pl-entry"><span><b>'+UI.escapeHtml(d.device_name)+'</b> <span style="font-size:10px;color:var(--accent)">'+UI.escapeHtml(d.station||'--')+'</span> '+status+'</span>'+actions+'</div>';
+    }).join('');
+  });
+};
+window.addDevice = function(){
+  var data={device_name:document.getElementById('devName').value.trim(),station:document.getElementById('devStation').value.trim()};
+  if(!data.device_name){UI.Message.warning('设备名称不能为空');return}
+  var btn=document.getElementById('devSaveBtn');
+  btn.disabled=true; btn.textContent='注册中…';
+  Api.post('/api/devices/provision', data).then(function(res){
+    if(res.error){btn.disabled=false; btn.textContent='注册';UI.toast(res.error,'error');return}
+    btn.textContent='已注册'; btn.style.background='#16a34a'; btn.style.borderColor='#16a34a';
+    document.getElementById('devSecretOut').textContent=res.device_secret;
+    document.getElementById('devCertSerial').textContent=res.client_cert?'已签发':'--';
+    document.getElementById('devResult').style.display='block';
+    loadDevices();
+  }).catch(function(e){btn.disabled=false; btn.textContent='注册';catchErr('注册设备失败')(e)});
+};
+window.delDevice = function(name){
+  UI.Message.confirm('确定要删除设备 '+name+' 吗？吊销后设备将无法连接。').then(function(ok){
+    if(!ok) return;
+    Api.del('/api/devices/'+encodeURIComponent(name)).then(function(r){
+      if(r.error){UI.toast(r.error,'error');return}
+      loadDevices();
+    });
+  });
+};
+window.revokeDevice = function(name){
+  UI.Message.confirm('确定要吊销设备 '+name+' 的证书吗？吊销后设备将无法连接。').then(function(ok){
+    if(!ok) return;
+    Api.post('/api/devices/'+encodeURIComponent(name)+'/revoke').then(function(r){
+      if(r.error){UI.toast(r.error,'error');return}
+      UI.toast('证书已吊销','warning');
+      loadDevices();
+    });
+  });
+};
+
+// ═══════════ Geocode for station form ═══════════
+window.doGeocode = function(){
+  var lat=parseFloat(document.getElementById('stLat').value);
+  var lon=parseFloat(document.getElementById('stLon').value);
+  if(isNaN(lat)||isNaN(lon)){UI.Message.warning('请先填写有效的经纬度坐标');return}
+  Api.post('/api/geocode', {lat:lat, lon:lon}).then(function(r){
+    if(r.error){UI.toast(r.error,'error');return}
+    if(r.province) document.getElementById('stProvince').value=r.province;
+    if(r.city){_onProvinceChange('stProvince','stCity','stCounty','选择市');document.getElementById('stCity').value=r.city;}
+    if(r.county){_onCityChange('stProvince','stCity','stCounty');document.getElementById('stCounty').value=r.county;}
+    UI.toast('已填充: '+[r.province,r.city,r.county].filter(Boolean).join(' '), 'ok');
+  }).catch(catchErr('地理编码失败'));
+};
+
+// Delegation for device/whitelist list actions
+UI.delegate(document.getElementById('devModalList'), 'click', '[data-del-dev]', function(){
+  delDevice(this.dataset.delDev);
+});
+UI.delegate(document.getElementById('devModalList'), 'click', '[data-revoke-dev]', function(){
+  revokeDevice(this.dataset.revokeDev);
+});
+UI.delegate(document.getElementById('wlModalList'), 'click', '[data-del-wl]', function(){
+  delWhitelist(parseInt(this.dataset.delWl));
+});
 
 // ═══════════ Station lock for station_user ═══════════
 window.returnToNational = function(){
@@ -1404,11 +1583,12 @@ function initSocket(){
         cachedDrones[i].min_distance=d.distance;
         cachedDrones[i].nearest_line=d.nearest_line;
         cachedDrones[i].status=d.status;
+        if(d.device_name){cachedDrones[i].device_name=d.device_name;}
         found=true; break;
       }
     }
     if(!found){
-      cachedDrones.push({id:d.drone_id,last_lat:d.lat,last_lon:d.lon,last_alt:d.alt,min_distance:d.distance,nearest_line:d.nearest_line,status:d.status});
+      cachedDrones.push({id:d.drone_id,last_lat:d.lat,last_lon:d.lon,last_alt:d.alt,min_distance:d.distance,nearest_line:d.nearest_line,status:d.status,device_name:d.device_name||''});
     }
     var key='_ws_upd_'+d.drone_id;
     if(!updateAll[key]||Date.now()-updateAll[key]>1000){

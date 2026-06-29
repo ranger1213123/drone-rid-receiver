@@ -109,13 +109,6 @@ anti_flapping:
   enabled: false
   debounce_in: 3
   debounce_out: 10
-pilot_notify:
-  enabled: false
-  provider: console
-  uom:
-    base_url: https://uom.caac.gov.cn/api
-    app_id: ''
-    app_key: ''
 raw_archive:
   enabled: true
   retention_days: 30

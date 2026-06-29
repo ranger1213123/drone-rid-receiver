@@ -17,9 +17,18 @@ from logging_config import get_logger
 bp = Blueprint("report", __name__)
 logger = get_logger(__name__)
 
-# ── 告警去重冷却 (模块级状态) ──
+# ── 告警去重冷却 (使用 DB 防抖设置) ──
 _alert_cooldown: dict = {}       # {(drone_id, level): last_alert_time}
-_ALERT_COOLDOWN_SEC = 30.0
+
+
+def _get_cooldown_sec(level: str) -> float:
+    """根据防抖设置返回该告警级别的冷却时间(秒)"""
+    if get_setting("anti_flapping_enabled", "false") not in ("1", "true", "True"):
+        return 30.0  # 关闭防抖时仍保留基础冷却
+    if level == "critical":
+        return float(get_setting("debounce_in", "3"))
+    else:
+        return float(get_setting("debounce_out", "10"))
 
 # ── SMS 网关 (懒加载) ──
 _sms_gateway = None
@@ -30,8 +39,16 @@ def _get_sms_gateway():
     if _sms_gateway is not None:
         return _sms_gateway
 
-    sms_enabled = os.environ.get("SMS_ENABLED", "0")
-    if sms_enabled not in ("1", "true", "True"):
+    # 优先环境变量，其次数据库设置
+    sms_env = os.environ.get("SMS_ENABLED", "")
+    if sms_env in ("1", "true", "True"):
+        sms_enabled = True
+    elif sms_env in ("0", "false", "False"):
+        sms_enabled = False
+    else:
+        sms_enabled = get_setting("sms_enabled", "false") in ("1", "true", "True")
+
+    if not sms_enabled:
         from core.sms_gateway import SimulatedSMSGateway
         _sms_gateway = SimulatedSMSGateway()
         logger.info("SMS: 模拟模式 (SMS_ENABLED=0)")
@@ -74,6 +91,11 @@ def _notify_station_personnel(device_name: str, drone_id: str, level: str,
             phones = [p["phone"] for p in personnel if p.get("phone")]
         else:
             phones = get_all_alert_phones()
+
+        if not phones:
+            # 回退: DB 设置中配置的应急电话
+            fallback = str(get_setting("sms_alert_phones", ""))
+            phones = [p.strip() for p in fallback.split(",") if p.strip()]
 
         if not phones:
             # 回退: 环境变量配置的应急电话
@@ -180,7 +202,8 @@ def api_report_alert():
         _cooldown_key = (drone_id, level)
         _now = _time.time()
         _last = _alert_cooldown.get(_cooldown_key, 0)
-        if _now - _last >= _ALERT_COOLDOWN_SEC:
+        _cooldown_sec = _get_cooldown_sec(level)
+        if _now - _last >= _cooldown_sec:
             _alert_cooldown[_cooldown_key] = _now
 
             # 清理超过 120 秒的旧冷却条目

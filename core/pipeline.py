@@ -19,7 +19,6 @@ logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from core.raw_archive import RawArchiveManager
-    from core.pilot_notify import PilotNotifier
 
 @dataclass
 class PipelineResult:
@@ -46,7 +45,6 @@ class RIDPipeline:
         thresholds: dict,
         device_name: str = "",
         raw_archive: "RawArchiveManager" = None,
-        pilot_notifier: "PilotNotifier" = None,
     ):
         self.db = db
         self.pl_manager = pl_manager
@@ -55,8 +53,6 @@ class RIDPipeline:
         self.thresholds = thresholds
         self.device_name = device_name
         self.raw_archive = raw_archive
-        self.pilot_notifier = pilot_notifier
-
     def process(self, parsed: ParsedRID) -> Optional[PipelineResult]:
         """
         处理一条 RID 广播数据
@@ -179,17 +175,7 @@ class RIDPipeline:
         else:
             self.trajectory.stop_tracking(drone_id)
 
-        # 5. 飞手推送 (仅当告警触发时)
-        if alert_level and self.pilot_notifier:
-            action = "立即返航" if alert_level == "critical" else "请尽快离开禁飞区"
-            self.pilot_notifier.notify(
-                drone_id=drone_id,
-                alert_level=alert_level,
-                message=f"[{alert_level}] 无人机 {drone_id} 接近 {nearest_line.name} "
-                        f"距离 {distance:.0f}m — {action}",
-            )
-
-        # 6. 数据回传 — 写入 outbox (由 backhaul 服务读取并通过 MQTT 上传)
+        # 5. 数据回传 — 写入 outbox (由 backhaul 服务读取并通过 MQTT 上传)
         drone_model = parsed.drone_model
         if self.device_name:
             from datetime import datetime as dt_module

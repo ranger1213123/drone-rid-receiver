@@ -30,7 +30,7 @@ let selectedDrone = null;
 let pageTitles = {
   drones:'无人机列表', alerts:'告警日志', trajectory:'轨迹查看', powerlines:'电力线管理',
   stations:'站点管理', users:'用户管理', personnel:'告警联系人', whitelist:'白名单',
-  devices:'设备管理', licenses:'密钥管理', audit:'审计日志', profile:'用户信息管理'
+  devices:'设备管理', licenses:'密钥管理', audit:'审计日志', settings:'系统设置', profile:'用户信息管理'
 };
 let monitoringPages = {drones:1, alerts:1, trajectory:1};
 
@@ -54,6 +54,7 @@ document.querySelectorAll('.nav-item[data-page]').forEach(function(el){
     if(this.dataset.page==='devices') loadDevices();
     if(this.dataset.page==='licenses') openLicPage();
     if(this.dataset.page==='audit') openAuditPage();
+    if(this.dataset.page==='settings') loadSettings();
     if(this.dataset.page==='profile') loadProfile();
   });
 });
@@ -122,6 +123,7 @@ window.updateUI = function(){
       document.getElementById('navDevices').style.display=(isAdmin||currentUser.role==='tenant_admin')?'':'none';
       document.getElementById('navLicenses').style.display=isAdmin?'':'none';
       document.getElementById('navAudit').style.display=isAdmin?'':'none';
+      document.getElementById('navSettings').style.display=isAdmin?'':'none';
       refreshTenantInfo();
     }
     // Stats
@@ -162,6 +164,84 @@ window.updateUI = function(){
     if(e.name!=='AbortError') console.error(e);
   });
 };
+
+// ═══════════ WebSocket real-time push (with polling fallback) ═══════════
+var socket = null;
+var wsEnabled = false;
+
+function initSocket() {
+  socket = io({transports:['websocket','polling'],reconnectionDelay:3000,reconnectionDelayMax:10000});
+  socket.on('connect', function() {
+    wsEnabled = true;
+    console.log('WS connected');
+  });
+  socket.on('disconnect', function() {
+    wsEnabled = false;
+    console.log('WS disconnected, fallback to polling');
+  });
+  socket.on('drone_update', function(d) {
+    if (!d || !d.drone_id) return;
+    var found = false;
+    for (var i = 0; i < lastDrones.length; i++) {
+      if (lastDrones[i].id === d.drone_id) {
+        lastDrones[i].last_lat = d.lat;
+        lastDrones[i].last_lon = d.lon;
+        lastDrones[i].last_alt = d.alt;
+        lastDrones[i].min_distance = d.distance;
+        lastDrones[i].line_name = d.nearest_line || d.line_name || '';
+        lastDrones[i].status = d.status;
+        if (d.device_name) lastDrones[i].device_name = d.device_name;
+        if (d.last_seen) lastDrones[i].last_seen = d.last_seen;
+        found = true; break;
+      }
+    }
+    if (!found) {
+      lastDrones.push({
+        id: d.drone_id, last_lat: d.lat, last_lon: d.lon, last_alt: d.alt,
+        min_distance: d.distance || 0, line_name: d.nearest_line || d.line_name || '',
+        status: d.status, device_name: d.device_name || '', last_seen: d.last_seen || ''
+      });
+    }
+    var prev = prevAlertLevels[d.drone_id], cur = d.status || 'active';
+    if (cur !== prev) {
+      if (cur === 'critical' || cur === 'severe') notifyAlert(d.drone_id, cur, d.distance || 0, d.nearest_line || d.line_name || '');
+      prevAlertLevels[d.drone_id] = cur;
+    }
+    window._alpineDrones = lastDrones;
+    updateDroneTable();
+  });
+  socket.on('alert_update', function(a) {
+    if (!a) return;
+    if (a.level === 'critical' || a.level === 'severe') {
+      notifyAlert(a.drone_id, a.level, a.distance || 0, a.line_name || '');
+    }
+  });
+}
+
+function pollFallback() {
+  if (wsEnabled) {
+    fetch('/api/status').then(function(r) { return r.json(); }).then(function(d) {
+      var warn = 0, sev = 0, crit = 0;
+      (d.drones || []).forEach(function(dr) { var s = dr.status; if (s === 'warning') warn++; if (s === 'severe') sev++; if (s === 'critical') crit++; });
+      document.getElementById('statDrones').textContent = (d.drones || []).length;
+      document.getElementById('statWarn').textContent = warn;
+      document.getElementById('statSev').textContent = sev;
+      document.getElementById('statCrit').textContent = crit;
+      document.getElementById('droneCountPill').textContent = (d.drones || []).length;
+      document.getElementById('footerLeft').textContent = '更新于 ' + (d.server_time || d.now || '') + ' [WS]';
+      var bh = d.backhaul;
+      if (bh) {
+        var online = bh.mqtt_online || bh.primary_online || false;
+        document.getElementById('comm4gDot').className = 'comm-dot ' + (online ? 'online' : '');
+        document.getElementById('commLabel').textContent = bh.channel === '4g_wired' ? '4G/有线' : bh.channel === 'beidou_emergency' ? '北斗应急' : (online ? 'MQTT 在线' : (bh.mqtt_online === false ? 'MQTT 离线' : '通信中断'));
+      }
+    }).catch(function(e) {
+      if (e.name !== 'AbortError') console.warn('pollFallback:', e);
+    });
+  } else {
+    updateUI();
+  }
+}
 
 window.updateDroneTable = function(){
   var searchTerm=(document.getElementById('droneSearch').value||'').toLowerCase();
@@ -248,6 +328,12 @@ window.openPlModal = function(){
 };
 window.closePlModal = function(){
   _resetPlForm();
+  var csvEl = document.getElementById('plCsv');
+  if(csvEl) csvEl.value='';
+  var fnEl = document.getElementById('plFileName');
+  if(fnEl) fnEl.textContent='';
+  var fi = document.getElementById('plFileInput');
+  if(fi) fi.value='';
   document.getElementById('plModal').classList.remove('show');
 };
 
@@ -685,10 +771,16 @@ window.delUser = function(username){
   });
 };
 window.resetUserPwd = function(){
-  var u=prompt('输入要重置密码的用户名:'); if(!u) return;
-  var p=prompt('输入新密码:'); if(!p) return;
-  Api.post('/api/users/'+u+'/reset-password', {new_password:p}).then(function(d){
-    UI.toast(d.error||'已重置', d.error?'error':'ok');
+  UI.Message.confirm('此操作将随机生成新密码，确定继续？').then(function(ok){
+    if(!ok) return;
+    var u=document.getElementById('fUserName')?document.getElementById('fUserName').value.trim():'';
+    if(!u){UI.Message.warning('请先输入用户名');return}
+    var chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    var newPw=''; for(var i=0;i<10;i++) newPw+=chars[Math.floor(Math.random()*chars.length)];
+    Api.post('/api/users/'+encodeURIComponent(u)+'/reset-password', {new_password:newPw}).then(function(r){
+      if(r.error){UI.toast(r.error,'error');return}
+      UI.Message.success(u+' 密码已重置为: '+newPw);
+    });
   });
 };
 
@@ -1084,6 +1176,92 @@ function loadAudit(){
   }).catch(catchErr('加载审计日志失败'));
 }
 
+// ═══════════ Settings ═══════════
+window.loadSettings = function(){
+  Api.get('/api/settings').then(function(s){
+    document.getElementById('scThreshWarn').value=s.threshold_warning||200;
+    document.getElementById('scThreshSev').value=s.threshold_severe||100;
+    document.getElementById('scThreshCrit').value=s.threshold_critical||50;
+    document.getElementById('scFlapEn').checked=s.anti_flapping_enabled==='true';
+    document.getElementById('scFlapIn').value=s.debounce_in||3;
+    document.getElementById('scFlapOut').value=s.debounce_out||10;
+    document.getElementById('scSmsEn').checked=s.sms_enabled==='true';
+    document.getElementById('scSmsPhones').value=(s.sms_alert_phones||'').split(',').join('\n');
+    document.getElementById('scArchiveEn').checked=s.raw_archive_enabled!=='false';
+    document.getElementById('scRetention').value=s.raw_archive_retention_days||30;
+  });
+};
+window.saveSettings = function(){
+  var phones=document.getElementById('scSmsPhones').value.split('\n').map(function(s){return s.trim()}).filter(Boolean).join(',');
+  var data={
+    threshold_warning: String(parseFloat(document.getElementById('scThreshWarn').value)||200),
+    threshold_severe: String(parseFloat(document.getElementById('scThreshSev').value)||100),
+    threshold_critical: String(parseFloat(document.getElementById('scThreshCrit').value)||50),
+    anti_flapping_enabled: document.getElementById('scFlapEn').checked?'true':'false',
+    debounce_in: String(parseFloat(document.getElementById('scFlapIn').value)||3),
+    debounce_out: String(parseFloat(document.getElementById('scFlapOut').value)||10),
+    sms_enabled: document.getElementById('scSmsEn').checked?'true':'false',
+    sms_alert_phones: phones,
+    raw_archive_enabled: document.getElementById('scArchiveEn').checked?'true':'false',
+    raw_archive_retention_days: String(parseInt(document.getElementById('scRetention').value)||30)
+  };
+  Api.put('/api/settings', data).then(function(res){
+    if(res.error){UI.toast(res.error,'error');return}
+    UI.toast('设置已保存', 'ok');
+  }).catch(catchErr('保存设置失败'));
+};
+
+// ═══════════ Power Line File Upload + Import ═══════════
+window.handlePlFileUpload = function(){
+  var input = document.getElementById('plFileInput');
+  var file = input && input.files && input.files[0];
+  if(!file){ UI.Message.warning('请选择文件'); return; }
+  var name = file.name.toLowerCase();
+  if(name.endsWith('.csv')){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      document.getElementById('plCsv').value = e.target.result;
+      document.getElementById('plFileName').textContent = file.name;
+    };
+    reader.readAsText(file);
+  } else if(name.endsWith('.xlsx') || name.endsWith('.xls')){
+    document.getElementById('plFileName').textContent = file.name + ' (解析中...)';
+    var reader = new FileReader();
+    reader.onload = function(e){
+      import('xlsx').then(function(XLSX){
+        var wb = XLSX.read(e.target.result, {type:'array'});
+        var csvText = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+        document.getElementById('plCsv').value = csvText;
+        document.getElementById('plFileName').textContent = file.name + ' (' + (csvText.trim().split('\n').length) + ' 行)';
+      }).catch(function(err){
+        UI.toast('解析 Excel 文件失败: ' + (err.message||''), 'error');
+        document.getElementById('plFileName').textContent = '';
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    UI.Message.warning('不支持的格式，请选择 .csv、.xlsx 或 .xls 文件');
+  }
+};
+
+window.importPowerLinesCsv = function(){
+  var csvText = document.getElementById('plCsv').value.trim();
+  if(!csvText){UI.Message.warning('请粘贴 CSV 内容或选择文件上传');return}
+  Api.post('/api/powerlines/import', {csv:csvText}).then(function(res){
+    if(res.error){UI.toast(res.error,'error');return}
+    UI.toast('成功导入 '+res.imported+' 条电力线', 'ok');
+    document.getElementById('plCsv').value='';
+    document.getElementById('plFileName').textContent='';
+    var fi = document.getElementById('plFileInput'); if(fi) fi.value='';
+    loadPowerLines();
+  }).catch(catchErr('导入电力线失败'));
+};
+
+// ═══════════ Alert CSV Export ═══════════
+window.exportAlertsCsv = function(){
+  window.open('/api/alerts/export', '_blank');
+};
+
 // ═══════════ Event Delegation for data-* buttons ═══════════
 UI.delegate(document.getElementById('stList'), 'click', '[data-edit-st]', function(){ editStation2(this.dataset.editSt); });
 UI.delegate(document.getElementById('stList'), 'click', '[data-del-st]', function(){ delStation(this.dataset.delSt); });
@@ -1099,5 +1277,9 @@ UI.delegate(document.getElementById('licList'), 'click', '[data-del-lic]', funct
 UI.delegate(document.getElementById('licList'), 'click', '[data-reactivate-lic]', function(){ reactivateLicense(parseInt(this.dataset.reactivateLic)); });
 
 // ═══════════ Init ═══════════
+initSocket();
 updateUI();
-pollTimer=setInterval(updateUI,2000);
+(function schedulePoll() {
+  pollFallback();
+  pollTimer = setTimeout(schedulePoll, wsEnabled ? 5000 : 2000);
+})();

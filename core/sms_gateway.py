@@ -61,6 +61,8 @@ class AlibabaSMSGateway(SMSGateway):
 
     def send(self, phone_numbers: List[str], message: str,
              template_id: str = "") -> bool:
+        import json
+
         try:
             from alibabacloud_dysmsapi20170525.client import Client
             from alibabacloud_dysmsapi20170525 import models
@@ -78,6 +80,8 @@ class AlibabaSMSGateway(SMSGateway):
         client = Client(config)
 
         template = template_id or self.template_code
+        # 阿里云短信模板变量: ${msg} → 需在控制台创建模板 "无人机告警: ${msg}"
+        template_param = json.dumps({"msg": message}, ensure_ascii=False)
         ok = True
         for phone in phone_numbers:
             try:
@@ -85,7 +89,7 @@ class AlibabaSMSGateway(SMSGateway):
                     phone_numbers=phone,
                     sign_name=self.sign_name,
                     template_code=template,
-                    template_param=message,
+                    template_param=template_param,
                 )
                 client.send_sms(req)
                 logger.info("[阿里云短信] 发送成功: %s", phone)

@@ -241,7 +241,7 @@ drone-rid-receiver/
 │   ├── mqtt_client.py            # MQTT mTLS 客户端
 │   ├── live_feed.py              # 实时数据推送
 │   ├── coords.py                 # GCJ-02 ↔ WGS-84 坐标转换
-│   ├── pilot_notify.py           # 飞手推送通知
+
 │   ├── sms_gateway.py            # 短信网关 (阿里云/模拟)
 │   ├── beidou.py                 # 北斗定位 + 短报文 (保留)
 │   ├── raw_archive.py            # 原始报文存档 + 哈希链

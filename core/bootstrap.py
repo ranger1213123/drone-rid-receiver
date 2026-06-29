@@ -115,10 +115,6 @@ def bootstrap_core(config: Optional[dict] = None, *,
         )
         raw_archive.start()
 
-    # ── 飞手推送 ──
-    from core.pilot_notify import create_pilot_notifier
-    pilot_notifier = create_pilot_notifier(config)
-
     # ── 数据回传 ──
     from core.backhaul import BackhaulManager
     device_name = config.get('backhaul', {}).get('device_name', 'NW-F1')
@@ -160,7 +156,6 @@ def bootstrap_core(config: Optional[dict] = None, *,
         thresholds=thresholds,
         device_name=device_name,
         raw_archive=raw_archive,
-        pilot_notifier=pilot_notifier,
     )
 
     return {
@@ -171,7 +166,6 @@ def bootstrap_core(config: Optional[dict] = None, *,
         'alert_system': alert_system,
         'trajectory_recorder': trajectory_recorder,
         'raw_archive': raw_archive,
-        'pilot_notifier': pilot_notifier,
         'backhaul': backhaul,
         'pipeline': pipeline,
         'thresholds': thresholds,
