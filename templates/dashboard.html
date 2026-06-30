@@ -350,11 +350,6 @@ input:focus, select:focus{outline:none}
 
 /* ══════════════════════════ Drone SVG icon colors ══════════════════════════ */
 .drone-svg{display:inline-block;vertical-align:-3px;margin-right:4px}
-.drone-svg.active path{fill:var(--success)}
-.drone-svg.warning path{fill:var(--warning)}
-.drone-svg.severe path{fill:#f56c6c}
-.drone-svg.critical path{fill:var(--danger)}
-.drone-svg.gone path{fill:var(--text-placeholder)}
 
 /* ══════════════════════════ Responsive ══════════════════════════ */
 @media(max-width:1024px){
@@ -384,11 +379,11 @@ input:focus, select:focus{outline:none}
 <!-- ════ Sidebar ════ -->
 <nav class="sidebar">
   <div class="brand">
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-      <path d="M12 2L8 6h3v4.5L7 12l-3-1.5V13l3 2v3l5 3 5-3v-3l3-2v-2.5l-3 1.5-4-1.5V6h3l-4-4z"/>
-      <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+    <svg width="24" height="24" viewBox="0 0 1024 1024" fill="#2563eb">
+      <path d="M340.65 809.17a138.26 138.26 0 1 1-114.43-114.43 330 330 0 0 1 40.41-46.06 193.1 193.1 0 0 0-198.82 46.09c-75.21 75.21-75.21 197.59 0 272.81s197.6 75.22 272.83 0a193.1 193.1 0 0 0 46.1-198.75c-14.72 11.99-30.17 25.49-46.09 40.34zM764.81 641.69a330 330 0 0 1 39.8 46.32 138.27 138.27 0 1 1-114.77 114.84c-15.99-14.63-31.47-27.96-46.33-39.76a193.1 193.1 0 0 0 46.33 196.8c75.22 75.22 197.62 75.22 272.83 0s75.22-197.6 0-272.83a193.1 193.1 0 0 0-197.86-46.37zM692.82 227.86a138.27 138.27 0 1 1 114.7 114.67c-15.25 16.52-28.54 31.93-40.05 46.23a193.1 193.1 0 0 0 198.23-46.27c75.22-75.22 75.22-197.6 0-272.83s-197.62-75.22-272.83 0a193.1 193.1 0 0 0-46.24 198.33c13.95-11.26 29.32-24.53 46.19-40.13zM258.29 374.94a330 330 0 0 1-41.12-45.77 138.26 138.26 0 1 1 113.83-113.79c15.65 14.9 31 28.61 45.77 41.12a193.1 193.1 0 0 0-45.69-200.09c-75.18-75.22-197.6-75.22-272.78 0s-75.22 197.6 0 272.83a193.18 193.18 0 0 0 199.99 45.7zM518.34 460.18a56.33 56.33 0 1 0 39.91 16.49 56.01 56.01 0 0 0-39.91-16.49z"/>
+      <path d="M787.95 845.34c3.2 3.42 11.06 12.32 12.7 13.95l.82.79a8 8 0 0 0 1.43 1.3c19.2 17.26 46.82 18.59 62.94 2.42 15.13-15.13 14.95-40.39.61-59.32a170 170 0 0 0-12.24-12.17c-1.59-1.34-2.86-2.52-3.48-3-44.13-40.88-188.14-180.73-185.3-262.66 0-3.42 0-17.78 0-21.93-.4-82.2 141.6-220.08 185.35-260.61.54-.49 1.89-1.66 3.48-3.02a167 167 0 0 0 12.24-12.16c14.3-18.92 14.52-44.18-.62-59.32-16.12-16.12-43.74-14.85-62.94 2.42a8 8 0 0 0-1.43 1.3l-.81.77c-1.65 1.64-9.5 10.54-12.7 13.97-43.07 46.13-170.6 175.53-251.23 181.66-6.35.49-28.06.39-33.37.17-82.55-3.25-217.42-142.11-257.35-185.29-.5-.54-1.66-1.89-3.02-3.48a164 164 0 0 0-12.16-12.24c-18.92-14.3-44.18-14.52-59.32.6-16.12 16.13-14.86 43.75 2.42 62.94a8.7 8.7 0 0 0 1.3 1.43l.77.8c1.65 1.66 10.54 9.5 13.96 12.7 46.3 45.98 170.22 168.06 182.27 248.9 1.3 8.7 1.22 44.21-1.12 55.23-17.16 80.73-136 197.73-179.81 238.63-3.42 3.22-12.32 11.06-13.96 12.7l-.77.82a8 8 0 0 0-1.3 1.43c-17.28 19.2-18.59 46.82-2.42 62.94 15.13 15.13 40.39 14.96 59.32.61a167 167 0 0 0 12.16-12.24c1.36-1.59 2.52-2.86 3.03-3.48 46.51-43.97 175.93-177.35 258.85-186.66 7.48-.84 33.96-.82 40.87-.16 80.71 7.45 206.9 135.54 249.7 181.31zM580.25 578.41a87.55 87.55 0 1 1 0-123.81 86.98 86.98 0 0 1 0 123.81z"/>
     </svg>
-    Drone RID Monitor
+    电力线防碰撞监控
   </div>
 
   <div class="nav-section">
@@ -695,9 +690,9 @@ input:focus, select:focus{outline:none}
         <div class="toolbar">
           <input id="fDroneId" placeholder="搜索无人机 ID..." oninput="loadTrajectories()" autocomplete="off" style="min-width:180px">
           <span class="sep"></span>
-          <input type="date" id="fDateFrom" lang="zh-CN" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
+          <input type="date" id="fDateFrom" aria-label="轨迹起始日期" lang="zh-CN" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
           <span style="font-size:12px;color:var(--text-secondary)">至</span>
-          <input type="date" id="fDateTo" lang="zh-CN" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
+          <input type="date" id="fDateTo" aria-label="轨迹结束日期" lang="zh-CN" onchange="loadTrajectories()" style="padding:7px 12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;color:var(--text-primary)">
           <button class="btn btn-ghost btn-sm" onclick="clearTrajFilters()">清除</button>
           <button class="btn btn-primary btn-sm" onclick="loadTrajectories()">查询</button>
         </div>
@@ -797,30 +792,30 @@ input:focus, select:focus{outline:none}
             <div>
               <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">告警阈值 (米)</h3>
               <div class="row" style="gap:8px">
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">警告 ≤</label><input id="scThreshWarn" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">严重 ≤</label><input id="scThreshSev" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">危险 ≤</label><input id="scThreshCrit" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">警告 ≤</label><input id="scThreshWarn" aria-label="警告阈值" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">严重 ≤</label><input id="scThreshSev" aria-label="严重阈值" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">危险 ≤</label><input id="scThreshCrit" aria-label="危险阈值" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
               </div>
             </div>
             <div>
               <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">告警防抖</h3>
               <div class="row" style="align-items:center;gap:8px">
-                <label style="font-size:13px"><input type="checkbox" id="scFlapEn"> 启用</label>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">进入确认 (秒)</label><input id="scFlapIn" type="number" step="0.5" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">离开确认 (秒)</label><input id="scFlapOut" type="number" step="0.5" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+                <label style="font-size:13px"><input type="checkbox" id="scFlapEn" aria-label="启用告警防抖"> 启用</label>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">进入确认 (秒)</label><input id="scFlapIn" aria-label="防抖进入确认秒数" type="number" step="0.5" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">离开确认 (秒)</label><input id="scFlapOut" aria-label="防抖离开确认秒数" type="number" step="0.5" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
               </div>
             </div>
             <div>
               <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">短信通知</h3>
-              <label style="font-size:13px;display:block;margin-bottom:4px"><input type="checkbox" id="scSmsEn"> 启用</label>
+              <label style="font-size:13px;display:block;margin-bottom:4px"><input type="checkbox" id="scSmsEn" aria-label="启用短信通知"> 启用</label>
               <label style="font-size:10px;color:var(--text-secondary);display:block">通知手机号</label>
-              <textarea id="scSmsPhones" rows="2" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;resize:vertical"></textarea>
+              <textarea id="scSmsPhones" aria-label="通知手机号" rows="2" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;resize:vertical"></textarea>
             </div>
             <div>
               <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">其他</h3>
               <div style="display:flex;gap:14px;align-items:center">
-                <label style="font-size:13px"><input type="checkbox" id="scArchiveEn"> 原始报文存档</label>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">保留天数</label><input id="scRetention" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+                <label style="font-size:13px"><input type="checkbox" id="scArchiveEn" aria-label="启用原始报文存档"> 原始报文存档</label>
+                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">保留天数</label><input id="scRetention" aria-label="原始报文保留天数" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
               </div>
             </div>
             <div style="margin-top:8px">
@@ -881,7 +876,7 @@ input:focus, select:focus{outline:none}
       <h3>电力线</h3>
       <div class="row">
         <input id="plName" placeholder="名称 (如 杭富线110kV#03)" style="flex:2">
-        <select id="plVoltage" style="flex:1" onchange="onVoltageChangeForPl()">
+        <select id="plVoltage" aria-label="电压等级" style="flex:1" onchange="onVoltageChangeForPl()">
           <option value="">电压等级</option>
           <option value="10kV">10kV — 5.5m</option><option value="35kV">35kV — 6.5m</option><option value="66kV">66kV — 7.0m</option><option value="110kV">110kV — 7.0m</option>
           <option value="220kV">220kV — 8.5m</option><option value="330kV">330kV — 9.5m</option><option value="500kV">500kV — 14.0m</option><option value="750kV">750kV — 19.5m</option>
@@ -902,7 +897,7 @@ input:focus, select:focus{outline:none}
       <label>粘贴 CSV 内容，或选择文件上传</label>
       <textarea id="plCsv" rows="4" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:10px;resize:vertical;font-family:monospace" placeholder="name,lat1,lon1,alt1,lat2,lon2,alt2,voltage_level&#10;富杭线110kV#05,30.1234,120.1234,50.0,30.1244,120.1244,52.0,110kV"></textarea>
       <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-        <input type="file" id="plFileInput" accept=".csv,.xlsx,.xls" onchange="handlePlFileUpload()" style="font-size:11px;flex:1;min-width:140px">
+        <input type="file" id="plFileInput" aria-label="选择电力线导入文件" accept=".csv,.xlsx,.xls" onchange="handlePlFileUpload()" style="font-size:11px;flex:1;min-width:140px">
         <span id="plFileName" style="font-size:10px;color:var(--muted);white-space:nowrap"></span>
       </div>
       <div class="modal-actions">
@@ -915,9 +910,9 @@ input:focus, select:focus{outline:none}
   <div class="modal-overlay" id="stModal">
     <div class="modal-dialog">
       <h3>站点</h3>
-      <div class="row"><input id="stName" placeholder="站点名称"><select id="stDevice" style="flex:1;min-width:0"><option value="">关联设备…</option></select></div>
+      <div class="row"><input id="stName" placeholder="站点名称"><select id="stDevice" aria-label="站点关联设备" style="flex:1;min-width:0"><option value="">关联设备…</option></select></div>
       <div class="row"><input id="stLocation" placeholder="位置描述"></div>
-      <div class="row"><select id="stProvince" style="flex:1;min-width:0"></select><select id="stCity" style="flex:1;min-width:0"></select><select id="stCounty" style="flex:1;min-width:0"></select></div>
+      <div class="row"><select id="stProvince" aria-label="站点所在省" style="flex:1;min-width:0"></select><select id="stCity" aria-label="站点所在市" style="flex:1;min-width:0"></select><select id="stCounty" aria-label="站点所在区县" style="flex:1;min-width:0"></select></div>
       <div class="row"><input id="stLat" placeholder="纬度" step="any"><input id="stLon" placeholder="经度" step="any"><input id="stAlt" placeholder="海拔(m)" step="any"></div>
       <div class="row" style="justify-content:flex-end;margin-bottom:0">
         <button id="stGeocodeBtn" class="btn btn-ghost btn-sm" type="button" onclick="doGeocode()">
@@ -940,9 +935,9 @@ input:focus, select:focus{outline:none}
       <h3>用户</h3>
       <div class="row"><input id="uName" placeholder="用户名"><input id="uPwd" type="password" placeholder="密码"></div>
       <div class="row">
-        <select id="uRole"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
-        <select id="uScope"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
-        <select id="uStation"><option value="">全部站点</option></select>
+        <select id="uRole" aria-label="用户角色"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
+        <select id="uScope" aria-label="用户数据范围"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
+        <select id="uStation" aria-label="用户所属站点"><option value="">全部站点</option></select>
       </div>
       <div class="modal-actions">
         <button class="primary" id="uSaveBtn" onclick="addUser()">保存</button>
@@ -957,7 +952,7 @@ input:focus, select:focus{outline:none}
       <h3>告警联系人</h3>
       <div class="row"><input id="psName" placeholder="姓名"><input id="psPhone" placeholder="手机号（11位）"></div>
       <label>关联站点</label>
-      <select id="psStation"><option value="">选择关联站点</option></select>
+      <select id="psStation" aria-label="联系人关联站点"><option value="">选择关联站点</option></select>
       <div class="modal-actions">
         <button class="primary" onclick="addPerson()">保存</button>
         <button onclick="closePsModal()">关闭</button>
@@ -969,7 +964,7 @@ input:focus, select:focus{outline:none}
   <div class="modal-overlay" id="wlModal">
     <div class="modal-dialog">
       <h3>白名单</h3>
-      <div class="row"><input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2"><select id="wlMode"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select><input id="wlNote" placeholder="备注 (可选)" style="flex:1"></div>
+      <div class="row"><input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2"><select id="wlMode" aria-label="白名单匹配方式"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select><input id="wlNote" placeholder="备注 (可选)" style="flex:1"></div>
       <div class="modal-actions">
         <button class="primary" onclick="addWhitelist()">保存</button>
         <button onclick="closeWlModal()">关闭</button>
@@ -982,10 +977,10 @@ input:focus, select:focus{outline:none}
     <div class="modal-dialog">
       <h3>注册设备</h3>
       <div class="row"><input id="devName" placeholder="设备名称 (如 edge-01)" style="flex:2"><input id="devStation" placeholder="关联站点 (可选)" style="flex:2"></div>
-      <div class="row" id="devTenantRow" style="display:none;margin-top:10px"><select id="devTenantId" style="flex:1;min-width:0"><option value="">选择租户…</option></select></div>
+      <div class="row" id="devTenantRow" style="display:none;margin-top:10px"><select id="devTenantId" aria-label="设备所属租户" style="flex:1;min-width:0"><option value="">选择租户…</option></select></div>
       <div id="devResult" style="display:none;margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px;word-break:break-all">
         <div style="color:#16a34a;font-weight:600;font-size:13px;margin-bottom:6px">注册成功! 请保存以下凭据 (仅显示一次)</div>
-        <div style="margin-bottom:4px"><b>Device Secret:</b> <code id="devSecretOut" style="font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;user-select:all"></code></div>
+        <div style="margin-bottom:4px"><b>Device Secret:</b> <code id="devSecretOut" style="font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;-webkit-user-select:all;user-select:all"></code></div>
         <div style="margin-top:8px;color:#6b7280;font-size:11px">mTLS 证书已签发，证书序列号: <span id="devCertSerial"></span></div>
       </div>
       <div class="modal-actions">

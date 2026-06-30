@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: server
-          image: drone-rid-center:latest
+          image: drone-rid-center:3.3.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
@@ -48,6 +48,8 @@ spec:
                   key: DEVICE_SECRETS
             - name: JWT_EXPIRE_SECONDS
               value: "86400"
+            - name: CORS_ORIGINS
+              value: "https://drone-rid.example.com"
             - name: WEB_SECRET_KEY
               valueFrom:
                 secretKeyRef:

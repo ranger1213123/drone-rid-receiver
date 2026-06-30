@@ -30,6 +30,22 @@ from core.parser.types import lookup_model_by_sn
 
 app = Flask(__name__)
 
+
+@app.after_request
+def _add_response_headers(response):
+    ct = response.content_type or ""
+    if ct.startswith("text/") or ct.startswith("application/"):
+        response.headers["Content-Type"] = ct.split(";")[0] + "; charset=utf-8"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    if request.path.startswith("/static/dist/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif request.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=3600"
+    elif not response.headers.get("Cache-Control"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # ── 全局状态 ──
 controller = None
 
@@ -236,7 +252,6 @@ class WebController:
         self.alert_system = core['alert_system']
         self.trajectory_recorder = core['trajectory_recorder']
         self.raw_archive = core['raw_archive']
-        self.pilot_notifier = core['pilot_notifier']
         self.pipeline = core['pipeline']
         self.backhaul = core['backhaul']
         self.thresholds = core['thresholds']

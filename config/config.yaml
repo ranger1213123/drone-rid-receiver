@@ -90,17 +90,17 @@ backhaul:
     enabled: true
     interval: 300
     sync_url: ''
-# ── MQTT 通信 (mTLS 认证) ──
+# ── MQTT 通信 ──
 mqtt:
-  enabled: false
+  enabled: true
   broker:
     host: localhost
-    port: 8883
+    port: 1883
     keepalive: 60
     reconnect_delay_min: 1
     reconnect_delay_max: 120
   tls:
-    enabled: true
+    enabled: false
     ca_cert: /etc/drone-rid/certs/ca.crt
     client_cert: /etc/drone-rid/certs/client.crt
     client_key: /etc/drone-rid/certs/client.key

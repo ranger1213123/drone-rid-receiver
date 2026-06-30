@@ -1,0 +1,112 @@
+# Drone RID 中心服务器 — 单机 Docker Compose 部署 (Nginx + Cloudflare Origin CA)
+#
+# ═══ 首次部署步骤 ═══
+# 1. cp .env.example .env   → 修改 .env 中的 DOMAIN
+# 2. Cloudflare 后台 → SSL/TLS → Origin Server → Create Certificate
+#    把生成的 cert.pem 和 key.pem 放到 ./certs/ 目录下
+# 3. docker compose up -d   → 启动全部服务
+#
+# ═══ 常用命令 ═══
+# docker compose up -d              # 启动
+# docker compose logs -f web        # 查看 Web 日志
+# docker compose restart web        # 重启 Web
+# docker compose down               # 停止
+
+services:
+  # ── 1. 数据库 ──
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: drone_rid
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: drone_rid_center
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "drone_rid"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── 2. MQTT Broker (边缘设备上报入口) ──
+  emqx:
+    image: emqx/emqx:5.8
+    ports:
+      - "1883:1883"      # MQTT (边缘设备上报)
+      - "8883:8883"      # MQTT TLS (如需要)
+      - "9000:9000"      # MQTT (蜂窝网备用端口)
+      - "8443:8443"      # MQTT (HTTPS备选端口,运营商不封)
+      # EMQX Dashboard 仅监听 127.0.0.1, 通过 SSH 隧道访问: ssh -L 18083:localhost:18083 your-server
+      - "127.0.0.1:18083:18083"
+    environment:
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: ${EMQX_ADMIN_PASSWORD}
+    volumes:
+      - emqx_data:/opt/emqx/data
+      - emqx_log:/opt/emqx/log
+    restart: unless-stopped
+
+  # ── 3. MQTT Consumer (订阅 MQTT → 写入 PostgreSQL) ──
+  mqtt-consumer:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    command: python -m app.mqtt_consumer
+    environment:
+      - DATABASE_URL=postgresql://drone_rid:${DB_PASSWORD}@postgres:5432/drone_rid_center
+      - MQTT_BROKER_HOST=emqx
+      - MQTT_BROKER_PORT=1883
+      - MQTT_BROKER_USER=consumer
+      - MQTT_BROKER_PASS=consumer123
+      - FLUSH_INTERVAL=1.0
+      - BATCH_SIZE=100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      emqx:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── 4. Web 仪表盘 (Flask + SocketIO) ──
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    expose:
+      - "5000"
+    environment:
+      - DATABASE_URL=postgresql://drone_rid:${DB_PASSWORD}@postgres:5432/drone_rid_center
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - WEB_SECRET_KEY=${WEB_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://${DOMAIN}}
+      - DEVICE_SECRETS=${DEVICE_SECRETS:-{}}
+      - FLASK_ENV=production
+      - APP_ENV=production
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── 5. Nginx 反向代理 (HTTPS + WebSocket, Cloudflare Origin CA) ──
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - ./certs:/etc/nginx/certs:ro
+    environment:
+      - DOMAIN=${DOMAIN}
+    command: |
+      /bin/sh -c "envsubst '$${DOMAIN}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  emqx_data:
+  emqx_log:

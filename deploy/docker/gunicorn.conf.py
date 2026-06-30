@@ -2,7 +2,7 @@
 
 bind = "0.0.0.0:5000"
 workers = 1
-worker_class = "eventlet"
+worker_class = "gevent"
 timeout = 30
 keepalive = 5
 max_requests = 5000

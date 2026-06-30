@@ -1,0 +1,64 @@
+# ═══════════════════════════════════════════
+# Docker 构建上下文忽略文件
+# 放在仓库根目录，docker build -f deploy/docker/Dockerfile . 时使用
+# ═══════════════════════════════════════════
+
+# ── Python 编译产物 ──
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+*.spec
+
+# ── 虚拟环境 ──
+.venv/
+venv/
+env/
+
+# ── Node ──
+node_modules/
+
+# ── 运行数据 (不进镜像) ──
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.log
+data/.session_key
+logs/
+
+# ── 环境变量 (通过 K8s Secret 注入) ──
+.env
+.env.local
+
+# ── Git ──
+.git/
+.gitignore
+.dockerignore
+
+# ── IDE ──
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+
+# ── 测试 ──
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── 文档 / 参考文件 ──
+*.md
+*.docx
+*.pdf
+reference/
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── 前端构建产物 (Stage 1 会重新编译) ──
+app/server/static/dist/

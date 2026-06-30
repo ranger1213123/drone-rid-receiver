@@ -72,7 +72,7 @@ def login():
 @bp.route("/logout", methods=["POST"])
 def logout():
     session.clear()
-    return redirect(url_for("dashboard.login"))
+    return jsonify({"redirect": url_for("dashboard.login")})
 
 
 @bp.route("/")

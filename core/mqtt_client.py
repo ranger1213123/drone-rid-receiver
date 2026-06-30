@@ -69,12 +69,16 @@ class MqttChannel:
         lwt_topic = _expand_topic("drone/{device_name}/status", device_name)
         self._client.will_set(lwt_topic, payload="offline", qos=1, retain=True)
 
-        # mTLS
-        self._client.tls_set(
-            ca_certs=self._ca_cert,
-            certfile=self._client_cert,
-            keyfile=self._client_key,
-        )
+        # mTLS (仅在有证书路径时启用)
+        if self._ca_cert or self._client_cert or self._client_key:
+            self._client.tls_set(
+                ca_certs=self._ca_cert,
+                certfile=self._client_cert,
+                keyfile=self._client_key,
+            )
+            logger.info("MQTT mTLS enabled: %s", self._ca_cert)
+        else:
+            logger.info("MQTT TLS disabled (no certs configured)")
 
         # 回调
         self._client.on_connect = self._on_connect_cb

@@ -131,7 +131,7 @@ class LiveFeed:
         if not drone_id:
             return
 
-        device = payload.get("device", "")
+        device = payload.get("device") or payload.get("dev_id", "")
         now = time.time()
 
         with self._lock:
@@ -158,7 +158,7 @@ class LiveFeed:
                 "distance": drone.get("min_distance"),
                 "line": drone.get("nearest_line"),
                 "status": drone.get("status"),
-                "device": device,
+                "device_name": device,
             })
 
     def _handle_alert(self, payload: dict):
@@ -167,7 +167,7 @@ class LiveFeed:
         distance = payload.get("distance", 0)
         line_name = payload.get("nearest_line", "")
         timestamp = payload.get("timestamp", "")
-        device = payload.get("device", "")
+        device = payload.get("device") or payload.get("dev_id", "")
 
         alert = {
             "drone_id": drone_id,
@@ -187,15 +187,36 @@ class LiveFeed:
             self._socketio.emit("alert_update", alert)
 
     def _handle_heartbeat(self, payload: dict):
-        device = payload.get("device", "")
+        device = payload.get("device") or payload.get("dev_id", "")
         if not device:
             return
+
+        lat = payload.get("lat", 0) or 0
+        lon = payload.get("lon", 0) or 0
+        alt = payload.get("alt", 0) or 0
+
         with self._lock:
             self._device_stats[device] = {
-                "channel": payload.get("active_channel", ""),
+                "channel": payload.get("active_channel") or "mqtt",
                 "timestamp": payload.get("timestamp", ""),
+                "lat": lat,
+                "lon": lon,
+                "alt": alt,
+                "gps_valid": payload.get("gps_valid", False),
+                "csq": payload.get("csq", ""),
+                "count": payload.get("count", 0),
                 "_updated": time.time(),
             }
+
+        # 自动注册/更新站点 (GPS 有效时)
+        if lat != 0 or lon != 0:
+            try:
+                from app.server.models import upsert_station
+                upsert_station(name=device, lat=float(lat), lon=float(lon),
+                               alt=float(alt), device_name=device)
+                logger.info("站点自动注册: %s (%.6f, %.6f)", device, lat, lon)
+            except Exception as e:
+                logger.warning("站点自动注册失败 %s: %s", device, e)
 
     # ── 缓存读取 (替代 DB 查询) ──
 
@@ -252,7 +273,7 @@ class LiveFeed:
                 "drone_id": drone_id,
                 "lat": lat, "lon": lon, "alt": alt,
                 "distance": distance,
-                "line": line_name,
+                "nearest_line": line_name,
                 "status": status,
-                "device": device,
+                "device_name": device,
             })

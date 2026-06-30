@@ -25,11 +25,22 @@ htmlcov/
 
 # Runtime files
 data/*.db
+data/*.db-shm
+data/*.db-wal
+data/.session_key
+data/tiles/
+data/geojson/
+data/*.log
+config/data/
 logs/
 
 # Environment
 .env
 .env.local
+.env.production
+
+# SSL/TLS certificates (Cloudflare Origin CA)
+certs/
 
 # OS
 Thumbs.db

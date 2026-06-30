@@ -126,13 +126,14 @@ def bootstrap_core(config: Optional[dict] = None, *,
         from core.mqtt_client import MqttChannel
         broker = mqtt_cfg.get('broker', {})
         tls_cfg = mqtt_cfg.get('tls', {})
+        tls_enabled = tls_cfg.get('enabled', False)
         mqtt_channel = MqttChannel(
             broker_host=broker.get('host', 'localhost'),
             broker_port=broker.get('port', 8883),
             device_name=device_name,
-            ca_cert_path=tls_cfg.get('ca_cert', ''),
-            client_cert_path=tls_cfg.get('client_cert', ''),
-            client_key_path=tls_cfg.get('client_key', ''),
+            ca_cert_path=tls_cfg.get('ca_cert', '') if tls_enabled else '',
+            client_cert_path=tls_cfg.get('client_cert', '') if tls_enabled else '',
+            client_key_path=tls_cfg.get('client_key', '') if tls_enabled else '',
             keepalive=broker.get('keepalive', 60),
             reconnect_delay_min=broker.get('reconnect_delay_min', 1),
             reconnect_delay_max=broker.get('reconnect_delay_max', 120),

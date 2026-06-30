@@ -64,7 +64,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .side-section{border-bottom:1px solid var(--border)}
 .side-head{
   padding:10px 14px; display:flex; align-items:center; justify-content:space-between;
-  cursor:pointer; user-select:none; font-weight:600; font-size:11px; color:var(--text);
+  cursor:pointer; -webkit-user-select:none; user-select:none; font-weight:600; font-size:11px; color:var(--text);
   position:sticky; top:0; background:linear-gradient(180deg,rgba(250,251,252,1),rgba(255,255,255,.97)); z-index:2;
   letter-spacing:0.2px;
 }
@@ -83,8 +83,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .brand-head .title{font-size:14px; font-weight:700; color:var(--text); letter-spacing:-0.3px}
 
 /* Controls row */
-.ctrl-row{display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--border); flex-shrink:0}
-.ctrl-row select{font-size:11px; padding:4px 6px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg); color:var(--text); flex:1; min-width:0}
+.ctrl-row{display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:8px 14px; border-bottom:1px solid var(--border); flex-shrink:0}
 .ctrl-row button{padding:4px 10px; border-radius:var(--radius-sm); font-size:11px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--surface); transition:all .1s; white-space:nowrap}
 .ctrl-row button:hover{background:#f3f4f6}
 .ctrl-row button.primary{background:var(--green); color:#fff; border-color:var(--green)}
@@ -259,7 +258,7 @@ body.sta-mode .nat-only{display:none!important}
 .back-btn{
   display:flex; align-items:center; gap:6px; padding:8px 14px;
   font-size:11px; font-weight:500; color:var(--blue); cursor:pointer;
-  border-bottom:1px solid var(--border); user-select:none;
+  border-bottom:1px solid var(--border); -webkit-user-select:none; user-select:none;
 }
 .back-btn:hover{background:var(--blue-bg)}
 
@@ -276,7 +275,7 @@ body.sta-mode .nat-only{display:none!important}
 .popup-btn.traj-active{background:var(--blue);color:#fff}
 
 /* ═══════════ Modal (power line CRUD) ═══════════ */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;backdrop-filter:blur(2px)}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;justify-content:center;align-items:center;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 .modal-overlay.show{display:flex}
 .modal-dialog{
   background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
@@ -315,6 +314,9 @@ body.sta-mode .nat-only{display:none!important}
   width:20px;height:20px;border-radius:50%;background:#fff;
   border:3px solid var(--blue);animation:stationPulse 2.5s infinite;
 }
+.drone-marker-icon{
+  background:none!important;border:none!important;
+}
 
 /* ═══════════ Responsive ═══════════ */
 @media(max-width:1100px){
@@ -351,20 +353,20 @@ body.sta-mode .nat-only{display:none!important}
   <div id="leftBar">
     <!-- Always visible -->
     <div class="brand-head">
-      <div class="title">
-        Drone RID Monitor
+      <div class="title" style="display:flex;align-items:center;gap:8px">
+        <svg width="22" height="22" viewBox="0 0 1024 1024" fill="#2563eb" style="flex-shrink:0">
+          <path d="M340.65 809.17a138.26 138.26 0 1 1-114.43-114.43 330 330 0 0 1 40.41-46.06 193.1 193.1 0 0 0-198.82 46.09c-75.21 75.21-75.21 197.59 0 272.81s197.6 75.22 272.83 0a193.1 193.1 0 0 0 46.1-198.75c-14.72 11.99-30.17 25.49-46.09 40.34zM764.81 641.69a330 330 0 0 1 39.8 46.32 138.27 138.27 0 1 1-114.77 114.84c-15.99-14.63-31.47-27.96-46.33-39.76a193.1 193.1 0 0 0 46.33 196.8c75.22 75.22 197.62 75.22 272.83 0s75.22-197.6 0-272.83a193.1 193.1 0 0 0-197.86-46.37zM692.82 227.86a138.27 138.27 0 1 1 114.7 114.67c-15.25 16.52-28.54 31.93-40.05 46.23a193.1 193.1 0 0 0 198.23-46.27c75.22-75.22 75.22-197.6 0-272.83s-197.62-75.22-272.83 0a193.1 193.1 0 0 0-46.24 198.33c13.95-11.26 29.32-24.53 46.19-40.13zM258.29 374.94a330 330 0 0 1-41.12-45.77 138.26 138.26 0 1 1 113.83-113.79c15.65 14.9 31 28.61 45.77 41.12a193.1 193.1 0 0 0-45.69-200.09c-75.18-75.22-197.6-75.22-272.78 0s-75.22 197.6 0 272.83a193.18 193.18 0 0 0 199.99 45.7zM518.34 460.18a56.33 56.33 0 1 0 39.91 16.49 56.01 56.01 0 0 0-39.91-16.49z"/>
+          <path d="M787.95 845.34c3.2 3.42 11.06 12.32 12.7 13.95l.82.79a8 8 0 0 0 1.43 1.3c19.2 17.26 46.82 18.59 62.94 2.42 15.13-15.13 14.95-40.39.61-59.32a170 170 0 0 0-12.24-12.17c-1.59-1.34-2.86-2.52-3.48-3-44.13-40.88-188.14-180.73-185.3-262.66 0-3.42 0-17.78 0-21.93-.4-82.2 141.6-220.08 185.35-260.61.54-.49 1.89-1.66 3.48-3.02a167 167 0 0 0 12.24-12.16c14.3-18.92 14.52-44.18-.62-59.32-16.12-16.12-43.74-14.85-62.94 2.42a8 8 0 0 0-1.43 1.3l-.81.77c-1.65 1.64-9.5 10.54-12.7 13.97-43.07 46.13-170.6 175.53-251.23 181.66-6.35.49-28.06.39-33.37.17-82.55-3.25-217.42-142.11-257.35-185.29-.5-.54-1.66-1.89-3.02-3.48a164 164 0 0 0-12.16-12.24c-18.92-14.3-44.18-14.52-59.32.6-16.12 16.13-14.86 43.75 2.42 62.94a8.7 8.7 0 0 0 1.3 1.43l.77.8c1.65 1.66 10.54 9.5 13.96 12.7 46.3 45.98 170.22 168.06 182.27 248.9 1.3 8.7 1.22 44.21-1.12 55.23-17.16 80.73-136 197.73-179.81 238.63-3.42 3.22-12.32 11.06-13.96 12.7l-.77.82a8 8 0 0 0-1.3 1.43c-17.28 19.2-18.59 46.82-2.42 62.94 15.13 15.13 40.39 14.96 59.32.61a167 167 0 0 0 12.16-12.24c1.36-1.59 2.52-2.86 3.03-3.48 46.51-43.97 175.93-177.35 258.85-186.66 7.48-.84 33.96-.82 40.87-.16 80.71 7.45 206.9 135.54 249.7 181.31zM580.25 578.41a87.55 87.55 0 1 1 0-123.81 86.98 86.98 0 0 1 0 123.81z"/>
+        </svg>
+        电力线防碰撞监控
       </div>
       <div style="display:flex;align-items:center;gap:8px">
         <span id="userBadge" style="font-size:10px;padding:3px 8px;border-radius:10px;background:var(--blue-bg);color:var(--blue);font-weight:500"></span>
-        <a href="/logout" title="退出登录" style="color:var(--muted);text-decoration:none;font-size:14px">⏻</a>
+        <a href="#" onclick="event.preventDefault();fetch('/logout',{method:'POST',credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){location.href=d.redirect})" title="退出登录" style="color:var(--muted);text-decoration:none;font-size:14px">⏻</a>
       </div>
     </div>
     <div class="ctrl-row">
-      <select id="modeSelect">
-        <option value="simulated">模拟演示</option><option value="ble">BLE 蓝牙</option><option value="wifi">WiFi</option>
-      </select>
-
-      <button class="btn-sm" onclick="openPlModal()" title="管理电力线">⚙</button>
+      <button class="btn-sm" onclick="openPlModal()" title="管理电力线">管理电力线</button>
     </div>
 
     <!-- Quick stats row (both modes) -->
@@ -408,7 +410,7 @@ body.sta-mode .nat-only{display:none!important}
       <div id="staViewTitle" style="padding:6px 14px;font-size:12px;font-weight:600;color:var(--text);border-bottom:1px solid var(--border);background:#fafbfc"></div>
 
       <div class="search-wrap">
-        <input id="droneSearch" placeholder="搜索无人机 ID / 型号..." oninput="renderDroneList()" autocomplete="off">
+        <input id="droneSearch" placeholder="搜索无人机 ID / 型号..." aria-label="搜索无人机" oninput="renderDroneList()" autocomplete="off">
       </div>
 
       <div class="side-section">
@@ -492,7 +494,7 @@ body.sta-mode .nat-only{display:none!important}
           <button class="btn-sm nat-only" id="devMgrBtn" onclick="openDevModal()" style="text-align:left;display:none">设备管理</button>
 
           <button class="btn-sm" onclick="openPwdModal()" style="text-align:left">修改密码</button>
-          <button class="btn-sm" style="text-align:left"><a href="/logout" style="color:inherit;text-decoration:none">退出登录</a></button>
+          <button class="btn-sm" style="text-align:left" onclick="fetch('/logout',{method:'POST',credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){location.href=d.redirect})">退出登录</button>
         </div>
       </div>
 
@@ -624,7 +626,7 @@ body.sta-mode .nat-only{display:none!important}
     <h3 style="margin-top:8px">新增线段</h3>
     <label>名称</label><input id="plName" placeholder="例如: 高压线A-北段">
     <label>电压等级 <span style="font-weight:400;color:var(--muted)">GB 50545-2010 最小对地距离</span></label>
-    <select id="plVoltage" onchange="onVoltageChangeForPl()" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
+    <select id="plVoltage" aria-label="电压等级" onchange="onVoltageChangeForPl()" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
       <option value="">无 </option>
       <option value="10kV">10kV — 5.5m</option>
       <option value="35kV">35kV — 6.5m</option>
@@ -651,7 +653,7 @@ body.sta-mode .nat-only{display:none!important}
     <textarea id="plCsv" rows="4" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:10px;resize:vertical;font-family:monospace"
       placeholder="name,lat1,lon1,alt1,lat2,lon2,alt2,voltage_level&#10;富杭线110kV#05,30.1234,120.1234,50.0,30.1244,120.1244,52.0,110kV&#10;富杭线220kV#03,30.1300,120.1300,60.0,30.1310,120.1310,62.0,220kV"></textarea>
     <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-      <input type="file" id="plFileInput" accept=".csv,.xlsx,.xls" onchange="handlePlFileUpload()" style="font-size:11px;flex:1;min-width:140px">
+      <input type="file" id="plFileInput" aria-label="选择电力线导入文件" accept=".csv,.xlsx,.xls" onchange="handlePlFileUpload()" style="font-size:11px;flex:1;min-width:140px">
       <span id="plFileName" style="font-size:10px;color:var(--muted);white-space:nowrap"></span>
     </div>
     <div class="modal-actions">
@@ -676,7 +678,7 @@ body.sta-mode .nat-only{display:none!important}
   <div class="modal-dialog" style="width:600px">
     <h3>历史告警记录</h3>
     <div class="row" style="margin-bottom:10px">
-      <select id="histLevel" style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
+      <select id="histLevel" aria-label="告警等级筛选" style="padding:5px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
         <option value="">全部等级</option><option value="critical">危险</option><option value="severe">严重</option><option value="warning">警告</option>
       </select>
       <input id="histDrone" placeholder="无人机 ID (可选)" style="flex:1;padding:5px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
@@ -699,26 +701,26 @@ body.sta-mode .nat-only{display:none!important}
     <!-- Alert thresholds -->
     <h3 style="margin-top:8px">告警阈值 (米)</h3>
     <div class="row">
-      <div style="flex:1"><label>警告 ≤</label><input id="cfgThreshWarn" type="number"></div>
-      <div style="flex:1"><label>严重 ≤</label><input id="cfgThreshSev" type="number"></div>
-      <div style="flex:1"><label>危险 ≤</label><input id="cfgThreshCrit" type="number"></div>
+      <div style="flex:1"><label>警告 ≤</label><input id="cfgThreshWarn" aria-label="警告阈值" type="number"></div>
+      <div style="flex:1"><label>严重 ≤</label><input id="cfgThreshSev" aria-label="严重阈值" type="number"></div>
+      <div style="flex:1"><label>危险 ≤</label><input id="cfgThreshCrit" aria-label="危险阈值" type="number"></div>
     </div>
     <!-- Anti-flapping -->
     <h3 style="margin-top:10px">告警防抖</h3>
     <div class="row" style="align-items:center">
-      <label style="margin:0;flex:0"><input type="checkbox" id="cfgFlapEn" style="width:auto"> 启用</label>
-      <div style="flex:1"><label>进入确认 (秒)</label><input id="cfgFlapIn" type="number" step="0.5"></div>
-      <div style="flex:1"><label>离开确认 (秒)</label><input id="cfgFlapOut" type="number" step="0.5"></div>
+      <label style="margin:0;flex:0"><input type="checkbox" id="cfgFlapEn" aria-label="启用告警防抖" style="width:auto"> 启用</label>
+      <div style="flex:1"><label>进入确认 (秒)</label><input id="cfgFlapIn" aria-label="防抖进入确认秒数" type="number" step="0.5"></div>
+      <div style="flex:1"><label>离开确认 (秒)</label><input id="cfgFlapOut" aria-label="防抖离开确认秒数" type="number" step="0.5"></div>
     </div>
     <!-- SMS -->
     <h3 style="margin-top:10px">短信通知</h3>
-    <div style="margin-bottom:6px"><label style="margin:0;display:inline"><input type="checkbox" id="cfgSmsEn" style="width:auto"> 启用</label></div>
-    <label>通知手机号</label><textarea id="cfgSmsPhones" rows="2" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;resize:vertical"></textarea>
+    <div style="margin-bottom:6px"><label style="margin:0;display:inline"><input type="checkbox" id="cfgSmsEn" aria-label="启用短信通知" style="width:auto"> 启用</label></div>
+    <label>通知手机号</label><textarea id="cfgSmsPhones" aria-label="通知手机号" rows="2" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;resize:vertical"></textarea>
     <!-- Other -->
     <h3 style="margin-top:10px">其他</h3>
     <div style="display:flex;gap:14px;align-items:center">
-      <label style="margin:0"><input type="checkbox" id="cfgArchiveEn" style="width:auto"> 原始报文存档</label>
-      <div style="flex:1"><label>保留天数</label><input id="cfgRetention" type="number"></div>
+      <label style="margin:0"><input type="checkbox" id="cfgArchiveEn" aria-label="启用原始报文存档" style="width:auto"> 原始报文存档</label>
+      <div style="flex:1"><label>保留天数</label><input id="cfgRetention" aria-label="原始报文保留天数" type="number"></div>
     </div>
     <div class="modal-actions">
       <button class="primary" onclick="saveSettings()">保存</button>
@@ -736,11 +738,11 @@ body.sta-mode .nat-only{display:none!important}
     <label>用户名</label><input id="usrName" placeholder="登录用户名">
     <label>密码</label><input id="usrPass" type="password" placeholder="登录密码">
     <div class="row">
-      <div style="flex:1"><label>角色</label><select id="usrRole" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="user">操作员</option><option value="tenant_admin">租户管理员</option><option value="admin">管理员</option></select></div>
-      <div style="flex:1"><label>数据范围</label><select id="usrScope" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="station">站点级</option><option value="tenant">租户级</option></select></div>
+      <div style="flex:1"><label>角色</label><select id="usrRole" aria-label="用户角色" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="user">操作员</option><option value="tenant_admin">租户管理员</option><option value="admin">管理员</option></select></div>
+      <div style="flex:1"><label>数据范围</label><select id="usrScope" aria-label="用户数据范围" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="station">站点级</option><option value="tenant">租户级</option></select></div>
     </div>
     <div class="row">
-      <div style="flex:1"><label>所属站点</label><select id="usrStation" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">全部站点</option></select></div>
+      <div style="flex:1"><label>所属站点</label><select id="usrStation" aria-label="用户所属站点" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">全部站点</option></select></div>
     </div>
     <div class="modal-actions">
       <button class="primary" id="usrSubmitBtn" onclick="addUser()">添加</button>
@@ -763,11 +765,11 @@ body.sta-mode .nat-only{display:none!important}
     <h3 style="margin-top:8px" id="stFormTitle">新增站点</h3>
     <label>站点名称</label><input id="stName" placeholder="例如: NW-F2">
     <label>关联设备</label>
-    <select id="stDevice" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
+    <select id="stDevice" aria-label="站点关联设备" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px">
       <option value="">选择设备…</option>
     </select>
     <label>省市县</label>
-    <div class="row"><select id="stProvince" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择省</option></select><select id="stCity" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择市</option></select><select id="stCounty" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择区/县</option></select></div>
+    <div class="row"><select id="stProvince" aria-label="站点所在省" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择省</option></select><select id="stCity" aria-label="站点所在市" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择市</option></select><select id="stCounty" aria-label="站点所在区县" style="flex:1;min-width:0;padding:6px 6px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="">选择区/县</option></select></div>
     <label>位置描述</label><input id="stLocation" placeholder="例如: 文一西路-杆塔#05">
     <label>坐标 (纬度, 经度, 海拔)</label>
     <div class="row"><input id="stLat" placeholder="纬度"><input id="stLon" placeholder="经度"><input id="stAlt" placeholder="海拔"><button class="btn-sm" type="button" onclick="doGeocode()" style="white-space:nowrap;flex-shrink:0">定位</button></div>
@@ -787,7 +789,7 @@ body.sta-mode .nat-only{display:none!important}
     <h3 style="margin-top:8px">创建新密钥</h3>
     <label>客户名称</label><input id="licName" placeholder="例如: XX电力公司">
     <div class="row">
-      <div style="flex:1"><label>最大用户数</label><input id="licMaxUsers" type="number" value="3" min="1" max="100"></div>
+      <div style="flex:1"><label>最大用户数</label><input id="licMaxUsers" aria-label="密钥最大用户数" type="number" value="3" min="1" max="100"></div>
       <div style="flex:2"><label>联系方式</label><input id="licContact" placeholder="电话/邮箱"></div>
     </div>
     <div class="modal-actions">
@@ -820,7 +822,7 @@ body.sta-mode .nat-only{display:none!important}
     <h3>无人机白名单</h3>
     <div id="wlModalList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
     <h3 style="margin-top:8px">新增白名单</h3>
-    <div class="row"><input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2"><select id="wlMode" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select><input id="wlNote" placeholder="备注 (可选)" style="flex:1"></div>
+    <div class="row"><input id="wlSn" placeholder="无人机 SN (支持前缀匹配)" style="flex:2"><select id="wlMode" aria-label="白名单匹配方式" style="flex:1;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"><option value="exact">精确匹配</option><option value="prefix">前缀匹配</option></select><input id="wlNote" placeholder="备注 (可选)" style="flex:1"></div>
     <div class="modal-actions">
       <button class="primary" onclick="addWhitelist()">保存</button>
       <button onclick="closeWlModal()">关闭</button>
@@ -837,7 +839,7 @@ body.sta-mode .nat-only{display:none!important}
     <div class="row"><input id="devName" placeholder="设备名称 (如 edge-01)" style="flex:2"><input id="devStation" placeholder="关联站点 (可选)" style="flex:2"></div>
     <div id="devResult" style="display:none;margin-top:12px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:12px;word-break:break-all">
       <div style="color:#16a34a;font-weight:600;font-size:13px;margin-bottom:6px">注册成功! 请保存以下凭据 (仅显示一次)</div>
-      <div style="margin-bottom:4px"><b>Device Secret:</b> <code id="devSecretOut" style="font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;user-select:all"></code></div>
+      <div style="margin-bottom:4px"><b>Device Secret:</b> <code id="devSecretOut" style="font-size:11px;background:#fff;padding:2px 6px;border-radius:4px;-webkit-user-select:all;user-select:all"></code></div>
       <div style="margin-top:8px;color:#6b7280;font-size:11px">mTLS 证书序列号: <span id="devCertSerial"></span></div>
     </div>
     <div class="modal-actions">
@@ -861,7 +863,7 @@ body.sta-mode .nat-only{display:none!important}
   </div>
 </div>
 
-<script>
+<script type="text/plain" id="legacy-map-inline-disabled">
 // Alias shared UI functions for backward compatibility
 var showToast = UI.toast;
 var catchErr = function(msg){
@@ -1088,7 +1090,7 @@ function renderNationalAlerts(drones){
   if(!alerts.length){div.innerHTML='<div class="empty-state">暂无预警</div>';return;}
   div.innerHTML=alerts.map(function(dr){
     var s=dr.status||'active';
-    var model=dr.product_model||'';
+    var model=dr.model||'';
     var time=(dr.last_seen||'').substring(11,19);
     var stationName=(cachedDashboard&&cachedDashboard.station)?cachedDashboard.station.device_name:'站点';
     return '<div class="alert-row" onclick="enterStationView(cachedDashboard&&cachedDashboard.stations&&cachedDashboard.stations.length?cachedDashboard.stations[0]:null)">'
@@ -1109,7 +1111,7 @@ function renderDroneList(){
   if(searchTerm){
     drones=drones.filter(function(dr){
       var id=(dr.id||'').toLowerCase();
-      var model=(dr.product_model||'').toLowerCase();
+      var model=(dr.model||'').toLowerCase();
       return id.includes(searchTerm)||model.includes(searchTerm);
     });
   }
@@ -1126,7 +1128,7 @@ function renderDroneList(){
     var s=dr.status||'active';
     var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+'m':'-';
     var time=(dr.last_seen||'').substring(11,19);
-    var model=dr.product_model||'';
+    var model=dr.model||'';
     var idShort=dr.id.length>14?dr.id.substring(0,14)+'...':dr.id;
     return '<div class="drone-row" onclick="flyToDrone('+dr.last_lat+','+dr.last_lon+')">'
       +'<span class="d-icon '+s+'"></span>'
@@ -1226,7 +1228,7 @@ function popupContent(dr){
   var s=dr.status||'active';
   var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+' m':'--';
   var alt=dr.last_alt!=null?dr.last_alt.toFixed(0)+' m':'--';
-  var model=dr.product_model||'';
+  var model=dr.model||'';
   var isActive=activeTrajDrone===dr.id;
   return '<b>'+dr.id+'</b>'
     +(model?'<div class="popup-row"><span>型号:</span><span style="color:var(--blue)">'+model+'</span></div>':'')
@@ -1748,6 +1750,7 @@ function ackAlert(alertId, el){
   fetch('/api/alerts/'+alertId+'/acknowledge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:''})})
     .then(function(r){return r.json()}).then(function(res){
       if(res.error){UI.toast(res.error,'error');return}
+      el.removeAttribute('data-ack-alert');
       el.textContent='已确认';el.style.color='var(--green)';el.style.cursor='default';
       el.onclick=null;
     }).catch(catchErr('确认告警失败'));

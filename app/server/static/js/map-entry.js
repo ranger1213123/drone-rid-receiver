@@ -58,21 +58,32 @@ window.addEventListener('unhandledrejection',function(e){
 });
 
 // ═══════════ Map ═══════════
-var map = L.map('map', {attributionControl: false, zoomControl: false, preferCanvas: true}).setView([35, 105], 4.5);
+var map = L.map('map', {
+  attributionControl: false,
+  zoomControl: false,
+  preferCanvas: true
+}).setView([35, 105], 4);
 L.control.zoom({position:'bottomright'}).addTo(map);
 var T = window.__TILE_URLS || {};
 function _cfg(c, fallbackUrl, fallbackZoom){
   if(!c || typeof c==='string') c = {url: c||fallbackUrl};
-  var subs = c.subdomains && c.subdomains.length ? c.subdomains : undefined;
-  return {url: c.url||fallbackUrl, subdomains: subs, maxZoom: c.maxZoom||fallbackZoom||19};
+  var url = c.url || fallbackUrl;
+  var hasSubdomainToken = url.indexOf('{s}') !== -1;
+  var subs = hasSubdomainToken && c.subdomains && c.subdomains.length ? c.subdomains : undefined;
+  return {url: url, subdomains: subs, maxZoom: c.maxZoom||fallbackZoom||19};
 }
-var _s = _cfg(T.standard, '/tiles/{z}/{x}/{y}.png', 18);
-var _v = _cfg(T.satellite, '/tiles/{z}/{x}/{y}.png', 18);
+function _tileOptions(c){
+  var opts = {maxZoom: c.maxZoom, keepBuffer: 2};
+  if(c.subdomains) opts.subdomains = c.subdomains;
+  return opts;
+}
+var _s = _cfg(T.standard, 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', 19);
+var _v = _cfg(T.satellite, 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 18);
 var _t = _cfg(T.terrain, 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', 17);
 var baseLayers={
-  '标准地图': L.tileLayer(_s.url, {maxZoom:_s.maxZoom, subdomains:_s.subdomains}),
-  '卫星影像': L.tileLayer(_v.url, {maxZoom:_v.maxZoom, subdomains:_v.subdomains}),
-  '地形图': L.tileLayer(_t.url, {maxZoom:_t.maxZoom, subdomains:_t.subdomains})
+  '标准地图': L.tileLayer(_s.url, _tileOptions(_s)),
+  '卫星影像': L.tileLayer(_v.url, _tileOptions(_v)),
+  '地形图': L.tileLayer(_t.url, _tileOptions(_t))
 };
 baseLayers['标准地图'].addTo(map);
 
@@ -93,6 +104,15 @@ var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical
 var statusZh = {active:'正常',warning:'警告',severe:'严重',critical:'危险',gone:'离线'};
 function markerColor(s){return statusColors[s]||'#16a34a'}
 function markerRadius(s){if(s==='critical')return 10;if(s==='severe')return 8;if(s==='warning')return 6;return 5}
+function droneIcon(status){
+  var colors={active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#9ca3af'};
+  var c=colors[status]||colors.active;
+  var svg='<svg width="28" height="28" viewBox="0 0 1024 1024" fill="'+c+'">'
+    +'<path d="M340.65 809.17a138.26 138.26 0 1 1-114.43-114.43 330 330 0 0 1 40.41-46.06 193.1 193.1 0 0 0-198.82 46.09c-75.21 75.21-75.21 197.59 0 272.81s197.6 75.22 272.83 0a193.1 193.1 0 0 0 46.1-198.75c-14.72 11.99-30.17 25.49-46.09 40.34zM764.81 641.69a330 330 0 0 1 39.8 46.32 138.27 138.27 0 1 1-114.77 114.84c-15.99-14.63-31.47-27.96-46.33-39.76a193.1 193.1 0 0 0 46.33 196.8c75.22 75.22 197.62 75.22 272.83 0s75.22-197.6 0-272.83a193.1 193.1 0 0 0-197.86-46.37zM692.82 227.86a138.27 138.27 0 1 1 114.7 114.67c-15.25 16.52-28.54 31.93-40.05 46.23a193.1 193.1 0 0 0 198.23-46.27c75.22-75.22 75.22-197.6 0-272.83s-197.62-75.22-272.83 0a193.1 193.1 0 0 0-46.24 198.33c13.95-11.26 29.32-24.53 46.19-40.13zM258.29 374.94a330 330 0 0 1-41.12-45.77 138.26 138.26 0 1 1 113.83-113.79c15.65 14.9 31 28.61 45.77 41.12a193.1 193.1 0 0 0-45.69-200.09c-75.18-75.22-197.6-75.22-272.78 0s-75.22 197.6 0 272.83a193.18 193.18 0 0 0 199.99 45.7zM518.34 460.18a56.33 56.33 0 1 0 39.91 16.49 56.01 56.01 0 0 0-39.91-16.49z"/>'
+    +'<path d="M787.95 845.34c3.2 3.42 11.06 12.32 12.7 13.95l.82.79a8 8 0 0 0 1.43 1.3c19.2 17.26 46.82 18.59 62.94 2.42 15.13-15.13 14.95-40.39.61-59.32a170 170 0 0 0-12.24-12.17c-1.59-1.34-2.86-2.52-3.48-3-44.13-40.88-188.14-180.73-185.3-262.66 0-3.42 0-17.78 0-21.93-.4-82.2 141.6-220.08 185.35-260.61.54-.49 1.89-1.66 3.48-3.02a167 167 0 0 0 12.24-12.16c14.3-18.92 14.52-44.18-.62-59.32-16.12-16.12-43.74-14.85-62.94 2.42a8 8 0 0 0-1.43 1.3l-.81.77c-1.65 1.64-9.5 10.54-12.7 13.97-43.07 46.13-170.6 175.53-251.23 181.66-6.35.49-28.06.39-33.37.17-82.55-3.25-217.42-142.11-257.35-185.29-.5-.54-1.66-1.89-3.02-3.48a164 164 0 0 0-12.16-12.24c-18.92-14.3-44.18-14.52-59.32.6-16.12 16.13-14.86 43.75 2.42 62.94a8.7 8.7 0 0 0 1.3 1.43l.77.8c1.65 1.66 10.54 9.5 13.96 12.7 46.3 45.98 170.22 168.06 182.27 248.9 1.3 8.7 1.22 44.21-1.12 55.23-17.16 80.73-136 197.73-179.81 238.63-3.42 3.22-12.32 11.06-13.96 12.7l-.77.82a8 8 0 0 0-1.3 1.43c-17.28 19.2-18.59 46.82-2.42 62.94 15.13 15.13 40.39 14.96 59.32.61a167 167 0 0 0 12.16-12.24c1.36-1.59 2.52-2.86 3.03-3.48 46.51-43.97 175.93-177.35 258.85-186.66 7.48-.84 33.96-.82 40.87-.16 80.71 7.45 206.9 135.54 249.7 181.31zM580.25 578.41a87.55 87.55 0 1 1 0-123.81 86.98 86.98 0 0 1 0 123.81z"/>'
+    +'</svg>';
+  return L.divIcon({className:'drone-marker-icon',iconSize:[28,28],iconAnchor:[14,14],popupAnchor:[0,-14],html:svg});
+}
 
 var cachedDashboard = null;
 var cachedDrones = [];
@@ -1028,6 +1048,7 @@ window.exportDronesCsv = function(){window.open('/api/drones/export','_blank')};
 window.ackAlert = function(alertId, el){
   Api.post('/api/alerts/'+alertId+'/acknowledge', {note:''}).then(function(res){
     if(res.error){UI.toast(res.error,'error');return}
+    el.removeAttribute('data-ack-alert');
     el.textContent='已确认';el.style.color='var(--green)';el.style.cursor='default';
     el.onclick=null;
   }).catch(catchErr('确认告警失败'));
@@ -1486,15 +1507,13 @@ window.updateAll = function(){
         var id=dr.id||'?';seen[id]=true;
         var lat=dr.last_lat,lon=dr.last_lon;
         var s=dr.status||'active';
-        var color=markerColor(s),radius=markerRadius(s);
         if(droneMarkers[id]){
           droneMarkers[id].setLatLng([lat,lon]);
-          droneMarkers[id].setStyle({color:color,fillColor:color});
-          droneMarkers[id].setRadius(radius);
+          droneMarkers[id].setIcon(droneIcon(s));
           droneMarkers[id].unbindPopup();
           droneMarkers[id].bindPopup(popupContent(dr));
         }else{
-          var m=L.circleMarker([lat,lon],{radius:radius,color:color,fillColor:color,fillOpacity:.55,weight:2.5}).addTo(map);
+          var m=L.marker([lat,lon],{icon:droneIcon(s)}).addTo(map);
           m.bindPopup(popupContent(dr));droneMarkers[id]=m;
         }
       });
@@ -1618,15 +1637,13 @@ function updateMarkersFromCache(){
     var id=dr.id||'?';seen[id]=true;
     var lat=dr.last_lat,lon=dr.last_lon;
     var s=dr.status||'active';
-    var color=markerColor(s),radius=markerRadius(s);
     if(droneMarkers[id]){
       droneMarkers[id].setLatLng([lat,lon]);
-      droneMarkers[id].setStyle({color:color,fillColor:color});
-      droneMarkers[id].setRadius(radius);
+      droneMarkers[id].setIcon(droneIcon(s));
       droneMarkers[id].unbindPopup();
       droneMarkers[id].bindPopup(popupContent(dr));
     }else{
-      var m=L.circleMarker([lat,lon],{radius:radius,color:color,fillColor:color,fillOpacity:.55,weight:2.5}).addTo(map);
+      var m=L.marker([lat,lon],{icon:droneIcon(s)}).addTo(map);
       m.bindPopup(popupContent(dr));droneMarkers[id]=m;
     }
   });

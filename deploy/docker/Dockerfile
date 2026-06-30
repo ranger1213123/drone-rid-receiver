@@ -1,7 +1,28 @@
-# Drone RID 中心服务器 — 生产级镜像
+# Drone RID 中心服务器 — 生产级镜像 (多阶段构建)
+# 构建: docker build -f deploy/docker/Dockerfile -t drone-rid-center:VERSION .
+
+# ── Stage 1: 前端构建 ──
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /build
+
+# 安装前端依赖
+COPY package.json package-lock.json* ./
+RUN npm config set registry https://registry.npmmirror.com && npm ci --production=false 2>/dev/null || npm install
+
+# 复制 Vite 配置和源码
+COPY vite.config.js ./
+COPY app/server/static/ app/server/static/
+
+# 构建生产包
+RUN npm run build
+
+# ── Stage 2: Python 运行镜像 ──
 FROM python:3.11-slim
 
 WORKDIR /app
+
+ENV PYTHONPATH=/app
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -10,7 +31,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 安装 Python 依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt psycopg2-binary
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn
+
+# 从构建阶段复制前端产物
+COPY --from=frontend-builder /build/app/server/static/dist/ app/server/static/dist/
 
 # 复制应用代码
 COPY . .

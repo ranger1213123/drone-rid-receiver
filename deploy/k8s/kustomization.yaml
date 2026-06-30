@@ -21,4 +21,6 @@ commonLabels:
 
 images:
   - name: drone-rid-center
-    newTag: latest
+    # 生产部署前替换为具体版本号或 Git SHA，禁止使用 latest
+    # CI 示例: newTag: ${GIT_SHA}
+    newTag: "3.3.0"
