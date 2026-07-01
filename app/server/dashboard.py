@@ -64,6 +64,7 @@ def login():
     if user:
         session.clear()
         session["user"] = user
+        session.permanent = True
         return redirect(url_for("dashboard.dashboard"))
     _record_login_attempt(ip)
     return render_template("login.html", error="用户名或密码错误")

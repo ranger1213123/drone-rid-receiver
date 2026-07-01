@@ -6,7 +6,7 @@ import json
 import os
 import secrets
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO
@@ -253,6 +253,7 @@ def create_app(database_url: str = "sqlite:///data/center.db",
             _web_secret = secrets.token_hex(32)
             app.logger.warning("无法持久化 session key，使用临时密钥(重启后所有用户需重新登录)")
     app.secret_key = _web_secret
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
 
     # WebSocket 实时推送 — 生产环境通过 CORS_ORIGINS 限制来源
     _cors_origins = os.environ.get("CORS_ORIGINS", "*")
