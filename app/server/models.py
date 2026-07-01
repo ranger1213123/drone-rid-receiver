@@ -19,6 +19,17 @@ logger = get_logger(__name__)
 
 Base = declarative_base()
 
+# ── 时区转换: UTC → 北京时间 (UTC+8) ──
+_BEIJING_TZ = timezone(timedelta(hours=8))
+
+def _bj(ts):
+    """将 UTC datetime 转为北京时间 ISO 字符串"""
+    if ts is None:
+        return ""
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(_BEIJING_TZ).isoformat()
+
 
 class Tenant(Base):
     """租户/客户 — 拥有 license_key, 控制用户注册上限"""
@@ -493,8 +504,8 @@ def get_devices() -> list:
         {
             "name": d.name, "location": d.location or "",
             "lat": d.lat or 0, "lon": d.lon or 0, "alt": d.alt or 0,
-            "first_seen": d.first_seen.isoformat() if d.first_seen else "",
-            "last_seen": d.last_seen.isoformat() if d.last_seen else "",
+            "first_seen": _bj(d.first_seen),
+            "last_seen": _bj(d.last_seen),
             "status": d.status or "offline",
             "drone_count": d.drone_count or 0, "alert_count": d.alert_count or 0,
             "station_name": d.station_name or "",
@@ -512,7 +523,7 @@ def get_all_drones() -> list:
     return [
         {
             "id": d.id, "device_name": d.device_name,
-            "last_seen": d.last_seen.isoformat() if d.last_seen else "",
+            "last_seen": _bj(d.last_seen),
             "last_lat": d.last_lat or 0, "last_lon": d.last_lon or 0,
             "last_alt": d.last_alt or 0,
             "last_speed": d.last_speed or 0, "last_heading": d.last_heading or 0,
@@ -554,8 +565,8 @@ def get_trajectory_summaries(drone_id: str = None,
         result[row.drone_id] = {
             "count": row.count,
             "min_dist": row.min_dist or 0,
-            "first": row.first_ts.isoformat()[:19] if row.first_ts else "",
-            "last": row.last_ts.isoformat()[:19] if row.last_ts else "",
+            "first": _bj(row.first_ts)[:19] if row.first_ts else "",
+            "last": _bj(row.last_ts)[:19] if row.last_ts else "",
             "device_name": row.device_name or "",
         }
     return result
@@ -574,7 +585,7 @@ def get_trajectory_points(drone_id: str, limit: int = 500) -> list:
         'distance': p.distance_to_line,
         'nearest_line': p.nearest_line or '',
         'nearby_lines': p.nearby_lines or '',
-        'time': p.timestamp.isoformat()[:19] if p.timestamp else '',
+        'time': _bj(p.timestamp)[:19] if p.timestamp else '',
     } for p in points]
 
 
@@ -600,12 +611,12 @@ def get_recent_alerts(limit: int = 100, level: str = None, since: str = None,
         {
             "id": a.id,
             "device_name": a.device_name, "drone_id": a.drone_id,
-            "timestamp": a.timestamp.isoformat() if a.timestamp else "",
+            "timestamp": _bj(a.timestamp),
             "level": a.level, "distance": a.distance,
             "line_name": a.line_name or "", "message": a.message or "",
             "acknowledged": bool(a.acknowledged),
             "ack_by": a.ack_by or "",
-            "ack_time": a.ack_time.isoformat() if a.ack_time else "",
+            "ack_time": _bj(a.ack_time),
             "ack_note": a.ack_note or "",
         }
         for a in alerts
@@ -696,7 +707,7 @@ def get_power_lines(device_name: str = None) -> list:
         'tower_height2': l.tower_height2,
         'voltage_level': l.voltage_level or '',
         'device_name': l.device_name or '',
-        'updated_at': l.updated_at.isoformat() if l.updated_at else '',
+        'updated_at': _bj(l.updated_at),
     } for l in lines]
 
 
@@ -949,7 +960,7 @@ def get_audit_logs(limit: int = 100) -> list:
     logs = sess.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(limit).all()
     return [{
         'id': a.id,
-        'timestamp': a.timestamp.isoformat() if a.timestamp else '',
+        'timestamp': _bj(a.timestamp),
         'username': a.username, 'operation': a.operation,
         'table_name': a.table_name, 'record_id': a.record_id, 'detail': a.detail,
     } for a in logs]
@@ -968,11 +979,11 @@ def get_device_secrets(tenant_id: int = None) -> list:
         'station': d.station or '',
         'client_cert': d.client_cert,
         'cert_serial': d.cert_serial,
-        'cert_issued_at': d.cert_issued_at.isoformat() if d.cert_issued_at else '',
+        'cert_issued_at': _bj(d.cert_issued_at),
         'revoked': bool(d.revoked),
-        'revoked_at': d.revoked_at.isoformat() if d.revoked_at else '',
+        'revoked_at': _bj(d.revoked_at),
         'tenant_id': d.tenant_id,
-        'created_at': d.created_at.isoformat() if d.created_at else '',
+        'created_at': _bj(d.created_at),
     } for d in q.all()]
 
 
@@ -1117,7 +1128,7 @@ def get_whitelist(tenant_id: int = None) -> list:
     return [{
         "id": w.id, "sn": w.sn, "match_mode": w.match_mode,
         "note": w.note or "", "tenant_id": w.tenant_id,
-        "created_at": w.created_at.isoformat() if w.created_at else "",
+        "created_at": _bj(w.created_at),
         "created_by": w.created_by or "",
     } for w in q.order_by(DroneWhitelist.created_at.desc()).all()]
 
@@ -1207,7 +1218,7 @@ def create_tenant(name: str, max_users: int = 3, contact: str = "",
     return {
         'id': t.id, 'name': t.name, 'license_key': t.license_key,
         'max_users': t.max_users, 'is_active': t.is_active,
-        'created_at': now.isoformat(), 'created_by': created_by,
+        'created_at': _bj(now), 'created_by': created_by,
         'contact': contact,
     }
 
@@ -1217,7 +1228,7 @@ def get_tenants() -> list:
     return [{
         'id': t.id, 'name': t.name, 'license_key': t.license_key,
         'max_users': t.max_users, 'is_active': bool(t.is_active),
-        'created_at': t.created_at.isoformat() if t.created_at else '',
+        'created_at': _bj(t.created_at),
         'created_by': t.created_by, 'contact': t.contact or '',
         'user_count': count_users_in_tenant(t.id),
     } for t in sess.query(Tenant).order_by(Tenant.id).all()]
