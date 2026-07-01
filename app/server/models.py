@@ -637,18 +637,22 @@ def acknowledge_alert(alert_id: int, username: str, note: str = "") -> bool:
 
 
 def get_hourly_alert_counts(hours: int = 24) -> list:
-    """近N小时每小时的告警数量 (用于24h趋势图) — 数据库无关"""
+    """近N小时每小时的告警数量 (用于24h趋势图) — 返回北京时间小时键"""
     sess = get_session()
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    cutoff_utc = datetime.now(timezone.utc) - timedelta(hours=hours)
     alerts = sess.query(Alert.timestamp, Alert.level).filter(
-        Alert.timestamp >= cutoff
+        Alert.timestamp >= cutoff_utc
     ).order_by(Alert.timestamp).all()
-    # Python 侧按 (hour, level) 分组 (兼容 SQLite / PostgreSQL)
     buckets: dict = {}  # key: "HH:00_level" → count
     for ts, level in alerts:
         if not ts or not level:
             continue
-        hour_key = ts.strftime("%Y-%m-%dT%H:00")
+        # 转北京时间
+        if ts.tzinfo is None:
+            from datetime import timezone as _tz
+            ts = ts.replace(tzinfo=_tz.utc)
+        bj_ts = ts.astimezone(_BEIJING_TZ)
+        hour_key = bj_ts.strftime("%Y-%m-%dT%H:00")
         bucket_key = f"{hour_key}|{level}"
         buckets[bucket_key] = buckets.get(bucket_key, 0) + 1
     result = []
