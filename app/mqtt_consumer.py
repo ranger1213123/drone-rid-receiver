@@ -1046,8 +1046,9 @@ class MqttConsumer:
         flush_latency.observe(time.time() - _t0)
 
     def _batch_write_devices(self, session, devices: list):
-        from app.server.models import Device
+        from app.server.models import Device, DeviceSecret
         from sqlalchemy.dialects.postgresql import insert as pg_insert
+        import secrets
 
         # 去重 (同设备取最新的)
         merged = {}
@@ -1072,6 +1073,23 @@ class MqttConsumer:
             }
         )
         session.execute(stmt)
+
+        # 自动配给: 新设备首次出现时, 自动创建 device_secrets 记录
+        existing = {
+            row[0] for row in
+            session.query(DeviceSecret.device_name).filter(
+                DeviceSecret.device_name.in_(list(merged.keys()))
+            ).all()
+        }
+        from datetime import datetime, timezone
+        for name in merged:
+            if name not in existing:
+                session.add(DeviceSecret(
+                    device_name=name,
+                    device_secret=secrets.token_hex(24),
+                    created_at=datetime.now(timezone.utc),
+                ))
+                logger.info("自动配给设备: %s", name)
 
     def _batch_write_drones(self, session, drones: list):
         from app.server.models import Drone

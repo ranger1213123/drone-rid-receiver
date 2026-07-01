@@ -89,11 +89,11 @@ end
 
 local function process_rid_line(line)
     if #line == 0 then return end
-    local ok = pcall(json.decode, line)
-    if not ok then return end
+    local data = json.decode(line)
+    if not data then return end
 
     msg_total = msg_total + 1
-    net_send(T("raw"), line)
+    net_send(T("raw"), data)  -- 传 table, 框架 N_SEND_2 会 JSON 编码一次
     log.info("RID", "tx #", msg_total, "len=", #line)
 end
 
@@ -130,19 +130,17 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 local function send_heartbeat()
-    local payload = json.encode({
-        dev_id    = CFG.device_name,
-        lat       = gps.lat,
-        lon       = gps.lon,
-        alt       = gps.alt,
-        gps_valid = gps.valid,
-        count     = msg_total,
-        sn        = misc.getSn(),
-        csq       = misc.getCsq(),
-        type      = "heartbeat",
+    net_send(T("heartbeat"), {
+        dev_id      = CFG.device_name,
+        device_lat  = gps.lat,
+        device_lon  = gps.lon,
+        device_alt  = gps.alt,
+        gps_valid   = gps.valid,
+        count       = msg_total,
+        sn          = misc.getSn(),
+        csq         = misc.getCsq(),
+        type        = "heartbeat",
     })
-
-    net_send(T("heartbeat"), payload)
     log.info("HB", "sent", "gps=" .. (gps.valid and "OK" or "NONE"),
              "count=" .. msg_total, "csq=" .. misc.getCsq())
 end
