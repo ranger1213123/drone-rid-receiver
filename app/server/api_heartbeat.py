@@ -19,14 +19,15 @@ def api_heartbeat():
     try:
         data = request.json or {}
         device_name = getattr(g, "device_name", data.get("device", "unknown"))
-        device_lat = data.get("device_lat", 0)
-        device_lon = data.get("device_lon", 0)
+        device_lat = data.get("device_lat")
+        device_lon = data.get("device_lon")
+        device_alt = data.get("device_alt")
         upsert_device(
             device_name,
             location=data.get("location", ""),
-            lat=device_lat,
-            lon=device_lon,
-            alt=data.get("device_alt", 0),
+            lat=device_lat if device_lat and device_lat != 0 else None,
+            lon=device_lon if device_lon and device_lon != 0 else None,
+            alt=device_alt if device_alt is not None else None,
         )
 
         # Sync GPS to associated station + auto-geocode

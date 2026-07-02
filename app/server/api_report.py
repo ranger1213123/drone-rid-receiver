@@ -1,14 +1,14 @@
-"""POST /api/report, /api/report_alert — 含云侧 SMS + 阈值分类 + 去重 + 白名单"""
+"""POST /api/report, /api/report_alert — 含云侧企微通知 + 阈值分类 + 去重 + 白名单"""
 
 import os
 import time as _time
+from typing import Optional
 
 from flask import Blueprint, request, jsonify, g
 
 from .models import (
     upsert_device, upsert_drone, update_drone_status, add_alert,
-    get_personnel_by_station, get_all_alert_phones,
-    get_setting, is_drone_whitelisted,
+    get_setting, is_drone_whitelisted, add_drone_position,
 )
 from . import socketio
 from .auth import require_auth
@@ -30,54 +30,50 @@ def _get_cooldown_sec(level: str) -> float:
     else:
         return float(get_setting("debounce_out", "10"))
 
-# ── SMS 网关 (懒加载) ──
-_sms_gateway = None
+# ── 企业微信 Webhook 通知 (按 URL 缓存实例) ──
+_webhook_cache: dict = {}
 
 
-def _get_sms_gateway():
-    global _sms_gateway
-    if _sms_gateway is not None:
-        return _sms_gateway
+def _get_webhook_for_station(station_name: str = "") -> Optional[object]:
+    """获取站点级 Webhook URL (优先站点配置，兜底全局设置)"""
+    from core.webhook_notifier import create_webhook_notifier
 
-    # 优先环境变量，其次数据库设置
-    sms_env = os.environ.get("SMS_ENABLED", "")
-    if sms_env in ("1", "true", "True"):
-        sms_enabled = True
-    elif sms_env in ("0", "false", "False"):
-        sms_enabled = False
-    else:
-        sms_enabled = get_setting("sms_enabled", "false") in ("1", "true", "True")
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
 
-    if not sms_enabled:
-        from core.sms_gateway import SimulatedSMSGateway
-        _sms_gateway = SimulatedSMSGateway()
-        logger.info("SMS: 模拟模式 (SMS_ENABLED=0)")
-        return _sms_gateway
+    # 站点级 URL 优先
+    if station_name:
+        try:
+            from .models import get_stations
+            stations = get_stations()
+            for s in stations:
+                if s["name"] == station_name and s.get("webhook_url"):
+                    webhook_url = s["webhook_url"]
+                    break
+        except Exception:
+            pass
 
-    provider = os.environ.get("SMS_PROVIDER", "alibaba")
-    if provider == "alibaba":
-        from core.sms_gateway import AlibabaSMSGateway
-        _sms_gateway = AlibabaSMSGateway(
-            access_key=os.environ.get("ALIBABA_ACCESS_KEY", ""),
-            access_secret=os.environ.get("ALIBABA_ACCESS_SECRET", ""),
-            sign_name=os.environ.get("ALIBABA_SIGN_NAME", "无人机防碰撞监测"),
-            template_code=os.environ.get("ALIBABA_TEMPLATE_CODE", ""),
-        )
-        logger.info("SMS: 阿里云模式")
-    else:
-        from core.sms_gateway import SimulatedSMSGateway
-        _sms_gateway = SimulatedSMSGateway()
-        logger.info("SMS: 模拟模式 (unknown provider=%s)", provider)
+    # 兜底全局设置
+    if not webhook_url:
+        try:
+            webhook_url = get_setting("webhook_url", "")
+        except Exception:
+            pass
 
-    return _sms_gateway
+    if not webhook_url:
+        return None
+
+    # 按 URL 缓存实例
+    webhook = _webhook_cache.get(webhook_url)
+    if webhook is None:
+        webhook = create_webhook_notifier(webhook_url)
+        _webhook_cache[webhook_url] = webhook
+    return webhook
 
 
 def _notify_station_personnel(device_name: str, drone_id: str, level: str,
                               distance: float, line_name: str, lat: float, lon: float):
-    """向站点负责人发送告警短信"""
+    """通过企业微信机器人发送告警通知 — 站点级 URL 优先"""
     try:
-        gateway = _get_sms_gateway()
-        # 查找该设备的站点负责人
         from .models import get_stations
         stations = get_stations()
         station_name = None
@@ -86,31 +82,24 @@ def _notify_station_personnel(device_name: str, drone_id: str, level: str,
                 station_name = s["name"]
                 break
 
-        if station_name:
-            personnel = get_personnel_by_station(station_name)
-            phones = [p["phone"] for p in personnel if p.get("phone")]
-        else:
-            phones = get_all_alert_phones()
+        if not station_name:
+            station_name = device_name
 
-        if not phones:
-            # 回退: DB 设置中配置的应急电话
-            fallback = str(get_setting("sms_alert_phones", ""))
-            phones = [p.strip() for p in fallback.split(",") if p.strip()]
-
-        if not phones:
-            # 回退: 环境变量配置的应急电话
-            fallback = os.environ.get("SMS_ALERT_PHONES", "")
-            phones = [p.strip() for p in fallback.split(",") if p.strip()]
-
-        if not phones:
-            logger.info("SMS: 无接收号码 (device=%s station=%s)", device_name, station_name)
+        webhook = _get_webhook_for_station(station_name)
+        if webhook is None:
             return
 
-        coords = f"({lat:.4f},{lon:.4f})" if lat or lon else ""
-        msg = f"[{level.upper()}] {drone_id} 接近 {line_name} 距离{distance:.0f}m {coords} — 设备{device_name}"
-        gateway.send(phones, msg)
+        webhook.send_alert(
+            station_name=station_name,
+            drone_id=drone_id,
+            level=level,
+            distance=distance,
+            line_name=line_name,
+            lat=lat,
+            lon=lon,
+        )
     except Exception as e:
-        logger.error("SMS notification error: %s", e)
+        logger.error("企微通知异常: %s", e)
 
 
 @bp.route("/api/report", methods=["POST"])
@@ -130,13 +119,15 @@ def api_report():
         line_name = data.get("nearest_line", "")
         status = data.get("status", "active")
 
-        upsert_device(device_name, lat=lat, lon=lon, alt=alt)
+        upsert_device(device_name)
 
         if drone_id:
             upsert_drone(device_name, drone_id, lat, lon, alt)
             if distance is not None:
                 update_drone_status(device_name, drone_id, distance,
                                     line_name, status)
+            add_drone_position(drone_id, device_name, lat, lon, alt,
+                               distance, line_name)
             # WebSocket 实时推送
             socketio.emit('drone_update', {
                 'drone_id': drone_id,
@@ -183,7 +174,7 @@ def api_report_alert():
         elif not level:
             level = "active"
 
-        upsert_device(device_name, lat=lat, lon=lon, alt=alt)
+        upsert_device(device_name)
 
         # ── 白名单检查 ──
         if is_drone_whitelisted(drone_id):
@@ -192,6 +183,7 @@ def api_report_alert():
             if drone_id:
                 upsert_drone(device_name, drone_id, lat, lon, alt)
                 update_drone_status(device_name, drone_id, distance, line_name, level)
+                add_drone_position(drone_id, device_name, lat, lon, alt, distance, line_name)
                 socketio.emit('drone_update', {
                     'drone_id': drone_id, 'lat': lat, 'lon': lon, 'alt': alt,
                     'distance': distance or 0, 'nearest_line': line_name, 'status': level,
@@ -217,6 +209,7 @@ def api_report_alert():
             if drone_id:
                 upsert_drone(device_name, drone_id, lat, lon, alt)
                 update_drone_status(device_name, drone_id, distance, line_name, level)
+                add_drone_position(drone_id, device_name, lat, lon, alt, distance, line_name)
 
             # 云侧 SMS
             _notify_station_personnel(device_name, drone_id, level, distance,
@@ -237,6 +230,7 @@ def api_report_alert():
             if drone_id:
                 upsert_drone(device_name, drone_id, lat, lon, alt)
                 update_drone_status(device_name, drone_id, distance, line_name, level)
+                add_drone_position(drone_id, device_name, lat, lon, alt, distance, line_name)
                 socketio.emit('drone_update', {
                     'drone_id': drone_id, 'lat': lat, 'lon': lon, 'alt': alt,
                     'distance': distance or 0, 'nearest_line': line_name, 'status': level,

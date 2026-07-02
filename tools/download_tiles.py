@@ -9,31 +9,40 @@
 
 import argparse
 import math
+import os
+import random as _random
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, ProxyHandler, build_opener, install_opener
 from urllib.error import HTTPError
 
-# ── 瓦片源 (高德) ──
-_AMAP_SUBDOMAINS = ["wprd01", "wprd02", "wprd03", "wprd04"]
+_UA = "DroneRID-TileDownloader/1.0 (Windows; OSM/Amap tile caching)"
+
+# ── 瓦片源 ──
 _SOURCES = {
     "road": {
         "url": "https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scl=1&style=7&x={x}&y={y}&z={z}&key=fe811acf8e8fbe4056ab24775b0cd7d4",
         "max_zoom": 18,
+        "subdomains": ["wprd01", "wprd02", "wprd03", "wprd04"],
     },
     "satellite": {
         "url": "https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}&key=fe811acf8e8fbe4056ab24775b0cd7d4",
         "max_zoom": 18,
+        "subdomains": [],
     },
     "terrain": {
         "url": "https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scl=1&style=8&x={x}&y={y}&z={z}&key=fe811acf8e8fbe4056ab24775b0cd7d4",
         "max_zoom": 18,
+        "subdomains": ["wprd01", "wprd02", "wprd03", "wprd04"],
+    },
+    "osm": {
+        "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "max_zoom": 19,
+        "subdomains": ["a", "b", "c"],
     },
 }
-import random as _random
-_UA = "DroneRID-TileDownloader/1.0 (Windows; Amap tile caching)"
 
 
 def latlon_to_tile(lat, lon, z):
@@ -55,7 +64,7 @@ def estimate_tile_count(lat1, lon1, lat2, lon2, min_zoom, max_zoom):
     return total
 
 
-def download_tile(z, x, y, layer, output_dir, dry_run):
+def download_tile(z, x, y, layer, output_dir, dry_run, proxy_url=None):
     out_path = Path(output_dir) / layer / str(z) / str(x) / f"{y}.png"
     if out_path.exists() and out_path.stat().st_size >= 200:
         return z, x, y, True, True
@@ -63,12 +72,17 @@ def download_tile(z, x, y, layer, output_dir, dry_run):
         return z, x, y, True, False
 
     src = _SOURCES[layer]
-    sub = _random.choice(_AMAP_SUBDOMAINS)
+    subs = src.get("subdomains", [])
+    sub = _random.choice(subs) if subs else ""
     url = src["url"].replace("{s}", sub).replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
 
     try:
         req = Request(url, headers={"User-Agent": _UA})
-        resp = urlopen(req, timeout=15)
+        if proxy_url:
+            opener = build_opener(ProxyHandler({"https": proxy_url, "http": proxy_url}))
+            resp = opener.open(req, timeout=15)
+        else:
+            resp = urlopen(req, timeout=15)
         data = resp.read()
         if len(data) < 100:
             return z, x, y, False, False
@@ -100,12 +114,16 @@ def main():
                         help="经纬度边界: lat1,lon1,lat2,lon2 (例如 30,100,40,120)")
     parser.add_argument("--minzoom", type=int, default=3, help="最小缩放级别 (默认 3)")
     parser.add_argument("--maxzoom", type=int, default=12, help="最大缩放级别 (默认 12)")
-    parser.add_argument("--layer", choices=["road", "satellite", "terrain"], default="road",
-                        help="图层类型 (默认 road)")
+    parser.add_argument("--layer", choices=["road", "satellite", "terrain", "osm"], default="osm",
+                        help="图层类型 (默认 osm)")
     parser.add_argument("--output", default="data/tiles", help="输出目录 (默认 data/tiles)")
     parser.add_argument("--threads", type=int, default=6, help="并发线程数 (默认 6)")
     parser.add_argument("--dry-run", action="store_true", help="仅统计不下载")
+    parser.add_argument("--proxy", default=os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or "",
+                        help="HTTP 代理地址，如 http://127.0.0.1:7890 (默认读取 HTTPS_PROXY 环境变量)")
     args = parser.parse_args()
+
+    proxy_url = args.proxy.strip() or None
 
     parts = args.bounds.split(",")
     if len(parts) != 4:
@@ -119,6 +137,8 @@ def main():
     print(f"缩放: {args.minzoom}-{args.maxzoom}  图层: {args.layer}  最大级别: {src['max_zoom']}")
     print(f"预估瓦片数: {total:,}  线程: {args.threads}")
     print(f"源: {src['url']}")
+    if proxy_url:
+        print(f"代理: {proxy_url}")
     if args.dry_run:
         print("*** DRY RUN — 不实际下载 ***")
     print()
@@ -126,7 +146,7 @@ def main():
     futures = {}
     with ThreadPoolExecutor(max_workers=args.threads) as executor:
         for z, x, y in iter_tiles(lat1, lon1, lat2, lon2, args.minzoom, args.maxzoom):
-            fut = executor.submit(download_tile, z, x, y, args.layer, args.output, args.dry_run)
+            fut = executor.submit(download_tile, z, x, y, args.layer, args.output, args.dry_run, proxy_url)
             futures[fut] = (z, x, y)
 
     downloaded = 0

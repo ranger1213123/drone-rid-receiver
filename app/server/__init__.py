@@ -157,9 +157,20 @@ def create_app(database_url: str = "sqlite:///data/center.db",
             "vite_asset": _vite_asset,
             "vite_tags": _vite_tags,
             "tile_urls": {
-                "standard": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                "satellite": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-                "terrain": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+                "standard": {
+                    "url": "https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scl=1&style=7&x={x}&y={y}&z={z}",
+                    "subdomains": ["wprd01", "wprd02", "wprd03", "wprd04"],
+                    "maxZoom": 18
+                },
+                "satellite": {
+                    "url": "https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}",
+                    "maxZoom": 18
+                },
+                "terrain": {
+                    "url": "https://{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scl=1&style=8&x={x}&y={y}&z={z}",
+                    "subdomains": ["wprd01", "wprd02", "wprd03", "wprd04"],
+                    "maxZoom": 18
+                },
             },
         }
 

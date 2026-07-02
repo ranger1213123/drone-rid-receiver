@@ -57,16 +57,16 @@ def api_status():
 
     total_devices = len(devices)
     online_devices = sum(1 for d in devices if d["status"] == "online")
-    active_drones = len(drones)
-    crit = sum(1 for d in drones if d["status"] == "critical")
-    sev = sum(1 for d in drones if d["status"] == "severe")
-    warn = sum(1 for d in drones if d["status"] == "warning")
 
     # ── 增量模式: 只返回 since 时间之后更新的无人机 ──
     if since and drones:
         drones = [d for d in drones if d.get("last_seen", "") >= since]
 
     total_drones = len(drones)
+    active_drones = sum(1 for d in drones if d.get("status") != "offline")
+    crit = sum(1 for d in drones if d["status"] == "critical")
+    sev = sum(1 for d in drones if d["status"] == "severe")
+    warn = sum(1 for d in drones if d["status"] == "warning")
 
     # ── 分页 ──
     if page and page >= 1:

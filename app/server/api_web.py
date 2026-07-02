@@ -180,6 +180,8 @@ def require_admin(f):
             return jsonify({"error": "未登录"}), 401
         if session["user"].get("role") != "admin":
             return jsonify({"error": "需要管理员权限"}), 403
+        if not _check_csrf():
+            return jsonify({"error": "CSRF 验证失败"}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -240,9 +242,12 @@ def _check_device_permission(device_name):
 @require_web_auth
 def api_powerlines():
     if request.method == "GET":
-        # 可选 ?device_name=X 过滤
+        # 可选 ?device_name=X & lat=Y & lon=Z & radius_km=R 过滤
         dev = request.args.get("device_name", "").strip() or None
-        lines = get_power_lines(device_name=dev)
+        lat = _safe_float(request.args.get("lat"))
+        lon = _safe_float(request.args.get("lon"))
+        radius = _safe_float(request.args.get("radius_km")) or None
+        lines = get_power_lines(device_name=dev, lat=lat, lon=lon, radius_km=radius)
         # 租户过滤: 只显示有权限站点下的电力线
         tenant_id, permitted = _user_scope()
         if permitted is not None:
@@ -491,6 +496,7 @@ def api_stations():
             alt=_safe_float(data.get("alt")),
             device_name=(data.get("device_name") or "").strip() or None,
             tenant_id=tid,
+            webhook_url=(data.get("webhook_url") or "").strip() or None,
         )
         add_audit_log(u["username"], "INSERT", "stations", None,
                       f"新增站点: {name}")
@@ -529,6 +535,7 @@ def api_stations():
             alt=_safe_float(data.get("alt")),
             device_name=(data.get("device_name") or "").strip() or None,
             tenant_id=tenant_id,
+            webhook_url=(data.get("webhook_url") or "").strip() or None,
         )
         # Auto-geocode if coordinates changed (only if province is still empty)
         if new_lat and new_lon and not (data.get("province") or "").strip():
@@ -1206,8 +1213,8 @@ def api_settings():
             "anti_flapping_enabled": "false",
             "debounce_in": "3",
             "debounce_out": "10",
-            "sms_enabled": "false",
-            "sms_alert_phones": "",
+            "webhook_enabled": "false",
+            "webhook_url": "",
             "raw_archive_enabled": "true",
             "raw_archive_retention_days": "30",
         }
@@ -1313,6 +1320,8 @@ def _require_device_admin(f):
             return jsonify({"error": "未登录"}), 401
         if session["user"].get("role") not in ("admin", "tenant_admin"):
             return jsonify({"error": "需要管理员或租户管理员权限"}), 403
+        if not _check_csrf():
+            return jsonify({"error": "CSRF 验证失败"}), 403
         return f(*args, **kwargs)
     return decorated
 
@@ -1452,6 +1461,49 @@ def api_revoke_device(device_name):
     except Exception as e:
         logger.error("revoke device error: %s", e)
         return jsonify({"error": "服务器内部错误"}), 500
+
+
+@bp.route("/api/devices/<device_name>/binding", methods=["PUT"])
+@_require_device_admin
+def api_bind_device(device_name):
+    """绑定/更换设备的站点和租户 — admin 可操作全部, tenant_admin 仅限自己租户"""
+    u = session["user"]
+    # tenant_admin 只能操作自己租户的设备
+    if u.get("role") == "tenant_admin":
+        devices = get_device_secrets(tenant_id=u.get("tenant_id"))
+        if not any(d["device_name"] == device_name for d in devices):
+            return jsonify({"error": "设备不存在或不属于您的租户"}), 403
+
+    data = request.json or {}
+    station = (data.get("station") or "").strip() or None
+    tenant_id = data.get("tenant_id")
+
+    # admin 可以改 tenant_id, tenant_admin 锁定为自己的租户
+    if u.get("role") != "admin":
+        tenant_id = u.get("tenant_id")
+
+    from .models import DeviceSecret as _DS, get_session as _gs
+    sess = _gs()
+    try:
+        d = sess.get(_DS, device_name)
+        if not d:
+            return jsonify({"error": "设备不存在"}), 404
+        if station is not None:
+            d.station = station
+        if tenant_id is not None:
+            d.tenant_id = tenant_id
+        sess.commit()
+
+        add_audit_log(u["username"], "BIND", "device_secrets", None,
+                      f"绑定设备: {device_name} → station={d.station} tenant={d.tenant_id}")
+        return jsonify({
+            "status": "ok",
+            "device_name": device_name,
+            "station": d.station or "",
+            "tenant_id": d.tenant_id,
+        })
+    finally:
+        sess.close()
 
 
 # ── Drone Whitelist ──

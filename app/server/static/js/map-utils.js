@@ -2,8 +2,8 @@
  * Shared map/Leaflet utilities — marker creation, power line rendering, trajectory
  */
 var MapUtils = (function() {
-  var STATUS_COLORS = { active: '#16a34a', warning: '#ca8a04', severe: '#ea580c', critical: '#dc262e', gone: '#bbb' };
-  var STATUS_ZH = { active: '正常', warning: '警告', severe: '严重', critical: '危险', gone: '离线' };
+  var STATUS_COLORS = { active: '#16a34a', warning: '#ca8a04', severe: '#ea580c', critical: '#dc262e', offline: '#bbb', gone: '#bbb' };
+  var STATUS_ZH = { active: '正常', warning: '警告', severe: '严重', critical: '危险', offline: '离线', gone: '离线' };
   function esc(v) { return window.UI ? UI.escapeHtml(v) : String(v == null ? '' : v); }
   function attr(v) { return window.UI ? UI.escapeAttr(v) : esc(v); }
 

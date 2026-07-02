@@ -35,7 +35,7 @@ import paho.mqtt.client as mqtt
 
 from core.powerline import PowerLineManager
 from core.cloud_alert import CloudAlertProcessor
-from core.sms_gateway import create_sms_gateway
+from core.webhook_notifier import create_webhook_notifier, WebhookNotifier
 from core.parser.astm import _MSG_LENGTHS, _ASTM_DECODERS
 from core.parser.types import ParsedRID, MSG_BASIC_ID, MSG_LOCATION, MSG_SELF_ID, MSG_SYSTEM, MSG_OPERATOR_ID
 
@@ -177,6 +177,7 @@ class MqttConsumer:
             'alerts': [],
         }
         self._buffer_lock = threading.Lock()
+        self._flush_lock = threading.Lock()
         self.last_flush_time = ""
 
         # 云端距离计算 + 告警
@@ -195,11 +196,8 @@ class MqttConsumer:
         self._device_tenant: dict = {}
         self._device_tenant_loaded = False
 
-        # SMS 通知网关 (lazy init)
-        self._sms_gateway = None
-        self._sms_gateway_initialized = False
-        self._sms_cooldown: dict = {}   # (station_name, drone_id, level) → timestamp
-        self._sms_cooldown_sec = 300    # 同站点同无人机同等级 5 分钟内不重复发短信
+        # 企业微信 Webhook 通知 — 按 URL 缓存实例
+        self._webhook_cache: dict = {}
 
     # ── 生命周期 ──
 
@@ -334,6 +332,7 @@ class MqttConsumer:
                     self._device_tenant[s.device_name] = {
                         "tenant_id": s.tenant_id,
                         "station_name": s.name,
+                        "webhook_url": s.webhook_url or "",
                     }
                 self._device_tenant_loaded = True
                 logger.info("Device→Tenant 映射已加载: %d 条", len(self._device_tenant))
@@ -347,102 +346,67 @@ class MqttConsumer:
         self._ensure_device_tenant_map()
         return self._device_tenant.get(device_name, {})
 
-    # ── SMS 通知 ──
+    # ── 企业微信 Webhook 通知 ──
 
-    def _ensure_sms_gateway(self):
-        """懒加载 SMS 网关，检查 DB 中 sms_enabled 开关"""
-        if self._sms_gateway_initialized:
-            return
-        self._sms_gateway_initialized = True
-        try:
-            from app.server.models import get_setting
-            sms_enabled = get_setting("sms_enabled", "false").lower() == "true"
-        except Exception:
-            sms_enabled = os.environ.get("SMS_ENABLED", "").lower() == "true"
+    def _get_station_webhook(self, station_name: str) -> str:
+        """获取站点的 Webhook URL，优先站点级，兜底全局设置"""
+        url = ""
+        self._ensure_device_tenant_map()
+        for dev_name, info in self._device_tenant.items():
+            if info.get("station_name") == station_name:
+                url = info.get("webhook_url", "")
+                break
+        if not url:
+            try:
+                from app.server.models import get_setting
+                url = get_setting("webhook_url", "")
+            except Exception:
+                pass
+        if not url:
+            url = os.environ.get("WEBHOOK_URL", "")
+        return url
 
-        if not sms_enabled:
-            logger.info("SMS 通知未启用 (sms_enabled=false)")
-            return
+    # Webhook 实例缓存 (按 URL 复用)
+    _webhook_cache: dict = {}
 
-        config = {
-            "backhaul": {
-                "sms": {
-                    "enabled": True,
-                    "provider": os.environ.get("SMS_PROVIDER", "simulated"),
-                    "rate_limit_per_hour": int(os.environ.get("SMS_RATE_LIMIT_PER_HOUR", "10")),
-                    "alibaba": {
-                        "access_key": os.environ.get("SMS_ALIBABA_ACCESS_KEY", ""),
-                        "access_secret": os.environ.get("SMS_ALIBABA_ACCESS_SECRET", ""),
-                        "sign_name": os.environ.get("SMS_ALIBABA_SIGN_NAME", ""),
-                        "template_code": os.environ.get("SMS_ALIBABA_TEMPLATE_CODE", ""),
-                    },
-                }
-            }
-        }
-        try:
-            self._sms_gateway = create_sms_gateway(config)
-            logger.info("SMS 网关已初始化: provider=%s", config["backhaul"]["sms"]["provider"])
-        except Exception as e:
-            logger.error("SMS 网关初始化失败: %s", e)
-
-    def _notify_station_personnel(self, station_name: str, alert: dict):
-        """向站点负责人发送告警短信"""
+    def _notify_webhook(self, station_name: str, alert: dict):
+        """通过企业微信机器人发送告警通知 — 站点级 URL 优先"""
         if not station_name:
             return
 
-        self._ensure_sms_gateway()
-        if self._sms_gateway is None:
+        webhook_url = self._get_station_webhook(station_name)
+        if not webhook_url:
             return
+
+        # 复用缓存实例
+        webhook = self._webhook_cache.get(webhook_url)
+        if webhook is None:
+            webhook = create_webhook_notifier(webhook_url)
+            self._webhook_cache[webhook_url] = webhook
 
         drone_id = alert.get("drone_id", "")
         level = alert.get("level", "warning")
         distance = alert.get("distance", 0)
         line_name = alert.get("line_name", "")
-
-        # SMS 去重: 同站点 + 同无人机 + 同等级在冷却期内不重复
-        cooldown_key = (station_name, drone_id, level)
-        now = time.time()
-        last = self._sms_cooldown.get(cooldown_key, 0)
-        if now - last < self._sms_cooldown_sec:
-            return
-        self._sms_cooldown[cooldown_key] = now
+        lat = alert.get("latitude", 0) or 0
+        lon = alert.get("longitude", 0) or 0
 
         try:
-            from app.server.models import get_personnel_by_station
-            personnel = get_personnel_by_station(station_name)
+            webhook.send_alert(
+                station_name=station_name,
+                drone_id=drone_id,
+                level=level,
+                distance=distance,
+                line_name=line_name,
+                lat=lat,
+                lon=lon,
+            )
         except Exception as e:
-            logger.warning("查询站点人员失败: station=%s, err=%s", station_name, e)
-            return
+            logger.error("企微通知异常: device=%s err=%s", alert.get("device_name", ""), e)
 
-        if not personnel:
-            return
-
-        phones = [p["phone"] for p in personnel if p.get("phone")]
-        if not phones:
-            return
-
-        level_text = {"warning": "⚠️ 警告", "severe": "🚨 严重", "critical": "🔴 危急"}.get(level, level)
-        message = (
-            f"【无人机告警】{level_text}: 无人机 {drone_id} 接近 {line_name}，"
-            f"距离 {distance:.0f}m，请立即处置。"
-        )
-
-        try:
-            self._sms_gateway.send(phones, message)
-            logger.info("SMS 通知已发送: station=%s phones=%d drone=%s level=%s",
-                        station_name, len(phones), drone_id, level)
-        except Exception as e:
-            logger.error("SMS 发送失败: station=%s err=%s", station_name, e)
-
-    def _notify_alerts_sms(self, alerts: list):
-        """对一批告警按设备解析站点后发送 SMS"""
+    def _notify_alerts_webhook(self, alerts: list):
+        """对一批告警按设备解析站点后发送企微通知"""
         self._ensure_device_tenant_map()
-
-        # 周期性清理过期 SMS 冷却记录
-        now = time.time()
-        stale = [k for k, v in self._sms_cooldown.items() if now - v > self._sms_cooldown_sec * 2]
-        for k in stale:
-            self._sms_cooldown.pop(k, None)
 
         for alert in alerts:
             device_name = alert.get("device_name", "")
@@ -451,9 +415,9 @@ class MqttConsumer:
             if not station_name:
                 continue
             try:
-                self._notify_station_personnel(station_name, alert)
+                self._notify_webhook(station_name, alert)
             except Exception as e:
-                logger.error("SMS 通知异常: device=%s err=%s", device_name, e)
+                logger.error("企微通知异常: device=%s err=%s", device_name, e)
 
     def _buffer_report(self, device_name: str, data: dict):
         now = datetime.now(timezone.utc)
@@ -865,11 +829,28 @@ class MqttConsumer:
 
         # 总是更新设备心跳
         dev_id = payload.get("devId", payload.get("dev_id", device_name))
-        self._buffer['devices'][device_name] = {
+        device_entry = {
             'name': device_name,
             'last_seen': now,
             'status': 'online',
         }
+
+        # 从 ESP32 payload 提取设备 GPS (Op_Lat/Op_Lon/Op_Alt)
+        inner = payload.get("data")
+        if isinstance(inner, dict):
+            op_lat = inner.get("Op_Lat", 0) or 0
+            op_lon = inner.get("Op_Lon", 0) or 0
+            op_alt = inner.get("Op_Alt", 0) or 0
+            device_entry.update({'lat': op_lat, 'lon': op_lon, 'alt': op_alt})
+
+        # 如果已有设备 GPS (来自 heartbeat), 保留旧值
+        existing = self._buffer['devices'].get(device_name, {})
+        if not device_entry.get('lat') and not device_entry.get('lon'):
+            for f in ('lat', 'lon', 'alt'):
+                if existing.get(f):
+                    device_entry[f] = existing[f]
+
+        self._buffer['devices'][device_name] = device_entry
 
         # 根据 type 字段选择解析器
         if payload.get("type") == "ble_raw":
@@ -969,6 +950,15 @@ class MqttConsumer:
             self._flush()
 
     def _flush(self):
+        """批量写入数据库，带锁防止并发 flush 导致告警重复"""
+        if not self._flush_lock.acquire(blocking=False):
+            return  # 另一个 flush 正在执行，跳过本轮
+        try:
+            self._flush_impl()
+        finally:
+            self._flush_lock.release()
+
+    def _flush_impl(self):
         _t0 = time.time()
 
         with self._buffer_lock:
@@ -1030,12 +1020,12 @@ class MqttConsumer:
             buffer_drones.set(len(self._buffer['drones']))
             buffer_alerts.set(len(self._buffer['alerts']))
 
-        # SMS 通知 — DB 写入成功后才发送
+        # 企微通知 — DB 写入成功后才发送
         if db_ok and alerts:
             try:
-                self._notify_alerts_sms(alerts)
+                self._notify_alerts_webhook(alerts)
             except Exception as e:
-                logger.error("SMS 通知失败: %s", e)
+                logger.error("企微通知失败: %s", e)
 
         # 清理已不在线的无人机告警状态
         if drones:

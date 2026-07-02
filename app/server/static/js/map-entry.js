@@ -100,12 +100,12 @@ var bufZoneLayers = [];
 var bufZonesVisible = false;
 var nationalMode = true;
 
-var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#bbb'};
-var statusZh = {active:'正常',warning:'警告',severe:'严重',critical:'危险',gone:'离线'};
+var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',offline:'#bbb',gone:'#bbb'};
+var statusZh = {active:'正常',warning:'警告',severe:'严重',critical:'危险',offline:'离线',gone:'离线'};
 function markerColor(s){return statusColors[s]||'#16a34a'}
 function markerRadius(s){if(s==='critical')return 10;if(s==='severe')return 8;if(s==='warning')return 6;return 5}
 function droneIcon(status){
-  var colors={active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#9ca3af'};
+  var colors={active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',offline:'#9ca3af',gone:'#9ca3af'};
   var c=colors[status]||colors.active;
   var svg='<svg width="28" height="28" viewBox="0 0 1024 1024" fill="'+c+'">'
     +'<path d="M340.65 809.17a138.26 138.26 0 1 1-114.43-114.43 330 330 0 0 1 40.41-46.06 193.1 193.1 0 0 0-198.82 46.09c-75.21 75.21-75.21 197.59 0 272.81s197.6 75.22 272.83 0a193.1 193.1 0 0 0 46.1-198.75c-14.72 11.99-30.17 25.49-46.09 40.34zM764.81 641.69a330 330 0 0 1 39.8 46.32 138.27 138.27 0 1 1-114.77 114.84c-15.99-14.63-31.47-27.96-46.33-39.76a193.1 193.1 0 0 0 46.33 196.8c75.22 75.22 197.62 75.22 272.83 0s75.22-197.6 0-272.83a193.1 193.1 0 0 0-197.86-46.37zM692.82 227.86a138.27 138.27 0 1 1 114.7 114.67c-15.25 16.52-28.54 31.93-40.05 46.23a193.1 193.1 0 0 0 198.23-46.27c75.22-75.22 75.22-197.6 0-272.83s-197.62-75.22-272.83 0a193.1 193.1 0 0 0-46.24 198.33c13.95-11.26 29.32-24.53 46.19-40.13zM258.29 374.94a330 330 0 0 1-41.12-45.77 138.26 138.26 0 1 1 113.83-113.79c15.65 14.9 31 28.61 45.77 41.12a193.1 193.1 0 0 0-45.69-200.09c-75.18-75.22-197.6-75.22-272.78 0s-75.22 197.6 0 272.83a193.18 193.18 0 0 0 199.99 45.7zM518.34 460.18a56.33 56.33 0 1 0 39.91 16.49 56.01 56.01 0 0 0-39.91-16.49z"/>'
@@ -136,10 +136,10 @@ window.enterStationView = function(station){
   if(persBtn) persBtn.style.display='inline-block';
   var label=document.getElementById('personnelStationLabel');
   if(label) label.textContent=name;
-  loadPowerLines();
-  updateAll();
   var lat = station.lat!=null ? station.lat : (station.position?station.position.lat:0);
   var lon = station.lon!=null ? station.lon : (station.position?station.position.lon:0);
+  loadPowerLines(lat, lon);
+  updateAll();
   if(lat && lon){
     map.flyTo([lat, lon], 14, {duration:1});
   }
@@ -355,8 +355,10 @@ UI.delegate(document.getElementById('natAlertList'), 'click', '[data-enter-stati
 // ═══════════ Power lines ═══════════
 var PL_COLOR='#e74c3c', PL_WIDTH=3;
 
-window.loadPowerLines = function(){
-  Api.get('/api/powerlines').then(function(lines){
+window.loadPowerLines = function(lat, lon){
+  var params='';
+  if(lat!=null&&lon!=null) params='?lat='+lat+'&lon='+lon+'&radius_km=100';
+  Api.get('/api/powerlines'+params).then(function(lines){
     plPolylines.forEach(function(p){map.removeLayer(p)});
     plLabels.forEach(function(l){map.removeLayer(l)});
     plPolylines=[];plLabels=[];
@@ -582,6 +584,7 @@ function _findProvince(name) { return regionData.find(function(p){ return p[0]==
 function _findCity(prov, name) { return prov[1].find(function(c){ return c[0]===name; }); }
 function _popProvinceSelect(selId, placeholder) {
   var sel = document.getElementById(selId);
+  if(!sel || sel.tagName!=='SELECT') return;
   sel.innerHTML = '<option value="">'+ (placeholder||'选择省') +'</option>';
   regionData.forEach(function(p){ sel.innerHTML += '<option value="'+p[0]+'">'+p[0]+'</option>'; });
 }
@@ -631,9 +634,12 @@ window.onStFilterCityChange = function(){
 
 window.openStModal = function(){
   _popProvinceSelect('stProvince', '选择省');
-  _popProvinceSelect('stFilterProv', '全部省');
-  document.getElementById('stFilterCity').innerHTML = '<option value="">全部市</option>';
-  document.getElementById('stFilterCounty').innerHTML = '<option value="">全部区/县</option>';
+  var sfp=document.getElementById('stFilterProv');
+  if(sfp && sfp.tagName==='SELECT') _popProvinceSelect('stFilterProv', '全部省');
+  var sfc=document.getElementById('stFilterCity');
+  if(sfc && sfc.tagName==='SELECT') sfc.innerHTML = '<option value="">全部市</option>';
+  var sfcn=document.getElementById('stFilterCounty');
+  if(sfcn && sfcn.tagName==='SELECT') sfcn.innerHTML = '<option value="">全部区/县</option>';
   document.getElementById('stModal').classList.add('show');
   _populateDeviceSelect();
   refreshStModalList();
@@ -659,6 +665,7 @@ window._resetStForm = function(){
   document.getElementById('stCity').innerHTML='<option value="">选择市</option>';
   document.getElementById('stCounty').innerHTML='<option value="">选择区/县</option>';
   document.getElementById('stLat').value='';document.getElementById('stLon').value='';document.getElementById('stAlt').value='';
+  document.getElementById('stWebhook').value='';
   document.getElementById('stFormTitle').textContent='新增站点';
   document.getElementById('stSubmitBtn').textContent='添加';
   var cancelBtn=document.getElementById('stCancelEditBtn');
@@ -717,6 +724,7 @@ window.editStation = function(name){
   document.getElementById('stLat').value=s.lat||0;
   document.getElementById('stLon').value=s.lon||0;
   document.getElementById('stAlt').value=s.alt||0;
+  document.getElementById('stWebhook').value=s.webhook_url||'';
   document.getElementById('stFormTitle').textContent='编辑站点';
   document.getElementById('stSubmitBtn').textContent='保存';
   var cancelBtn=document.getElementById('stCancelEditBtn');
@@ -733,7 +741,8 @@ window.addStation = function(){
     county:document.getElementById('stCounty').value.trim(),
     lat:parseFloat(document.getElementById('stLat').value),
     lon:parseFloat(document.getElementById('stLon').value),
-    alt:parseFloat(document.getElementById('stAlt').value)||0
+    alt:parseFloat(document.getElementById('stAlt').value)||0,
+    webhook_url:document.getElementById('stWebhook').value.trim()
   };
   if(!data.name){UI.Message.warning('请输入站点名称');return}
   if(isNaN(data.lat)||isNaN(data.lon)){UI.Message.warning('请输入有效坐标');return}
@@ -922,7 +931,7 @@ window.reactivateLicense = function(id){
   });
 };
 
-// ═══════════ Personnel Modal (告警联系人) ═══════════
+// ═══════════ Personnel Modal (站点联系人) ═══════════
 window.openPersonnelModal = function(){
   document.getElementById('personnelModal').classList.add('show');
   Api.get('/api/stations').then(function(stations){
@@ -1001,8 +1010,8 @@ window.openCfgModal = function(){
     document.getElementById('cfgFlapEn').checked=s.anti_flapping_enabled==='true';
     document.getElementById('cfgFlapIn').value=s.debounce_in||3;
     document.getElementById('cfgFlapOut').value=s.debounce_out||10;
-    document.getElementById('cfgSmsEn').checked=s.sms_enabled==='true';
-    document.getElementById('cfgSmsPhones').value=(s.sms_alert_phones||'').split(',').join('\n');
+    document.getElementById('cfgWebhookEn').checked=s.webhook_enabled==='true';
+    document.getElementById('cfgWebhookUrl').value=s.webhook_url||'';
     document.getElementById('cfgArchiveEn').checked=s.raw_archive_enabled!=='false';
     document.getElementById('cfgRetention').value=s.raw_archive_retention_days||30;
   });
@@ -1010,7 +1019,6 @@ window.openCfgModal = function(){
 window.closeCfgModal = function(){document.getElementById('cfgModal').classList.remove('show')};
 
 window.saveSettings = function(){
-  var phones=document.getElementById('cfgSmsPhones').value.split('\n').map(function(s){return s.trim()}).filter(Boolean).join(',');
   var data={
     threshold_warning: String(parseFloat(document.getElementById('cfgThreshWarn').value)||200),
     threshold_severe: String(parseFloat(document.getElementById('cfgThreshSev').value)||100),
@@ -1018,8 +1026,8 @@ window.saveSettings = function(){
     anti_flapping_enabled: document.getElementById('cfgFlapEn').checked?'true':'false',
     debounce_in: String(parseFloat(document.getElementById('cfgFlapIn').value)||3),
     debounce_out: String(parseFloat(document.getElementById('cfgFlapOut').value)||10),
-    sms_enabled: document.getElementById('cfgSmsEn').checked?'true':'false',
-    sms_alert_phones: phones,
+    webhook_enabled: document.getElementById('cfgWebhookEn').checked?'true':'false',
+    webhook_url: document.getElementById('cfgWebhookUrl').value.trim(),
     raw_archive_enabled: document.getElementById('cfgArchiveEn').checked?'true':'false',
     raw_archive_retention_days: String(parseInt(document.getElementById('cfgRetention').value)||30)
   };
@@ -1221,10 +1229,14 @@ function applyRBACVisibility(){
   document.querySelectorAll('#addStationBtn,#stMgrBtn,#stMgrBtn2,#usrMgrBtn').forEach(function(b){
     b.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
   });
-  document.getElementById('cfgMgrBtn').style.display=isAdmin?'inline-block':'none';
-  document.getElementById('licMgrBtn').style.display=isAdmin?'inline-block':'none';
-  document.getElementById('wlMgrBtn').style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
-  document.getElementById('devMgrBtn').style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
+  var cfgBtn=document.getElementById('cfgMgrBtn');
+  if(cfgBtn) cfgBtn.style.display=isAdmin?'inline-block':'none';
+  var licBtn=document.getElementById('licMgrBtn');
+  if(licBtn) licBtn.style.display=isAdmin?'inline-block':'none';
+  var wlBtn=document.getElementById('wlMgrBtn');
+  if(wlBtn) wlBtn.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
+  var devBtn=document.getElementById('devMgrBtn');
+  if(devBtn) devBtn.style.display=(isAdmin||isTenantAdmin)?'inline-block':'none';
   var audBtn=document.querySelector('[onclick="openAudModal()"]');
   if(audBtn) audBtn.style.display=isAdmin?'inline-block':'none';
   refreshTenantInfo();
@@ -1281,10 +1293,11 @@ window.loadDevices = function(){
     if(!devices||!devices.length){div.innerHTML='<div style="color:var(--muted);padding:8px;text-align:center;font-size:11px">暂无设备</div>';return}
     div.innerHTML=devices.map(function(d){
       var status=d.revoked?'<span style="color:#ef4444">已吊销</span>':'<span style="color:#22c55e">正常</span>';
-      var actions='';
+      var stationEl=d.station?UI.escapeHtml(d.station):'<span style="color:#f59e0b;font-weight:600">待绑定</span>';
+      var actions='<span style="font-size:11px;color:var(--blue);cursor:pointer;margin-right:4px" data-bind-dev="'+UI.escapeAttr(d.device_name)+'">编辑</span>';
       if(!d.revoked){actions+='<span style="font-size:11px;color:#ca8a04;cursor:pointer;margin-right:4px" data-revoke-dev="'+UI.escapeAttr(d.device_name)+'">吊销</span>';}
       actions+='<span class="pl-del" data-del-dev="'+UI.escapeAttr(d.device_name)+'" style="cursor:pointer">×</span>';
-      return '<div class="pl-entry"><span><b>'+UI.escapeHtml(d.device_name)+'</b> <span style="font-size:10px;color:var(--accent)">'+UI.escapeHtml(d.station||'--')+'</span> '+status+'</span>'+actions+'</div>';
+      return '<div class="pl-entry'+(d.station?'':' unbound')+'"><span><b>'+UI.escapeHtml(d.device_name)+'</b> <span style="font-size:10px;color:var(--accent)">'+stationEl+'</span> '+status+'</span>'+actions+'</div>';
     }).join('');
   });
 };
@@ -1321,6 +1334,30 @@ window.revokeDevice = function(name){
     });
   });
 };
+window.openBindDeviceMap = function(name){
+  var sel=document.getElementById('bindStSelectMap');
+  Api.get('/api/stations').then(function(stations){
+    sel.innerHTML='<option value="">选择站点…</option>';(stations||[]).forEach(function(s){sel.innerHTML+='<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+(s.device_name?' ('+UI.escapeHtml(s.device_name)+')':'')+'</option>'});
+    document.getElementById('bindDevNameMap').textContent=name;
+    document.getElementById('bindModalMap').classList.add('show');
+  }).catch(function(){
+    sel.innerHTML='<option value="">加载失败</option>';
+    document.getElementById('bindDevNameMap').textContent=name;
+    document.getElementById('bindModalMap').classList.add('show');
+  });
+};
+window.submitBindDeviceMap = function(){
+  var name=document.getElementById('bindDevNameMap').textContent;
+  var station=document.getElementById('bindStSelectMap').value;
+  if(!station){UI.toast('请选择站点','warning');return}
+  Api.put('/api/devices/'+encodeURIComponent(name)+'/binding',{station:station}).then(function(res){
+    if(res.error){UI.toast(res.error,'error');return}
+    UI.toast('设备 '+name+' 已绑定','ok');
+    document.getElementById('bindModalMap').classList.remove('show');
+    loadDevices();
+  }).catch(catchErr('绑定失败'));
+};
+window.closeBindModalMap = function(){document.getElementById('bindModalMap').classList.remove('show');};
 
 // ═══════════ Geocode for station form ═══════════
 window.doGeocode = function(){
@@ -1342,6 +1379,9 @@ UI.delegate(document.getElementById('devModalList'), 'click', '[data-del-dev]', 
 });
 UI.delegate(document.getElementById('devModalList'), 'click', '[data-revoke-dev]', function(){
   revokeDevice(this.dataset.revokeDev);
+});
+UI.delegate(document.getElementById('devModalList'), 'click', '[data-bind-dev]', function(){
+  openBindDeviceMap(this.dataset.bindDev);
 });
 UI.delegate(document.getElementById('wlModalList'), 'click', '[data-del-wl]', function(){
   delWhitelist(parseInt(this.dataset.delWl));
@@ -1443,7 +1483,9 @@ window.updateAll = function(){
       document.getElementById('userBadge').textContent=currentUser.username+' ('+(roleLabels[currentUser.role]||'操作员')+')';
     }
 
-    cachedDrones=d.drones;
+    d.drones = d.drones || [];
+    d.drones = d.drones.filter(function(dr){return (dr.status||'active')!=='offline';});
+    cachedDrones = d.drones;
 
     var warn=0,sev=0,crit=0;
     d.drones.forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});

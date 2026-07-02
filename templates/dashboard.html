@@ -192,7 +192,7 @@ tr.row-severe{animation:alertPulse .8s ease}
 .tag-warning{color:var(--warning);background:var(--warning-light);border:1px solid #f3d19e}
 .tag-severe{color:#e0600c;background:#fff7ed;border:1px solid #f7c89e}
 .tag-critical{color:var(--danger);background:var(--danger-light);border:1px solid #fab6b6}
-.tag-gone{color:var(--info);background:#f4f4f5;border:1px solid #e0e0e0}
+.tag-gone,.tag-offline{color:var(--info);background:#f4f4f5;border:1px solid #e0e0e0}
 
 .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:12px}
 
@@ -419,7 +419,7 @@ input:focus, select:focus{outline:none}
     </div>
     <div class="nav-item" data-page="personnel" id="navPersonnel">
       <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M192 832a32 32 0 1 0 0 64h144a32 32 0 1 1 0 64H192a96 96 0 1 1 0-192h192a32 32 0 1 1 0 64H192zM288 544v256H224v-256h64zM960 480a32 32 0 0 1-32 32h-48a32 32 0 1 1 0-64H928a32 32 0 0 1 32 32zM192 480a32 32 0 0 1-32 32H96a32 32 0 1 1 0-64h64a32 32 0 0 1 32 32zM512 224a32 32 0 0 1-32-32V128a32 32 0 1 1 64 0v64a32 32 0 0 1-32 32zM256 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM832 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM672 544a96 96 0 1 0 0 192 96 96 0 0 0 0-192zm-160 96a160 160 0 1 1 320 0 160 160 0 0 1-320 0zM512 320a224 224 0 0 0-224 224H224a288 288 0 0 1 492.16-203.1 32 32 0 1 1-45.34 45.12A223.2 223.2 0 0 0 512 320zM688 800c-82.46 0-144 60.1-144 128a32 32 0 1 1-64 0c0-108.83 96.06-192 208-192s208 83.17 208 192a32 32 0 1 1-64 0c0-67.9-61.54-128-144-128z"/></svg>
-      <span>告警联系人</span>
+      <span>站点联系人</span>
     </div>
     <div class="nav-item" data-page="whitelist" id="navWhitelist">
       <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M742.4 1024c-155.14 0-281.6-126.46-281.6-281.6s126.46-281.6 281.6-281.6S1024 587.26 1024 742.4 897.54 1024 742.4 1024zm0-512c-126.98 0-230.4 103.42-230.4 230.4s103.42 230.4 230.4 230.4S972.8 869.38 972.8 742.4 869.38 512 742.4 512zM460.8 563.2c-155.14 0-281.6-126.46-281.6-281.6S305.66 0 460.8 0s281.6 126.46 281.6 281.6c0 39.42-8.19 77.31-23.55 112.64-5.63 12.8-20.99 18.94-33.79 12.8-12.8-5.63-18.94-20.99-12.8-33.79 12.8-29.18 19.46-59.9 19.46-92.16 0-126.98-103.42-230.4-230.4-230.4s-230.4 103.42-230.4 230.4 103.42 230.4 230.4 230.4c14.34 0 25.6 11.26 25.6 25.6S475.14 563.2 460.8 563.2zM51.2 1024H0c0-121.34 51.71-249.34 142.34-350.72C233.98 570.88 350.21 512 460.8 512v51.2c-202.75 0-409.6 232.45-409.6 460.8zM702.98 855.04c-6.66 0-13.31-2.56-17.92-7.68l-102.4-102.4c-10.24-10.24-10.24-26.11 0-36.35s26.11-10.24 36.35 0l102.4 102.4c10.24 10.24 10.24 26.11 0 36.35-5.12 5.12-11.78 7.68-18.43 7.68zM705.54 857.6c-6.66 0-13.31-2.56-17.92-7.68-10.24-10.24-10.24-26.11 0-36.35l179.2-179.2c10.24-10.24 26.11-10.24 36.35 0s10.24 26.11 0 36.35l-179.2 179.2c-5.12 5.12-11.78 7.68-18.43 7.68z"/></svg>
@@ -432,6 +432,7 @@ input:focus, select:focus{outline:none}
     <div class="nav-item" data-page="devices" id="navDevices" style="display:none">
       <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M815.26 496.58h-79.14V325.15a13.15 13.15 0 0 0-13.15-13.18h-26.37a13.18 13.18 0 0 0-13.18 13.18v171.42H182.37a105.47 105.47 0 0 0-105.47 105.47v210.98a105.47 105.47 0 0 0 105.47 105.47h632.86a105.5 105.5 0 0 0 105.5-105.47V602.05a105.44 105.44 0 0 0-105.47-105.47zm52.74 316.42c0 29.12-23.62 52.74-52.74 52.74H182.37c-29.12 0-52.74-23.62-52.74-52.74V602.05c0-29.12 23.62-52.7 52.74-52.7h632.86c29.12 0 52.74 23.58 52.74 52.7v210.98h.03zM240.74 707.49a52.74 52.74 0 1 0 105.47 0 52.74 52.74 0 0 0-105.47 0zm184.6 0a52.74 52.74 0 1 0 105.47 0 52.74 52.74 0 0 0-105.47 0zM709.79 158.27a184.64 184.64 0 0 1 184.61 184.61h52.74a237.34 237.34 0 0 0-474.69 0h52.74a184.64 184.64 0 0 1 184.6-184.61zM709.79 211.01a131.84 131.84 0 0 0-131.84 131.87h52.7a79.1 79.1 0 1 1 158.24 0h52.74a131.84 131.84 0 0 0-131.84-131.87z"/></svg>
       <span>设备管理</span>
+      <span class="badge badge-warn" id="devBadge" style="display:none;margin-left:auto;font-size:10px;padding:1px 6px;border-radius:10px;background:#f59e0b;color:#fff;min-width:18px;text-align:center"></span>
     </div>
     <div class="nav-item" data-page="licenses" id="navLicenses" style="display:none">
       <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M671.74 64c-159.04 0-288 128.96-288 288 0 57.28 17.22 110.34 46.02 155.14l-347.78 347.78c-24 24-24 62.91 0 86.85 23.94 24 62.85 24 86.85 0l111.49-111.49 57.34 57.34c10.37 10.37 27.2 10.37 37.57 0 10.43-10.43 10.43-27.26 0-37.63l-57.34-57.34 90.37-90.37 57.34 57.34c10.37 10.37 27.2 10.37 37.63 0 10.37-10.43 10.37-27.26 0-37.63l-57.34-57.34 70.66-70.66C561.41 622.78 614.53 640 671.74 640c159.04 0 288-128.96 288-288S830.78 64 671.74 64zm0 384c-52.99 0-96-43.01-96-96s43.01-96 96-96 96 43.01 96 96-43.01 96-96 96z"/></svg>
@@ -546,7 +547,7 @@ input:focus, select:focus{outline:none}
         <div class="toolbar">
           <input id="droneSearch" placeholder="搜索 ID / 型号..." oninput="updateDroneTable()" autocomplete="off">
           <select id="statusFilter" onchange="updateDroneTable()" title="筛选状态">
-            <option value="">全部状态</option><option value="active">正常</option><option value="warning">警告</option><option value="severe">严重</option><option value="critical">危险</option><option value="gone">离线</option>
+            <option value="">全部状态</option><option value="active">正常</option><option value="warning">警告</option><option value="severe">严重</option><option value="critical">危险</option><option value="offline">离线</option>
           </select>
         </div>
         <div class="panel-body">
@@ -615,7 +616,7 @@ input:focus, select:focus{outline:none}
           <select id="stFilterProv" style="width:100px" title="筛选省份"></select>
           <select id="stFilterCity" style="width:110px" title="筛选城市"></select>
           <select id="stFilterCounty" style="width:110px" title="筛选区县"></select>
-          <input id="stFilterName" placeholder="搜索站点名..." style="width:140px" oninput="filterStationList()">
+          <input id="stFilterName" placeholder="搜索站点名..." style="width:140px" oninput="renderStationList()">
         </div>
         <div class="panel-body fill">
           <div class="crud-list" id="stList">
@@ -649,7 +650,7 @@ input:focus, select:focus{outline:none}
       <div class="panel">
         <div class="panel-header">
           <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M192 832a32 32 0 1 0 0 64h144a32 32 0 1 1 0 64H192a96 96 0 1 1 0-192h192a32 32 0 1 1 0 64H192zM288 544v256H224v-256h64zM960 480a32 32 0 0 1-32 32h-48a32 32 0 1 1 0-64H928a32 32 0 0 1 32 32zM192 480a32 32 0 0 1-32 32H96a32 32 0 1 1 0-64h64a32 32 0 0 1 32 32zM512 224a32 32 0 0 1-32-32V128a32 32 0 1 1 64 0v64a32 32 0 0 1-32 32zM256 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM832 240a48 48 0 1 1-96 0 48 48 0 0 1 96 0zM672 544a96 96 0 1 0 0 192 96 96 0 0 0 0-192zm-160 96a160 160 0 1 1 320 0 160 160 0 0 1-320 0zM512 320a224 224 0 0 0-224 224H224a288 288 0 0 1 492.16-203.1 32 32 0 1 1-45.34 45.12A223.2 223.2 0 0 0 512 320zM688 800c-82.46 0-144 60.1-144 128a32 32 0 1 1-64 0c0-108.83 96.06-192 208-192s208 83.17 208 192a32 32 0 1 1-64 0c0-67.9-61.54-128-144-128z"/></svg>
-          告警联系人
+          站点联系人
         </div>
         <div class="toolbar">
           <button class="btn btn-primary btn-sm" onclick="openPsModal()">+ 新增联系人</button>
@@ -767,7 +768,7 @@ input:focus, select:focus{outline:none}
           审计日志
         </div>
         <div class="toolbar">
-          <button class="btn btn-ghost btn-sm" onclick="loadAudit()">刷新</button>
+          <button class="btn btn-ghost btn-sm" onclick="openAuditPage()">刷新</button>
         </div>
         <div class="panel-body" style="max-height:calc(100vh - 400px)">
           <div class="table-wrap">
@@ -788,7 +789,7 @@ input:focus, select:focus{outline:none}
           系统设置
         </div>
         <div class="panel-body" style="padding:16px">
-          <div class="settings-grid" style="display:grid;gap:16px;max-width:520px">
+          <div class="settings-grid" style="display:grid;gap:16px">
             <div>
               <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">告警阈值 (米)</h3>
               <div class="row" style="gap:8px">
@@ -806,10 +807,10 @@ input:focus, select:focus{outline:none}
               </div>
             </div>
             <div>
-              <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">短信通知</h3>
-              <label style="font-size:13px;display:block;margin-bottom:4px"><input type="checkbox" id="scSmsEn" aria-label="启用短信通知"> 启用</label>
-              <label style="font-size:10px;color:var(--text-secondary);display:block">通知手机号</label>
-              <textarea id="scSmsPhones" aria-label="通知手机号" rows="2" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px;resize:vertical"></textarea>
+              <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">企业微信通知</h3>
+              <label style="font-size:13px;display:block;margin-bottom:4px"><input type="checkbox" id="scWebhookEn" aria-label="启用企业微信通知"> 启用</label>
+              <label style="font-size:10px;color:var(--text-secondary);display:block">机器人 Webhook URL</label>
+              <input id="scWebhookUrl" aria-label="Webhook URL" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></input>
             </div>
             <div>
               <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">其他</h3>
@@ -851,11 +852,11 @@ input:focus, select:focus{outline:none}
         <div style="padding:20px 24px;max-width:420px;margin:0 auto;text-align:center">
           <div style="margin-bottom:12px">
             <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">当前密码</label>
-            <input id="pwdOld" type="password" placeholder="输入当前密码" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color var(--transition)">
+            <input id="oldPassword" type="password" placeholder="输入当前密码" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color var(--transition)">
           </div>
           <div style="margin-bottom:12px">
             <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">新密码</label>
-            <input id="pwdNew" type="password" placeholder="至少 6 位" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color var(--transition)">
+            <input id="newPassword" type="password" placeholder="至少 6 位" style="width:100%;padding:9px 14px;background:var(--surface);border:1px solid var(--border);color:var(--text-primary);border-radius:var(--radius-sm);font-size:13px;outline:none;transition:border-color var(--transition)">
           </div>
           <div style="margin-bottom:14px">
             <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px">确认新密码</label>
@@ -909,11 +910,12 @@ input:focus, select:focus{outline:none}
   <!-- Station Modal -->
   <div class="modal-overlay" id="stModal">
     <div class="modal-dialog">
-      <h3>站点</h3>
+      <h3 id="stFormTitle">站点</h3>
       <div class="row"><input id="stName" placeholder="站点名称"><select id="stDevice" aria-label="站点关联设备" style="flex:1;min-width:0"><option value="">关联设备…</option></select></div>
       <div class="row"><input id="stLocation" placeholder="位置描述"></div>
       <div class="row"><select id="stProvince" aria-label="站点所在省" style="flex:1;min-width:0"></select><select id="stCity" aria-label="站点所在市" style="flex:1;min-width:0"></select><select id="stCounty" aria-label="站点所在区县" style="flex:1;min-width:0"></select></div>
       <div class="row"><input id="stLat" placeholder="纬度" step="any"><input id="stLon" placeholder="经度" step="any"><input id="stAlt" placeholder="海拔(m)" step="any"></div>
+      <div class="row"><input id="stWebhook" placeholder="企业微信 Webhook URL (可选)" style="flex:1"></div>
       <div class="row" style="justify-content:flex-end;margin-bottom:0">
         <button id="stGeocodeBtn" class="btn btn-ghost btn-sm" type="button" onclick="doGeocode()">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-2px;margin-right:3px">
@@ -923,8 +925,9 @@ input:focus, select:focus{outline:none}
         </button>
       </div>
       <div class="modal-actions">
-        <button class="primary" id="stSaveBtn" onclick="addStation()">保存</button>
-        <button onclick="closeStModal()">关闭</button>
+        <button class="primary" id="stSubmitBtn" onclick="addStation()">保存</button>
+        <button id="stCancelEditBtn" style="display:none" onclick="closeStModal()">取消编辑</button>
+        <button id="stCloseBtn" onclick="closeStModal()">关闭</button>
       </div>
     </div>
   </div>
@@ -932,16 +935,17 @@ input:focus, select:focus{outline:none}
   <!-- User Modal -->
   <div class="modal-overlay" id="usrModal">
     <div class="modal-dialog">
-      <h3>用户</h3>
-      <div class="row"><input id="uName" placeholder="用户名"><input id="uPwd" type="password" placeholder="密码"></div>
+      <h3 id="usrFormTitle">用户</h3>
+      <div class="row"><input id="usrName" placeholder="用户名"><input id="usrPassword" type="password" placeholder="密码"></div>
       <div class="row">
-        <select id="uRole" aria-label="用户角色"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
+        <select id="usrRole" aria-label="用户角色"><option value="user">用户</option><option value="tenant_admin">租户管理员</option><option value="admin">系统管理员</option></select>
         <select id="uScope" aria-label="用户数据范围"><option value="station">站点范围</option><option value="tenant">租户范围</option></select>
-        <select id="uStation" aria-label="用户所属站点"><option value="">全部站点</option></select>
+        <select id="usrStation" aria-label="用户所属站点"><option value="">全部站点</option></select>
       </div>
       <div class="modal-actions">
-        <button class="primary" id="uSaveBtn" onclick="addUser()">保存</button>
-        <button onclick="closeUsrModal()">关闭</button>
+        <button class="primary" id="usrSubmitBtn" onclick="addUser()">保存</button>
+        <button id="usrCancelEditBtn" style="display:none" onclick="closeUsrModal()">取消编辑</button>
+        <button id="usrCloseBtn" onclick="closeUsrModal()">关闭</button>
       </div>
     </div>
   </div>
@@ -949,7 +953,7 @@ input:focus, select:focus{outline:none}
   <!-- Personnel Modal -->
   <div class="modal-overlay" id="psModal">
     <div class="modal-dialog">
-      <h3>告警联系人</h3>
+      <h3>站点联系人</h3>
       <div class="row"><input id="psName" placeholder="姓名"><input id="psPhone" placeholder="手机号（11位）"></div>
       <label>关联站点</label>
       <select id="psStation" aria-label="联系人关联站点"><option value="">选择关联站点</option></select>
@@ -986,6 +990,22 @@ input:focus, select:focus{outline:none}
       <div class="modal-actions">
         <button class="primary" id="devSaveBtn" onclick="addDevice()">注册</button>
         <button onclick="closeDevModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Device Bind Modal -->
+  <div class="modal-overlay" id="bindModal">
+    <div class="modal-dialog" style="max-width:420px">
+      <h3>绑定设备: <span id="bindDevName"></span></h3>
+      <div class="row"><select id="bindStSelect" style="flex:1;min-width:0"><option value="">选择站点…</option></select></div>
+      <input type="hidden" id="bindStation">
+      <input type="hidden" id="bindTenantId">
+      <input type="hidden" id="bindOldStation">
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">将设备关联到已有站点，绑定后站点坐标即为设备部署位置。</div>
+      <div class="modal-actions">
+        <button class="primary" onclick="submitBindDevice()">保存</button>
+        <button onclick="closeBindModal()">关闭</button>
       </div>
     </div>
   </div>

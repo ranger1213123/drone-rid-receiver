@@ -156,7 +156,7 @@ html,body{width:100%;height:100%;font-family:-apple-system,BlinkMacSystemFont,"S
 .drone-row .d-icon.warning{background:var(--yellow);box-shadow:0 0 3px rgba(202,138,4,.35)}
 .drone-row .d-icon.severe{background:var(--orange);box-shadow:0 0 3px rgba(234,88,12,.35)}
 .drone-row .d-icon.critical{background:var(--red);box-shadow:0 0 3px rgba(220,38,38,.35);animation:dotPulse 1.4s infinite}
-.drone-row .d-icon.gone{background:#bbb}
+.drone-row .d-icon.gone,.drone-row .d-icon.offline{background:#bbb}
 .drone-row .d-info{flex:1;min-width:0}
 .drone-row .d-id{font-weight:600;font-size:11px;font-family:"JetBrains Mono","SF Mono",Consolas,monospace}
 .drone-row .d-sub{font-size:10px;color:var(--muted)}
@@ -482,16 +482,16 @@ body.sta-mode .nat-only{display:none!important}
         </div>
         <div class="side-body" style="padding:8px 14px;display:flex;flex-direction:column;gap:6px">
           <button class="btn-sm" onclick="openPlModal()" style="text-align:left">管理电力线</button>
-          <button class="btn-sm nat-only" id="stMgrBtn2" onclick="openStModal()" style="text-align:left;display:none">管理站点</button>
-          <button class="btn-sm nat-only" id="usrMgrBtn" onclick="openUsrModal()" style="text-align:left;display:none">管理用户</button>
-          <button class="btn-sm nat-only" id="cfgMgrBtn" onclick="openCfgModal()" style="text-align:left;display:none">系统设置</button>
-          <button class="btn-sm nat-only" id="licMgrBtn" onclick="openLicModal()" style="text-align:left;display:none">密钥管理</button>
+          <button class="btn-sm nat-only" id="stMgrBtn2" onclick="openStModal()" style="text-align:left">管理站点</button>
+          <button class="btn-sm nat-only" id="usrMgrBtn" onclick="openUsrModal()" style="text-align:left">管理用户</button>
+          <button class="btn-sm nat-only" id="cfgMgrBtn" onclick="openCfgModal()" style="text-align:left">系统设置</button>
+          <button class="btn-sm nat-only" id="licMgrBtn" onclick="openLicModal()" style="text-align:left">密钥管理</button>
           <button class="btn-sm" onclick="openHistModal()" style="text-align:left">历史告警</button>
           <button class="btn-sm" onclick="openAudModal()" style="text-align:left">审计日志</button>
-          <button class="btn-sm sta-only" id="personnelBtn" onclick="openPersonnelModal()" style="text-align:left">告警联系人</button>
+          <button class="btn-sm sta-only" id="personnelBtn" onclick="openPersonnelModal()" style="text-align:left">站点联系人</button>
           <button class="btn-sm sta-only" id="bufToggleBtn" onclick="toggleBufferZones()" style="text-align:left">显示阈值圈</button>
-          <button class="btn-sm nat-only" id="wlMgrBtn" onclick="openWlModal()" style="text-align:left;display:none">白名单</button>
-          <button class="btn-sm nat-only" id="devMgrBtn" onclick="openDevModal()" style="text-align:left;display:none">设备管理</button>
+          <button class="btn-sm nat-only" id="wlMgrBtn" onclick="openWlModal()" style="text-align:left">白名单</button>
+          <button class="btn-sm nat-only" id="devMgrBtn" onclick="openDevModal()" style="text-align:left">设备管理</button>
 
           <button class="btn-sm" onclick="openPwdModal()" style="text-align:left">修改密码</button>
           <button class="btn-sm" style="text-align:left" onclick="fetch('/logout',{method:'POST',credentials:'same-origin'}).then(function(r){return r.json()}).then(function(d){location.href=d.redirect})">退出登录</button>
@@ -712,10 +712,10 @@ body.sta-mode .nat-only{display:none!important}
       <div style="flex:1"><label>进入确认 (秒)</label><input id="cfgFlapIn" aria-label="防抖进入确认秒数" type="number" step="0.5"></div>
       <div style="flex:1"><label>离开确认 (秒)</label><input id="cfgFlapOut" aria-label="防抖离开确认秒数" type="number" step="0.5"></div>
     </div>
-    <!-- SMS -->
-    <h3 style="margin-top:10px">短信通知</h3>
-    <div style="margin-bottom:6px"><label style="margin:0;display:inline"><input type="checkbox" id="cfgSmsEn" aria-label="启用短信通知" style="width:auto"> 启用</label></div>
-    <label>通知手机号</label><textarea id="cfgSmsPhones" aria-label="通知手机号" rows="2" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px;resize:vertical"></textarea>
+    <!-- 企业微信通知 -->
+    <h3 style="margin-top:10px">企业微信通知</h3>
+    <div style="margin-bottom:6px"><label style="margin:0;display:inline"><input type="checkbox" id="cfgWebhookEn" aria-label="启用企业微信通知" style="width:auto"> 启用</label></div>
+    <label>机器人 Webhook URL</label><input id="cfgWebhookUrl" aria-label="Webhook URL" style="width:100%;padding:6px 10px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);font-size:11px"></input>
     <!-- Other -->
     <h3 style="margin-top:10px">其他</h3>
     <div style="display:flex;gap:14px;align-items:center">
@@ -773,6 +773,7 @@ body.sta-mode .nat-only{display:none!important}
     <label>位置描述</label><input id="stLocation" placeholder="例如: 文一西路-杆塔#05">
     <label>坐标 (纬度, 经度, 海拔)</label>
     <div class="row"><input id="stLat" placeholder="纬度"><input id="stLon" placeholder="经度"><input id="stAlt" placeholder="海拔"><button class="btn-sm" type="button" onclick="doGeocode()" style="white-space:nowrap;flex-shrink:0">定位</button></div>
+    <label>企业微信 Webhook URL (可选)</label><input id="stWebhook" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...">
     <div class="modal-actions">
       <button class="primary" id="stSubmitBtn" onclick="addStation()">添加</button>
       <button id="stCancelEditBtn" onclick="_resetStForm()" style="display:none">取消编辑</button>
@@ -802,7 +803,7 @@ body.sta-mode .nat-only{display:none!important}
 <!-- Personnel management modal -->
 <div class="modal-overlay" id="personnelModal">
   <div class="modal-dialog">
-    <h3>告警联系人</h3>
+    <h3>站点联系人</h3>
     <div style="font-size:11px;color:var(--muted);margin-bottom:8px">站点: <span id="personnelStationLabel">-</span></div>
     <div id="personnelList" style="max-height:200px;overflow-y:auto;margin-bottom:4px"></div>
     <div class="row">
@@ -845,6 +846,19 @@ body.sta-mode .nat-only{display:none!important}
     <div class="modal-actions">
       <button class="primary" id="devSaveBtn" onclick="addDevice()">注册</button>
       <button onclick="closeDevModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Device Bind Modal -->
+<div class="modal-overlay" id="bindModalMap">
+  <div class="modal-dialog" style="max-width:420px">
+    <h3>绑定设备: <span id="bindDevNameMap"></span></h3>
+    <div class="row"><select id="bindStSelectMap" style="flex:1;min-width:0"><option value="">选择站点…</option></select></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px">将设备关联到已有站点，绑定后站点坐标即为设备部署位置。</div>
+    <div class="modal-actions">
+      <button class="primary" onclick="submitBindDeviceMap()">保存</button>
+      <button onclick="closeBindModalMap()">关闭</button>
     </div>
   </div>
 </div>
@@ -935,8 +949,8 @@ var bufZoneLayers = [];
 var bufZonesVisible = false;
 var nationalMode = true;
 
-var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',gone:'#bbb'};
-var statusZh = {active:'正常',warning:'警告',severe:'严重',critical:'危险',gone:'离线'};
+var statusColors = {active:'#16a34a',warning:'#ca8a04',severe:'#ea580c',critical:'#dc262e',offline:'#bbb',gone:'#bbb'};
+var statusZh = {active:'正常',warning:'警告',severe:'严重',critical:'危险',offline:'离线',gone:'离线'};
 function markerColor(s){return statusColors[s]||'#16a34a'}
 function markerRadius(s){if(s==='critical')return 10;if(s==='severe')return 8;if(s==='warning')return 6;return 5}
 
@@ -967,10 +981,10 @@ function enterStationView(station){
   // Update personnel station label
   var label=document.getElementById('personnelStationLabel');
   if(label) label.textContent=name;
-  loadPowerLines();
-  updateAll();  // 立即刷新数据，避免等待下一次轮询
   var lat = station.lat!=null ? station.lat : (station.position?station.position.lat:0);
   var lon = station.lon!=null ? station.lon : (station.position?station.position.lon:0);
+  loadPowerLines(lat, lon);
+  updateAll();  // 立即刷新数据，避免等待下一次轮询
   if(lat && lon){
     map.flyTo([lat, lon], 14, {duration:1});
   }
@@ -1167,8 +1181,10 @@ function renderStationAlerts(drones){
 // ═══════════ Power lines ═══════════
 var PL_COLOR='#e74c3c', PL_WIDTH=3;
 
-function loadPowerLines(){
-  fetch('/api/powerlines').then(function(r){return r.json()}).then(function(lines){
+function loadPowerLines(lat,lon){
+  var url='/api/powerlines';
+  if(lat!=null&&lon!=null) url+='?lat='+lat+'&lon='+lon+'&radius_km=100';
+  fetch(url).then(function(r){return r.json()}).then(function(lines){
     plPolylines.forEach(function(p){map.removeLayer(p)});
     plLabels.forEach(function(l){map.removeLayer(l)});
     plPolylines=[];plLabels=[];
@@ -1627,7 +1643,7 @@ function delLicense(id){
   });
 }
 
-// ═══════════ Personnel Modal (告警联系人) ═══════════
+// ═══════════ Personnel Modal (站点联系人) ═══════════
 function openPersonnelModal(){
   // 确定当前站点
   var stName = '';
@@ -1701,8 +1717,8 @@ function openCfgModal(){
     document.getElementById('cfgFlapEn').checked=s.anti_flapping_enabled==='true';
     document.getElementById('cfgFlapIn').value=s.debounce_in||3;
     document.getElementById('cfgFlapOut').value=s.debounce_out||10;
-    document.getElementById('cfgSmsEn').checked=s.sms_enabled==='true';
-    document.getElementById('cfgSmsPhones').value=(s.sms_alert_phones||'').split(',').join('\n');
+    document.getElementById('cfgWebhookEn').checked=s.webhook_enabled==='true';
+    document.getElementById('cfgWebhookUrl').value=s.webhook_url||'';
     document.getElementById('cfgArchiveEn').checked=s.raw_archive_enabled!=='false';
     document.getElementById('cfgRetention').value=s.raw_archive_retention_days||30;
   });
@@ -1710,7 +1726,6 @@ function openCfgModal(){
 function closeCfgModal(){document.getElementById('cfgModal').classList.remove('show')}
 
 function saveSettings(){
-  var phones=document.getElementById('cfgSmsPhones').value.split('\n').map(function(s){return s.trim()}).filter(Boolean).join(',');
   var data={
     threshold_warning: String(parseFloat(document.getElementById('cfgThreshWarn').value)||200),
     threshold_severe: String(parseFloat(document.getElementById('cfgThreshSev').value)||100),
@@ -1718,8 +1733,8 @@ function saveSettings(){
     anti_flapping_enabled: document.getElementById('cfgFlapEn').checked?'true':'false',
     debounce_in: String(parseFloat(document.getElementById('cfgFlapIn').value)||3),
     debounce_out: String(parseFloat(document.getElementById('cfgFlapOut').value)||10),
-    sms_enabled: document.getElementById('cfgSmsEn').checked?'true':'false',
-    sms_alert_phones: phones,
+    webhook_enabled: document.getElementById('cfgWebhookEn').checked?'true':'false',
+    webhook_url: document.getElementById('cfgWebhookUrl').value.trim(),
     raw_archive_enabled: document.getElementById('cfgArchiveEn').checked?'true':'false',
     raw_archive_retention_days: String(parseInt(document.getElementById('cfgRetention').value)||30)
   };

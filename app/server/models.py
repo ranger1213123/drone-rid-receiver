@@ -201,6 +201,7 @@ class Station(Base):
     alt = Column(Float, default=0)
     device_name = Column(String, nullable=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
+    webhook_url = Column(String, default="")
 
 
 class SystemSetting(Base):
@@ -409,21 +410,27 @@ def close_db():
 # ── CRUD helpers (可替换原有 CenterDB 调用) ──
 
 def upsert_device(name: str, location: str = "",
-                  lat: float = 0, lon: float = 0, alt: float = 0):
+                  lat: float = None, lon: float = None, alt: float = None):
     sess = get_session()
     now = datetime.now(timezone.utc)
     dev = sess.get(Device, name)
     if dev:
         dev.last_seen = now
-        dev.lat = lat
-        dev.lon = lon
-        dev.alt = alt
+        if lat is not None:
+            dev.lat = lat
+        if lon is not None:
+            dev.lon = lon
+        if alt is not None:
+            dev.alt = alt
         if location:
             dev.location = location
         dev.status = "online"
     else:
         dev = Device(
-            name=name, location=location, lat=lat, lon=lon, alt=alt,
+            name=name, location=location,
+            lat=lat if lat is not None else 0,
+            lon=lon if lon is not None else 0,
+            alt=alt if alt is not None else 0,
             first_seen=now, last_seen=now, status="online",
         )
         sess.add(dev)
@@ -439,6 +446,13 @@ def upsert_drone(device_name: str, drone_id: str,
                  lat: float, lon: float, alt: float,
                  speed: float = 0, heading: float = 0,
                  model: str = "", height_agl: float = None):
+    # 基础数据校验 — 过滤明显脏数据
+    if not drone_id or len(drone_id) < 4 or len(drone_id) > 64:
+        return
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return
+    if alt < -500 or alt > 20000:
+        return
     sess = get_session()
     now = datetime.now(timezone.utc)
     drone = sess.get(Drone, (drone_id, device_name))
@@ -486,6 +500,24 @@ def update_drone_status(device_name: str, drone_id: str,
         sess.commit()
 
 
+def add_drone_position(drone_id: str, device_name: str,
+                       lat: float, lon: float, alt: float,
+                       distance: float = None, line_name: str = ""):
+    """记录无人机位置历史 — 供轨迹回放使用"""
+    sess = get_session()
+    try:
+        dp = DronePosition(
+            drone_id=drone_id, device_name=device_name,
+            lat=lat, lon=lon, alt=alt,
+            distance_to_line=distance, nearest_line=line_name,
+            timestamp=datetime.now(timezone.utc),
+        )
+        sess.add(dp)
+        sess.commit()
+    finally:
+        sess.close()
+
+
 def add_alert(device_name: str, drone_id: str, level: str,
               distance: float, line_name: str, message: str):
     sess = get_session()
@@ -500,6 +532,11 @@ def add_alert(device_name: str, drone_id: str, level: str,
 def get_devices() -> list:
     sess = get_session()
     devices = sess.query(Device).order_by(Device.last_seen.desc()).all()
+    # 动态计算每个设备下的活跃无人机数
+    from sqlalchemy import func as _func
+    counts = dict(sess.query(
+        Drone.device_name, _func.count()
+    ).filter(Drone.status != "offline").group_by(Drone.device_name).all() or [])
     return [
         {
             "name": d.name, "location": d.location or "",
@@ -507,7 +544,8 @@ def get_devices() -> list:
             "first_seen": _bj(d.first_seen),
             "last_seen": _bj(d.last_seen),
             "status": d.status or "offline",
-            "drone_count": d.drone_count or 0, "alert_count": d.alert_count or 0,
+            "drone_count": counts.get(d.name, 0),
+            "alert_count": d.alert_count or 0,
             "station_name": d.station_name or "",
             "tenant_id": d.tenant_id,
         }
@@ -686,7 +724,7 @@ def mark_stale_devices(timeout_seconds: int = 60):
             {"status": "offline"}, synchronize_session=False
         )
         sess.query(Drone).filter(Drone.last_seen < cutoff).update(
-            {"status": "gone"}, synchronize_session=False
+            {"status": "offline"}, synchronize_session=False
         )
         sess.commit()
     finally:
@@ -695,14 +733,30 @@ def mark_stale_devices(timeout_seconds: int = 60):
 
 # ── Power Line CRUD ──
 
-def get_power_lines(device_name: str = None) -> list:
-    """获取电力线列表。device_name=None返回全局电力线，否则返回全局+该设备的"""
+def get_power_lines(device_name: str = None, lat: float = None, lon: float = None,
+                   radius_km: float = None) -> list:
+    """获取电力线列表。device_name=None返回全局电力线，否则返回全局+该设备的。
+    可选 lat/lon/radius_km 空间过滤，只返回至少一端在半径内的线路。"""
     sess = get_session()
     q = sess.query(PowerLine)
     if device_name:
         from sqlalchemy import or_
         q = q.filter(or_(PowerLine.device_name == None, PowerLine.device_name == device_name))
     lines = q.order_by(PowerLine.id).all()
+
+    if lat is not None and lon is not None and radius_km:
+        import math
+        deg_per_km_lat = 1.0 / 111.32
+        deg_per_km_lon = 1.0 / (111.32 * math.cos(math.radians(lat)))
+        dlat = radius_km * deg_per_km_lat
+        dlon = radius_km * deg_per_km_lon
+        filtered = []
+        for l in lines:
+            if ((lat - dlat <= l.lat1 <= lat + dlat and lon - dlon <= l.lon1 <= lon + dlon) or
+                (lat - dlat <= l.lat2 <= lat + dlat and lon - dlon <= l.lon2 <= lon + dlon)):
+                filtered.append(l)
+        lines = filtered
+
     return [{
         'id': l.id, 'name': l.name,
         'lat1': l.lat1, 'lon1': l.lon1, 'alt1': l.alt1,
@@ -881,6 +935,7 @@ def get_stations() -> list:
         'province': s.province or '', 'city': s.city or '', 'county': s.county or '',
         'lat': s.lat or 0, 'lon': s.lon or 0, 'alt': s.alt or 0,
         'device_name': s.device_name or '',
+        'webhook_url': s.webhook_url or '',
         'mqtt_online': devices[s.device_name].status == 'online' if s.device_name and s.device_name in devices else False,
         'tenant_id': s.tenant_id,
     } for s in sess.query(Station).all()]
@@ -888,7 +943,8 @@ def get_stations() -> list:
 
 def upsert_station(name: str, location: str = '', lat: float = 0, lon: float = 0,
                    alt: float = 0, device_name: str = None, tenant_id: int = None,
-                   province: str = '', city: str = '', county: str = ''):
+                   province: str = '', city: str = '', county: str = '',
+                   webhook_url: str = None):
     sess = get_session()
     s = sess.get(Station, name)
     if s:
@@ -904,10 +960,13 @@ def upsert_station(name: str, location: str = '', lat: float = 0, lon: float = 0
             s.device_name = device_name
         if tenant_id is not None:
             s.tenant_id = tenant_id
+        if webhook_url is not None:
+            s.webhook_url = webhook_url
     else:
         s = Station(name=name, location=location, province=province, city=city,
                     county=county, lat=lat, lon=lon, alt=alt,
-                    device_name=device_name, tenant_id=tenant_id)
+                    device_name=device_name, tenant_id=tenant_id,
+                    webhook_url=webhook_url or '')
         sess.add(s)
     sess.commit()
 
@@ -916,6 +975,11 @@ def delete_station(name: str) -> bool:
     sess = get_session()
     s = sess.get(Station, name)
     if s:
+        # 清理关联设备的站点绑定
+        if s.device_name:
+            ds = sess.get(DeviceSecret, s.device_name)
+            if ds and ds.station == name:
+                ds.station = ""
         sess.delete(s)
         sess.commit()
         return True
@@ -1024,6 +1088,10 @@ def delete_device_secret(device_name: str) -> bool:
     sess = get_session()
     d = sess.get(DeviceSecret, device_name)
     if d:
+        # 清理关联站点的 device_name 引用
+        st = sess.query(Station).filter(Station.device_name == device_name).first()
+        if st:
+            st.device_name = ""
         sess.delete(d)
         sess.commit()
         return True
