@@ -1,102 +1,63 @@
-# Nginx 反向代理 — Drone RID 中心服务器
-# 使用 Cloudflare Origin CA 证书 (Full Strict 模式)
-#
-# 证书部署: Cloudflare 后台 → SSL/TLS → Origin Server → Create Certificate
-# 把 cert.pem 和 key.pem 放到 ./certs/ 目录
-
-events {
-    worker_connections 1024;
-}
+# Nginx reverse proxy — HTTP only (Cloudflare handles SSL)
+events { worker_connections 1024; }
 
 http {
     include       /etc/nginx/mime.types;
     default_type  application/octet-stream;
-
-    # 日志
     access_log /var/log/nginx/access.log;
     error_log  /var/log/nginx/error.log warn;
-
-    # Docker DNS resolver — 强制 nginx 按需解析容器名, 避免缓存旧 IP
-    resolver 127.0.0.11 valid=10s;
-
-    # 基础优化
     sendfile        on;
     keepalive_timeout  65;
     client_max_body_size 10m;
-
-    # Web 后端变量 (配合 resolver 使用, 每次请求重新解析 DNS)
-    map $host $web_backend { default web:5000; }
-
-    # Gzip 压缩
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+    resolver 127.0.0.11 valid=10s;
 
-    # ── HTTP 自动跳转 HTTPS ──
     server {
         listen 80;
         server_name ${DOMAIN};
-        return 301 https://$host$request_uri;
-    }
 
-    # ── HTTPS 主站 ──
-    server {
-        listen 443 ssl;
-        http2 on;
-        server_name ${DOMAIN};
-
-        # Cloudflare Origin CA 证书 (fullchain = cert + intermediate)
-        ssl_certificate     /etc/nginx/certs/fullchain.pem;
-        ssl_certificate_key /etc/nginx/certs/key.pem;
-
-        # SSL 安全配置
-        ssl_protocols TLSv1.2 TLSv1.3;
-        ssl_ciphers HIGH:!aNULL:!MD5:!RC4;
-        ssl_prefer_server_ciphers off;
-        ssl_session_cache shared:SSL:10m;
-        ssl_session_timeout 1d;
-
-        # 安全头
-        add_header X-Frame-Options "SAMEORIGIN" always;
         add_header X-Content-Type-Options "nosniff" always;
-        add_header Strict-Transport-Security "max-age=63072000" always;
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header Cache-Control "no-store" always;
 
-        # 静态资源 — 直接由 Nginx 提供
         location /static/ {
-            proxy_pass http://$web_backend/static/;
+            set $bk web:5000;
+            proxy_pass http://$bk/static/;
             proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-Proto https;
             expires 1y;
             add_header Cache-Control "public, immutable";
         }
 
-        # WebSocket (SocketIO) — 独立 location 确保升级
         location /socket.io/ {
-            proxy_pass http://$web_backend/socket.io/;
+            set $bk web:5000;
+            proxy_pass http://$bk/socket.io/;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto https;
             proxy_read_timeout 86400;
         }
 
-        # API + 页面 — 转发到 Flask
         location / {
-            proxy_pass http://$web_backend;
+            set $bk web:5000;
+            proxy_pass http://$bk;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto https;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
         }
     }
 
-    # WebSocket 连接升级映射
     map $http_upgrade $connection_upgrade {
         default upgrade;
-        ''      close;
+        ""      close;
     }
 }
