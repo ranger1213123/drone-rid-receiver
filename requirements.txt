@@ -43,7 +43,10 @@ prometheus-client>=0.20
 # 可选: 离线反向地理编码 (shapely + GeoJSON)
 shapely>=2.0.0
 
-# 阿里云短信 (专责人员告警通知)
+# 短信告警 (专责人员告警通知)
+# Twilio — 国际短信 https://www.twilio.com
+twilio>=9.0.0
+# 阿里云短信
 alibabacloud_dysmsapi20170525>=3.0.0
 alibabacloud_tea_openapi>=0.3.0
 alibabacloud_tea_util>=0.3.0

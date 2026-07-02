@@ -1,6 +1,6 @@
 """GET /api/status — 双模式: web session + device JWT"""
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, jsonify, request, session
 
@@ -74,7 +74,7 @@ def api_status():
         drones = drones[start:start + per_page]
 
     result = {
-        "server_time": datetime.now().strftime("%H:%M:%S"),
+        "server_time": datetime.now(timezone(timedelta(hours=8))).strftime("%H:%M:%S"),
         "mode": "cloud",
         "running": True,
         "devices": {

@@ -84,6 +84,15 @@ services:
       - APP_ENV=production
       - ADMIN_USER=${ADMIN_USER:-admin}
       - ADMIN_PASS=${ADMIN_PASS}
+      # SMS 网关 (twilio / alibaba / simulated)
+      - SMS_PROVIDER=${SMS_PROVIDER:-simulated}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER:-}
+      - SMS_AK=${SMS_AK:-}
+      - SMS_SK=${SMS_SK:-}
+      - SMS_SIGN_NAME=${SMS_SIGN_NAME:-无人机监测}
+      - SMS_TEMPLATE_CODE=${SMS_TEMPLATE_CODE:-}
     depends_on:
       postgres:
         condition: service_healthy

@@ -72,7 +72,7 @@ def _get_webhook_for_station(station_name: str = "") -> Optional[object]:
 
 def _notify_station_personnel(device_name: str, drone_id: str, level: str,
                               distance: float, line_name: str, lat: float, lon: float):
-    """通过企业微信机器人发送告警通知 — 站点级 URL 优先"""
+    """通过企业微信机器人 + SMS 发送告警通知"""
     try:
         from .models import get_stations
         stations = get_stations()
@@ -85,21 +85,87 @@ def _notify_station_personnel(device_name: str, drone_id: str, level: str,
         if not station_name:
             station_name = device_name
 
+        # 1. 企业微信 Webhook 通知
         webhook = _get_webhook_for_station(station_name)
-        if webhook is None:
+        if webhook is not None:
+            webhook.send_alert(
+                station_name=station_name,
+                drone_id=drone_id,
+                level=level,
+                distance=distance,
+                line_name=line_name,
+                lat=lat,
+                lon=lon,
+            )
+
+        # 2. SMS 通知 (发送给站点联系人)
+        _send_sms_alert(station_name, drone_id, level, distance, line_name)
+    except Exception as e:
+        logger.error("通知异常: %s", e)
+
+
+def _send_sms_alert(station_name: str, drone_id: str, level: str,
+                    distance: float, line_name: str):
+    """向站点联系人发送 SMS 告警"""
+    try:
+        from .models import get_personnel_by_station
+        from core.sms_gateway import create_sms_gateway, SimulatedSMSGateway
+
+        phones = [p["phone"] for p in get_personnel_by_station(station_name) if p.get("phone")]
+        if not phones:
             return
 
-        webhook.send_alert(
-            station_name=station_name,
-            drone_id=drone_id,
-            level=level,
-            distance=distance,
-            line_name=line_name,
-            lat=lat,
-            lon=lon,
-        )
+        msg = f"[{level}] {drone_id}接近{line_name} {distance:.0f}m"
+        gw = _get_sms_gateway()
+        gw.send(phones, msg)
     except Exception as e:
-        logger.error("企微通知异常: %s", e)
+        logger.error("SMS 发送异常: %s", e)
+
+
+_sms_gateway = None
+
+def _get_sms_gateway():
+    """获取 SMS 网关实例 (延迟初始化, 按环境变量配置)
+
+    环境变量:
+      SMS_PROVIDER=twilio|alibaba|simulated
+      Twilio: TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_FROM_NUMBER
+      阿里云: SMS_AK / SMS_SK / SMS_SIGN_NAME / SMS_TEMPLATE_CODE
+    """
+    global _sms_gateway
+    if _sms_gateway is not None:
+        return _sms_gateway
+
+    from core.sms_gateway import SimulatedSMSGateway, AlibabaSMSGateway, TwilioSMSGateway
+    import os
+
+    provider = os.environ.get("SMS_PROVIDER", "simulated").lower()
+    if provider == "twilio":
+        sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+        token = os.environ.get("TWILIO_AUTH_TOKEN", "")
+        from_num = os.environ.get("TWILIO_FROM_NUMBER", "")
+        if sid and token and from_num:
+            _sms_gateway = TwilioSMSGateway(
+                account_sid=sid,
+                auth_token=token,
+                from_number=from_num,
+            )
+            logger.info("SMS 网关: Twilio")
+        else:
+            logger.warning("SMS_PROVIDER=twilio 但缺少凭据，降级为模拟模式")
+            _sms_gateway = SimulatedSMSGateway(rate_limit_per_hour=30)
+    elif provider == "alibaba":
+        _sms_gateway = AlibabaSMSGateway(
+            access_key=os.environ.get("SMS_AK", ""),
+            access_secret=os.environ.get("SMS_SK", ""),
+            sign_name=os.environ.get("SMS_SIGN_NAME", "无人机监测"),
+            template_code=os.environ.get("SMS_TEMPLATE_CODE", ""),
+        )
+        logger.info("SMS 网关: 阿里云")
+    else:
+        _sms_gateway = SimulatedSMSGateway(rate_limit_per_hour=30)
+        logger.info("SMS 网关: 模拟模式 (日志输出)")
+    return _sms_gateway
 
 
 @bp.route("/api/report", methods=["POST"])

@@ -145,16 +145,18 @@ body{
 .stat-card.critical .stat-value{color:var(--danger)}
 
 /* ══════════════════════════ Panels & Pages ══════════════════════════ */
-.panel-area{padding:0 28px 24px;flex:1}
+.panel-area{padding:0 28px 0;flex:1;display:flex;flex-direction:column}
 .panel-page{display:none;animation:fadeIn .25s ease}
-.panel-page.active{display:block}
+.panel-page.active{display:flex;flex-direction:column;height:100%}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
 .panel{
   background:var(--surface); border:1px solid var(--border);
   border-radius:var(--radius-lg); overflow:hidden; box-shadow:var(--shadow-sm);
-  margin-bottom:16px;
+  margin-bottom:16px; display:flex; flex-direction:column; min-height:0;
 }
+.panel-page.active>.panel:only-child{flex:1}
+.panel:last-child{margin-bottom:0}
 .panel-header{
   padding:14px 18px; font-size:14px; font-weight:600; color:var(--text-primary);
   border-bottom:1px solid var(--border-light); display:flex; align-items:center; gap:8px;
@@ -163,7 +165,7 @@ body{
   font-size:12px;font-weight:500;padding:2px 10px;border-radius:var(--radius-round);
   background:var(--info-light);color:var(--text-secondary);
 }
-.panel-body{overflow-y:auto;max-height:calc(100vh - 460px)}
+.panel-body{overflow-y:auto;flex:1}
 .panel-body.fill{max-height:none}
 
 /* ══════════════════════════ Table ══════════════════════════ */
@@ -697,9 +699,9 @@ input:focus, select:focus{outline:none}
           <button class="btn btn-ghost btn-sm" onclick="clearTrajFilters()">清除</button>
           <button class="btn btn-primary btn-sm" onclick="loadTrajectories()">查询</button>
         </div>
-        <div class="panel-body" style="max-height:calc(100vh - 520px)">
+        <div class="panel-body">
           <div class="table-wrap">
-            <table><thead><tr><th>无人机 ID</th><th>数据点</th><th>最近距离 (m)</th><th>起始时间</th><th>最后时间</th><th>设备</th></tr></thead>
+            <table><thead><tr><th>无人机 ID</th><th>数据点</th><th>最近距离 (m)</th><th>起始时间</th><th>最后时间</th><th>设备</th><th>下载</th></tr></thead>
             <tbody id="trajTable"></tbody></table>
           </div>
           <div class="empty-state" id="trajEmpty" style="display:none">
@@ -788,39 +790,39 @@ input:focus, select:focus{outline:none}
           <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor"><path d="M512 640a128 128 0 1 0 0-256 128 128 0 0 0 0 256z"/></svg>
           系统设置
         </div>
-        <div class="panel-body" style="padding:16px">
-          <div class="settings-grid" style="display:grid;gap:16px">
+        <div class="panel-body fill" style="padding:24px 28px">
+          <div class="settings-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px 32px;max-width:960px">
             <div>
-              <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">告警阈值 (米)</h3>
-              <div class="row" style="gap:8px">
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">警告 ≤</label><input id="scThreshWarn" aria-label="警告阈值" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">严重 ≤</label><input id="scThreshSev" aria-label="严重阈值" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">危险 ≤</label><input id="scThreshCrit" aria-label="危险阈值" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+              <h3 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-primary)">告警阈值 (米)</h3>
+              <div style="display:flex;gap:10px">
+                <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">警告 ≤</label><input id="scThreshWarn" aria-label="警告阈值" type="number" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px"></div>
+                <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">严重 ≤</label><input id="scThreshSev" aria-label="严重阈值" type="number" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px"></div>
+                <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">危险 ≤</label><input id="scThreshCrit" aria-label="危险阈值" type="number" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px"></div>
               </div>
             </div>
             <div>
-              <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">告警防抖</h3>
-              <div class="row" style="align-items:center;gap:8px">
-                <label style="font-size:13px"><input type="checkbox" id="scFlapEn" aria-label="启用告警防抖"> 启用</label>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">进入确认 (秒)</label><input id="scFlapIn" aria-label="防抖进入确认秒数" type="number" step="0.5" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">离开确认 (秒)</label><input id="scFlapOut" aria-label="防抖离开确认秒数" type="number" step="0.5" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+              <h3 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-primary)">告警防抖</h3>
+              <div style="display:flex;align-items:end;gap:10px">
+                <label style="font-size:13px;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="scFlapEn" aria-label="启用告警防抖"> 启用</label>
+                <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">进入确认 (秒)</label><input id="scFlapIn" aria-label="防抖进入确认秒数" type="number" step="0.5" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px"></div>
+                <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">离开确认 (秒)</label><input id="scFlapOut" aria-label="防抖离开确认秒数" type="number" step="0.5" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px"></div>
               </div>
             </div>
             <div>
-              <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">企业微信通知</h3>
-              <label style="font-size:13px;display:block;margin-bottom:4px"><input type="checkbox" id="scWebhookEn" aria-label="启用企业微信通知"> 启用</label>
-              <label style="font-size:10px;color:var(--text-secondary);display:block">机器人 Webhook URL</label>
-              <input id="scWebhookUrl" aria-label="Webhook URL" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></input>
+              <h3 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-primary)">企业微信通知</h3>
+              <label style="font-size:13px;display:block;margin-bottom:6px"><input type="checkbox" id="scWebhookEn" aria-label="启用企业微信通知"> 启用</label>
+              <label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">机器人 Webhook URL</label>
+              <input id="scWebhookUrl" aria-label="Webhook URL" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px">
             </div>
             <div>
-              <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-primary)">其他</h3>
-              <div style="display:flex;gap:14px;align-items:center">
-                <label style="font-size:13px"><input type="checkbox" id="scArchiveEn" aria-label="启用原始报文存档"> 原始报文存档</label>
-                <div style="flex:1"><label style="font-size:10px;color:var(--text-secondary);display:block">保留天数</label><input id="scRetention" aria-label="原始报文保留天数" type="number" class="stxt" style="width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px"></div>
+              <h3 style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-primary)">数据留存</h3>
+              <div style="display:flex;align-items:end;gap:14px">
+                <label style="font-size:13px;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="scArchiveEn" aria-label="启用原始报文存档"> 原始报文存档</label>
+                <div style="flex:1"><label style="font-size:11px;color:var(--text-secondary);display:block;margin-bottom:4px">保留天数</label><input id="scRetention" aria-label="原始报文保留天数" type="number" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px"></div>
               </div>
             </div>
-            <div style="margin-top:8px">
-              <button class="btn btn-primary btn-sm" onclick="saveSettings()">保存设置</button>
+            <div style="grid-column:1/-1;margin-top:4px;padding-top:16px;border-top:1px solid var(--border-light)">
+              <button class="btn btn-primary" onclick="saveSettings()">保存设置</button>
             </div>
           </div>
         </div>
@@ -874,7 +876,7 @@ input:focus, select:focus{outline:none}
   <!-- Power Line Modal -->
   <div class="modal-overlay" id="plModal">
     <div class="modal-dialog">
-      <h3>电力线</h3>
+      <h3 id="plFormTitle">新增电力线</h3>
       <div class="row">
         <input id="plName" placeholder="名称 (如 杭富线110kV#03)" style="flex:2">
         <select id="plVoltage" aria-label="电压等级" style="flex:1" onchange="onVoltageChangeForPl()">
@@ -891,7 +893,7 @@ input:focus, select:focus{outline:none}
       <div class="row"><input id="plLat2" placeholder="纬度" step="any"><input id="plLon2" placeholder="经度" step="any"><input id="plAlt2" placeholder="地面海拔 (m)" step="any" value="0" onchange="onPlFieldChange()"><input id="plTh2" placeholder="塔高 (m)" step="any" onchange="onPlFieldChange()"></div>
       <div id="plAltHint" style="display:none;font-size:11px;color:var(--brand);margin-bottom:8px"></div>
       <div class="modal-actions">
-        <button class="primary" id="plSaveBtn" onclick="addPowerLine()">保存</button>
+        <button class="primary" id="plSaveBtn" onclick="savePowerLine()">保存</button>
         <button onclick="closePlModal()">关闭</button>
       </div>
       <h3 style="margin-top:14px">批量导入 (CSV / Excel)</h3>
@@ -958,7 +960,7 @@ input:focus, select:focus{outline:none}
       <label>关联站点</label>
       <select id="psStation" aria-label="联系人关联站点"><option value="">选择关联站点</option></select>
       <div class="modal-actions">
-        <button class="primary" onclick="addPerson()">保存</button>
+        <button class="primary" onclick="addPersonnel()">保存</button>
         <button onclick="closePsModal()">关闭</button>
       </div>
     </div>
@@ -1024,7 +1026,7 @@ input:focus, select:focus{outline:none}
 
   <div class="footer">
     <span id="footerLeft">--</span>
-    <span>Drone RID Monitor &middot; v2.7</span>
+    <span>杆塔端监控系统 &middot; v3.3</span>
   </div>
 </div>
 

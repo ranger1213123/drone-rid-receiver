@@ -237,7 +237,7 @@ window.updateDroneTable = function(){
     table.innerHTML=drones.map(function(dr){
       var s=dr.status||'active', rc=(s==='critical')?'row-critical':(s==='severe')?'row-severe':'';
       var dist=dr.min_distance!=null?dr.min_distance.toFixed(0)+' m':'-';
-      var time=(dr.last_seen||'').substring(11,19);
+      var ts=dr.last_seen||''; var time=ts?ts.replace('T',' ').substring(0,16):'';
       var id=(dr.id||'?'), e=UI.escapeHtml;
       return '<tr class="'+rc+'"><td class="mono" title="'+e(id)+'">'+droneSvg(s)+' '+(id.length>14?e(id.substring(0,14))+'...':e(id))+
         '</td><td style="font-weight:500">'+e(dr.model||'-')+'</td>'+
@@ -459,29 +459,34 @@ function renderStationList(){
   var div=document.getElementById('stList');
   if(!stations.length){div.innerHTML='<div class="empty-state"><div class="msg">暂无站点</div><div class="sub">点击「新增站点」添加</div></div>';return}
   div.innerHTML=stations.map(function(s){
-    return '<div class="crud-item"><span><b>'+UI.escapeHtml(s.name)+'</b> <span style="color:var(--muted);font-size:10px">'+UI.escapeHtml(s.location||'')+'</span></span><span style="color:var(--muted);font-size:10px">'+(s.lat!=null?s.lat.toFixed(2)+','+s.lon.toFixed(2):'--')+'</span><span><button class="btn btn-ghost btn-xs" onclick="editStation(\''+UI.escapeAttr(s.name)+'\')">✎</button> <button class="btn btn-ghost btn-xs" onclick="delStation(\''+UI.escapeAttr(s.name)+'\')">×</button></span></div>';
+    var region=[s.province||'',s.city||'',s.county||''].filter(Boolean).join(' ');
+    return '<div class="crud-item"><span><b>'+UI.escapeHtml(s.name)+'</b> <span style="color:var(--muted);font-size:10px">'+UI.escapeHtml(s.location||'')+'</span></span><span style="color:var(--muted);font-size:10px">'+(region||'--')+'</span><span style="color:var(--muted);font-size:10px">'+(s.lat!=null?s.lat.toFixed(2)+','+s.lon.toFixed(2):'--')+'</span><span><button class="btn btn-ghost btn-xs" onclick="editStation(\''+UI.escapeAttr(s.name)+'\')">✎</button> <button class="btn btn-ghost btn-xs" onclick="delStation(\''+UI.escapeAttr(s.name)+'\')">×</button></span></div>';
   }).join('');
 }
 function populateStFilters(){
-  var stations=_allStations||[];
-  var provinces=[], cities=[], counties=[];
-  stations.forEach(function(s){if(s.province&&provinces.indexOf(s.province)<0) provinces.push(s.province)});
-  provinces.sort();
   var sel=document.getElementById('stFilterProv');
-  sel.innerHTML='<option value="">全部省</option>'+provinces.map(function(p){return '<option value="'+UI.escapeAttr(p)+'">'+UI.escapeHtml(p)+'</option>'}).join('');
+  // Use full regionData for province list, fallback to station data
+  var options='<option value="">全部省</option>';
+  regionData.forEach(function(p){options+='<option value="'+p[0]+'">'+p[0]+'</option>'});
+  sel.innerHTML=options;
   sel.onchange=function(){
     var v=this.value;
     var citySel=document.getElementById('stFilterCity');
-    cities=[]; stations.forEach(function(s){if((!v||s.province===v)&&s.city&&cities.indexOf(s.city)<0) cities.push(s.city)});
-    cities.sort();
-    citySel.innerHTML='<option value="">全部市</option>'+cities.map(function(c){return '<option value="'+UI.escapeAttr(c)+'">'+UI.escapeHtml(c)+'</option>'}).join('');
+    var opt='<option value="">全部市</option>';
+    if(v){
+      var p=_findProvince(v);
+      if(p) p[1].forEach(function(c){opt+='<option value="'+c[0]+'">'+c[0]+'</option>'});
+    }
+    citySel.innerHTML=opt;
     citySel.onchange=function(){
       var cv=this.value;
       var countySel=document.getElementById('stFilterCounty');
-      counties=[]; stations.forEach(function(s){if((!v||s.province===v)&&(!cv||s.city===cv)&&s.county&&counties.indexOf(s.county)<0) counties.push(s.county)});
-      counties.sort();
-      countySel.innerHTML='<option value="">全部区/县</option>'+counties.map(function(c){return '<option value="'+UI.escapeAttr(c)+'">'+UI.escapeHtml(c)+'</option>'}).join('');
-      countySel.onchange=function(){renderStationList()};
+      var copt='<option value="">全部区/县</option>';
+      if(v&&cv){
+        var p2=_findProvince(v);
+        if(p2){var c2=_findCity(p2,cv);if(c2){(c2[2]||[]).forEach(function(x){copt+='<option value="'+x+'">'+x+'</option>'})}}
+      }
+      countySel.innerHTML=copt;
       renderStationList();
     };
     citySel.dispatchEvent(new Event('change'));
@@ -489,9 +494,71 @@ function populateStFilters(){
   sel.dispatchEvent(new Event('change'));
 }
 
+function _findProvince(name){return regionData.find(function(p){return p[0]===name})}
+function _findCity(prov,name){return prov[1].find(function(c){return c[0]===name})}
+
+function _popProvinceSelect(selId,placeholder){
+  var sel=document.getElementById(selId);
+  if(!sel||sel.tagName!=='SELECT')return;
+  sel.innerHTML='<option value="">'+(placeholder||'选择省')+'</option>';
+  regionData.forEach(function(p){sel.innerHTML+='<option value="'+p[0]+'">'+p[0]+'</option>'});
+}
+function _onProvinceChange(provSelId,citySelId,countySelId,placeholder){
+  var prov=document.getElementById(provSelId).value;
+  var citySel=document.getElementById(citySelId);
+  var countySel=document.getElementById(countySelId);
+  citySel.innerHTML='<option value="">'+(placeholder||'选择市')+'</option>';
+  countySel.innerHTML='<option value="">选择区/县</option>';
+  if(!prov)return;
+  var p=_findProvince(prov);if(!p)return;
+  p[1].forEach(function(c){citySel.innerHTML+='<option value="'+c[0]+'">'+c[0]+'</option>'});
+}
+function _onCityChange(provSelId,citySelId,countySelId){
+  var prov=document.getElementById(provSelId).value;
+  var city=document.getElementById(citySelId).value;
+  var countySel=document.getElementById(countySelId);
+  countySel.innerHTML='<option value="">选择区/县</option>';
+  if(!prov||!city)return;
+  var p=_findProvince(prov);if(!p)return;
+  var c=_findCity(p,city);if(!c)return;
+  (c[2]||[]).forEach(function(x){countySel.innerHTML+='<option value="'+x+'">'+x+'</option>'});
+}
+
+function _populateDeviceSelect(){
+  Api.get('/api/devices').then(function(devices){
+    var sel=document.getElementById('stDevice');
+    sel.innerHTML='<option value="">选择设备…</option>';
+    (devices||[]).forEach(function(d){
+      if(!d.revoked)sel.innerHTML+='<option value="'+UI.escapeAttr(d.device_name)+'">'+UI.escapeHtml(d.device_name)+(d.station?' ('+UI.escapeHtml(d.station)+')':'')+'</option>';
+    });
+  }).catch(function(){});
+}
+
+window.openStModal = function(){
+  _resetStForm();
+  _popProvinceSelect('stProvince','选择省');
+  document.getElementById('stCity').innerHTML='<option value="">选择市</option>';
+  document.getElementById('stCounty').innerHTML='<option value="">选择区/县</option>';
+  _populateDeviceSelect();
+  document.getElementById('stModal').classList.add('show');
+};
+
 window.closeStModal = function(){
   _resetStForm();
   document.getElementById('stModal').classList.remove('show');
+};
+
+window.doGeocode = function(){
+  var lat=parseFloat(document.getElementById('stLat').value);
+  var lon=parseFloat(document.getElementById('stLon').value);
+  if(isNaN(lat)||isNaN(lon)){UI.Message.warning('请先填写有效的经纬度坐标');return}
+  Api.post('/api/geocode',{lat:lat,lon:lon}).then(function(r){
+    if(r.error){UI.toast(r.error,'error');return}
+    if(r.province)document.getElementById('stProvince').value=r.province;
+    if(r.city){_onProvinceChange('stProvince','stCity','stCounty','选择市');document.getElementById('stCity').value=r.city;}
+    if(r.county){_onCityChange('stProvince','stCity','stCounty');document.getElementById('stCounty').value=r.county;}
+    UI.toast('已填充: '+[r.province,r.city,r.county].filter(Boolean).join(' '),'ok');
+  }).catch(catchErr('地理编码失败'));
 };
 window.editStation = function(name){
   var s=_allStations.find(function(x){return x.name===name}); if(!s) return;
@@ -566,7 +633,15 @@ function addUser(){
 window.delUser=function(username){UI.Message.confirm('确定删除用户 '+username+' 吗？').then(function(ok){if(!ok)return;Api.del('/api/users',{username:username}).then(function(res){if(res.error){UI.toast(res.error,'error');return}loadUsers()}).catch(catchErr('删除用户失败'))})};
 window.resetUserPwd=function(username){UI.Message.confirm('确定重置用户 '+username+' 的密码吗？').then(function(ok){if(!ok)return;var chars='ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789',pwd='';for(var i=0;i<10;i++)pwd+=chars[Math.floor(chars.length*Math.random())];Api.post('/api/users/'+encodeURIComponent(username)+'/reset-password',{new_password:pwd}).then(function(res){if(res.error){UI.toast(res.error,'error');return}UI.toast('密码已重置为: '+pwd,'ok')}).catch(catchErr('重置密码失败'))})};
 function _resetUsrForm(){_editingUsername2=null;['usrName','usrPassword','usrStation'].forEach(function(id){document.getElementById(id).value=''});document.getElementById('usrFormTitle').textContent='新增用户';document.getElementById('usrSubmitBtn').textContent='添加';document.getElementById('usrCancelEditBtn').style.display='none';document.getElementById('usrModal').classList.remove('show')}
-window.openUsrModal=function(){_resetUsrForm();document.getElementById('usrModal').classList.add('show')};
+window.openUsrModal=function(){
+  _resetUsrForm();
+  Api.get('/api/stations').then(function(stations){
+    var sel=document.getElementById('usrStation');
+    sel.innerHTML='<option value="">全部站点</option>';
+    (stations||[]).forEach(function(s){sel.innerHTML+='<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+'</option>'});
+  }).catch(function(){});
+  document.getElementById('usrModal').classList.add('show');
+};
 window.closeUsrModal=function(){_resetUsrForm()};
 
 // ═══════════ Personnel ═══════════
@@ -576,7 +651,15 @@ function renderPsList(){
   if(!psData.length){div.innerHTML='<div class="empty-state"><div class="msg">暂无联系人</div><div class="sub">点击「新增联系人」添加</div></div>';return}
   div.innerHTML=psData.map(function(p){return '<div class="crud-item"><span><b>'+UI.escapeHtml(p.name)+'</b> <span style="font-size:10px;color:var(--muted)">'+UI.escapeHtml(p.phone)+'</span></span><span style="font-size:10px;color:var(--muted)">'+UI.escapeHtml(p.station_name||'')+'</span><span><button class="btn btn-ghost btn-xs" onclick="delPersonnel('+p.id+')">×</button></span></div>'}).join('')
 }
-window.openPsModal=function(){document.getElementById('psModal').classList.add('show');loadPersonnel()};
+window.openPsModal=function(){
+  document.getElementById('psModal').classList.add('show');
+  Api.get('/api/stations').then(function(stations){
+    var sel=document.getElementById('psStation');
+    sel.innerHTML='<option value="">选择关联站点</option>';
+    (stations||[]).forEach(function(s){sel.innerHTML+='<option value="'+UI.escapeAttr(s.name)+'">'+UI.escapeHtml(s.name)+'</option>'});
+  }).catch(function(){});
+  loadPersonnel();
+};
 window.closePsModal=function(){['psName','psPhone'].forEach(function(id){document.getElementById(id).value=''});document.getElementById('psModal').classList.remove('show')};
 window.addPersonnel=function(){var data={name:document.getElementById('psName').value.trim(),phone:document.getElementById('psPhone').value.trim(),station:document.getElementById('psStation').value.trim()};if(!data.name||!data.phone){UI.Message.warning('姓名和电话不能为空');return}Api.post('/api/personnel',data).then(function(res){if(res.error){UI.toast(res.error,'error');return}closePsModal();loadPersonnel()}).catch(catchErr('添加联系人失败'))};
 window.delPersonnel=function(id){UI.Message.confirm('确定删除此联系人吗？').then(function(ok){if(!ok)return;Api.del('/api/personnel',{id:id}).then(function(res){if(res.error){UI.toast(res.error,'error');return}loadPersonnel()}).catch(catchErr('删除联系人失败'))})};
@@ -633,6 +716,10 @@ function loadTrajectories(){
   var droneId=document.getElementById('fDroneId').value.trim();
   var fromDate=document.getElementById('fDateFrom').value;
   var toDate=document.getElementById('fDateTo').value;
+  if(fromDate && toDate && fromDate > toDate){
+    UI.toast('起始日期不能晚于结束日期', 'warning');
+    return;
+  }
   var params=new URLSearchParams();
   if(droneId) params.set('drone_id',droneId);
   if(fromDate) params.set('from',fromDate);
@@ -647,10 +734,19 @@ function loadTrajectories(){
     }
     empty.style.display='none'; count.textContent=summaries.length;
     tbody.innerHTML=summaries.map(function(s){
-      return '<tr><td class="mono">'+UI.escapeHtml(s.drone_id)+'</td><td class="mono">'+(s.point_count||0)+'</td><td>'+(s.min_distance!=null?s.min_distance.toFixed(0):'-')+'</td><td class="mono">'+UI.escapeHtml(s.first_ts||'')+'</td><td class="mono">'+UI.escapeHtml(s.last_ts||'')+'</td><td>'+UI.escapeHtml(s.device_name||'-')+'</td></tr>';
+      return '<tr><td class="mono">'+UI.escapeHtml(s.drone_id)+'</td><td class="mono">'+(s.point_count||0)+'</td><td>'+(s.min_distance!=null?s.min_distance.toFixed(0):'-')+'</td><td class="mono">'+UI.escapeHtml(s.first_ts||'')+'</td><td class="mono">'+UI.escapeHtml(s.last_ts||'')+'</td><td>'+UI.escapeHtml(s.device_name||'-')+'</td><td><a class="btn btn-ghost btn-xs" href="/api/trajectories/'+encodeURIComponent(s.drone_id)+'/download" download>CSV</a></td></tr>';
     }).join('');
   }).catch(catchErr('加载轨迹失败'));
 }
+window.loadTrajectories = loadTrajectories;
+
+function clearTrajFilters(){
+  document.getElementById('fDroneId').value='';
+  document.getElementById('fDateFrom').value='';
+  document.getElementById('fDateTo').value='';
+  loadTrajectories();
+}
+window.clearTrajFilters = clearTrajFilters;
 
 // ═══════════ Init ═══════════
 initSocket();
@@ -660,6 +756,12 @@ setInterval(pollFallback, 10000);
 document.addEventListener('click', function() {
   if (window.Notification && Notification.permission === 'default') Notification.requestPermission();
 }, { once: true });
+
+document.addEventListener('change', function(e) {
+  var t = e.target;
+  if (t.id === 'stProvince') { _onProvinceChange('stProvince', 'stCity', 'stCounty', '选择市'); }
+  else if (t.id === 'stCity') { _onCityChange('stProvince', 'stCity', 'stCounty'); }
+});
 
 // ═══════════ Export ═══════════
 window.exportAlertsCsv = function(){

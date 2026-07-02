@@ -49,6 +49,37 @@ class SimulatedSMSGateway(SMSGateway):
         return True
 
 
+class TwilioSMSGateway(SMSGateway):
+    """Twilio 短信网关 — 国际短信，支持中国大陆"""
+
+    def __init__(self, account_sid: str, auth_token: str, from_number: str):
+        self.account_sid = account_sid
+        self.auth_token = auth_token
+        self.from_number = from_number
+
+    def send(self, phone_numbers: list, message: str,
+             template_id: str = "") -> bool:
+        try:
+            from twilio.rest import Client
+        except ImportError:
+            logger.warning("twilio SDK 未安装，降级为模拟模式")
+            sim = SimulatedSMSGateway()
+            return sim.send(phone_numbers, message, template_id)
+
+        client = Client(self.account_sid, self.auth_token)
+        ok = True
+        for phone in phone_numbers:
+            # Twilio 要求中国大陆号码带 +86 前缀
+            to = phone if phone.startswith("+") else f"+86{phone}"
+            try:
+                client.messages.create(body=message, from_=self.from_number, to=to)
+                logger.info("[Twilio短信] 发送成功: %s", phone)
+            except Exception as e:
+                logger.error("[Twilio短信] 发送失败: %s -> %s", phone, e)
+                ok = False
+        return ok
+
+
 class AlibabaSMSGateway(SMSGateway):
     """阿里云短信网关 (alibabacloud-dysmsapi)"""
 
@@ -99,22 +130,29 @@ class AlibabaSMSGateway(SMSGateway):
         return ok
 
 
-def create_sms_gateway(config: dict) -> SMSGateway:
-    sms_cfg = config.get("backhaul", {}).get("sms", {})
-    if not sms_cfg.get("enabled", False):
-        return SimulatedSMSGateway(
-            rate_limit_per_hour=sms_cfg.get("rate_limit_per_hour", 10),
-        )
+def create_sms_gateway(config: dict = None) -> SMSGateway:
+    """工厂函数 — 支持 twilio / alibaba / simulated"""
+    if config:
+        sms_cfg = config.get("backhaul", {}).get("sms", {})
+        if not sms_cfg.get("enabled", False):
+            return SimulatedSMSGateway(rate_limit_per_hour=10)
+        provider = sms_cfg.get("provider", "simulated")
+        if provider == "alibaba":
+            ali_cfg = sms_cfg.get("alibaba", {})
+            return AlibabaSMSGateway(
+                access_key=ali_cfg.get("access_key", ""),
+                access_secret=ali_cfg.get("access_secret", ""),
+                sign_name=ali_cfg.get("sign_name", ""),
+                template_code=ali_cfg.get("template_code", ""),
+            )
+        if provider == "twilio":
+            tw_cfg = sms_cfg.get("twilio", {})
+            return TwilioSMSGateway(
+                account_sid=tw_cfg.get("account_sid", ""),
+                auth_token=tw_cfg.get("auth_token", ""),
+                from_number=tw_cfg.get("from_number", ""),
+            )
+        return SimulatedSMSGateway(rate_limit_per_hour=10)
 
-    provider = sms_cfg.get("provider", "simulated")
-    if provider == "alibaba":
-        ali_cfg = sms_cfg.get("alibaba", {})
-        return AlibabaSMSGateway(
-            access_key=ali_cfg.get("access_key", ""),
-            access_secret=ali_cfg.get("access_secret", ""),
-            sign_name=ali_cfg.get("sign_name", ""),
-            template_code=ali_cfg.get("template_code", ""),
-        )
-    return SimulatedSMSGateway(
-        rate_limit_per_hour=sms_cfg.get("rate_limit_per_hour", 10),
-    )
+    # 兜底: 返回模拟网关
+    return SimulatedSMSGateway(rate_limit_per_hour=10)

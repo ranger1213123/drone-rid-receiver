@@ -465,9 +465,13 @@ def upsert_drone(device_name: str, drone_id: str,
     drone = sess.get(Drone, (drone_id, device_name))
     if drone:
         drone.last_seen = now
-        drone.last_lat = lat
-        drone.last_lon = lon
-        drone.last_alt = alt
+        # 跳过全零坐标 (无有效 GPS)
+        if not (lat == 0 and lon == 0):
+            drone.last_lat = lat
+            drone.last_lon = lon
+        # 高度: 只有非零才更新，避免 GPS 未定位时覆盖有效值
+        if alt != 0:
+            drone.last_alt = alt
         drone.last_speed = speed
         drone.last_heading = heading
         drone.status = "active"
@@ -511,6 +515,8 @@ def add_drone_position(drone_id: str, device_name: str,
                        lat: float, lon: float, alt: float,
                        distance: float = None, line_name: str = ""):
     """记录无人机位置历史 — 供轨迹回放使用"""
+    if lat == 0 and lon == 0:
+        return  # 跳过无有效 GPS 的位置
     sess = get_session()
     try:
         dp = DronePosition(
@@ -617,12 +623,18 @@ def get_trajectory_summaries(drone_id: str = None,
     return result
 
 
-def get_trajectory_points(drone_id: str, limit: int = 500) -> list:
+def get_trajectory_points(drone_id: str, limit: int = 500,
+                         date_from: str = None, date_to: str = None) -> list:
     """返回指定无人机轨迹坐标点"""
     sess = get_session()
-    points = sess.query(DronePosition).filter(
+    q = sess.query(DronePosition).filter(
         DronePosition.drone_id == drone_id
-    ).order_by(DronePosition.timestamp.desc()).limit(limit).all()
+    )
+    if date_from:
+        q = q.filter(DronePosition.timestamp >= date_from)
+    if date_to:
+        q = q.filter(DronePosition.timestamp <= date_to)
+    points = q.order_by(DronePosition.timestamp.desc()).limit(limit).all()
     return [{
         'lat': p.lat,
         'lon': p.lon,
