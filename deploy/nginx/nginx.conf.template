@@ -16,10 +16,16 @@ http {
     access_log /var/log/nginx/access.log;
     error_log  /var/log/nginx/error.log warn;
 
+    # Docker DNS resolver — 强制 nginx 按需解析容器名, 避免缓存旧 IP
+    resolver 127.0.0.11 valid=10s;
+
     # 基础优化
     sendfile        on;
     keepalive_timeout  65;
     client_max_body_size 10m;
+
+    # Web 后端变量 (配合 resolver 使用, 每次请求重新解析 DNS)
+    map $host $web_backend { default web:5000; }
 
     # Gzip 压缩
     gzip on;
@@ -56,7 +62,7 @@ http {
 
         # 静态资源 — 直接由 Nginx 提供
         location /static/ {
-            proxy_pass http://web:5000/static/;
+            proxy_pass http://$web_backend/static/;
             proxy_set_header Host $host;
             expires 1y;
             add_header Cache-Control "public, immutable";
@@ -64,7 +70,7 @@ http {
 
         # WebSocket (SocketIO) — 独立 location 确保升级
         location /socket.io/ {
-            proxy_pass http://web:5000/socket.io/;
+            proxy_pass http://$web_backend/socket.io/;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
@@ -77,7 +83,7 @@ http {
 
         # API + 页面 — 转发到 Flask
         location / {
-            proxy_pass http://web:5000;
+            proxy_pass http://$web_backend;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
