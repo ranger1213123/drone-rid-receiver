@@ -81,7 +81,7 @@ UA_TYPE_NAMES = {
 # DJI SN 前几位编码型号，大疆不同产品线前缀规则不同，下表为常见前缀。
 # 来源: 公开社区整理 + 实际抓包观察。持续更新。
 SN_PREFIX_MODEL = {
-    # DJI Consumer
+    # DJI Consumer — Mini 系列
     "1581F": "DJI Mini 4 Pro",
     "3FMFK": "DJI Mini 4K",
     "6FFFL": "DJI Mini 3",
@@ -89,22 +89,35 @@ SN_PREFIX_MODEL = {
     "3W7KK": "DJI Mini 2",
     "1W7FL": "DJI Mini 2 SE",
     "3YNFK": "DJI Mini SE",
-    # DJI Mavic
+    # DJI Consumer — Mavic 系列
     "1SFOJ": "DJI Mavic 3",
     "1SFOK": "DJI Mavic 3 Classic",
     "3SFOJ": "DJI Mavic 3 Pro",
     "3QNFK": "DJI Mavic 3E",
     "3TNFK": "DJI Mavic 3T",
+    "1S8FL": "DJI Mavic 2 Pro",
+    "1S9FL": "DJI Mavic 2 Zoom",
+    # DJI Consumer — Air 系列
     "1TBLG": "DJI Air 3S",
     "3TBLG": "DJI Air 3",
     "3W6KL": "DJI Air 2S",
-    # DJI Enterprise
-    "3W6KK": "DJI Matrice 30",
-    "3W6KL": "DJI Matrice 30T",
-    "3W9KJ": "DJI Matrice 350 RTK",
+    # DJI Consumer — Avata / FPV 系列
     "1TBLE": "DJI Avata 2",
     "3W7KL": "DJI Avata",
-    # DJI Agras
+    "1W6FL": "DJI FPV",
+    "3QNFM": "DJI Neo",
+    # DJI Enterprise — Matrice 系列
+    "3W6KK": "DJI Matrice 30",
+    "3TNFM": "DJI Matrice 30T",
+    "3W9KJ": "DJI Matrice 350 RTK",
+    # DJI Enterprise — Phantom 系列
+    "1T9FL": "DJI Phantom 4 Pro",
+    "1T9FK": "DJI Phantom 4 Pro V2",
+    "3T9FL": "DJI Phantom 4 RTK",
+    # DJI Enterprise — Inspire 系列
+    "1T6FL": "DJI Inspire 2",
+    "3S8KL": "DJI Inspire 3",
+    # DJI Agras (农业)
     "3YNFM": "DJI Agras T40",
     "3YNFL": "DJI Agras T30",
     # 其它常见品牌

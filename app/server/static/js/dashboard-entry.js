@@ -113,11 +113,11 @@ window.updateUI = function(){
     // Stats
     var warn=0,sev=0,crit=0;
     (d.drones||[]).forEach(function(dr){var s=dr.status;if(s==='warning')warn++;if(s==='severe')sev++;if(s==='critical')crit++;});
-    document.getElementById('statDrones').textContent=(d.drones||[]).length;
+    document.getElementById('statDrones').textContent=d.drone_count||0;
     document.getElementById('statWarn').textContent=warn;
     document.getElementById('statSev').textContent=sev;
     document.getElementById('statCrit').textContent=crit;
-    document.getElementById('droneCountPill').textContent=(d.drones||[]).length;
+    document.getElementById('droneCountPill').textContent=d.drone_count||0;
     // Alert badge — 只统计上次查看后的新告警
     var newAlerts = (d.alerts||[]).filter(function(a){
       return new Date(a.time).getTime() > _lastAlertViewTime;

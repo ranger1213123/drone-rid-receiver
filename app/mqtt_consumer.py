@@ -1083,6 +1083,7 @@ class MqttConsumer:
 
     def _batch_write_drones(self, session, drones: list):
         from app.server.models import Drone
+        from sqlalchemy import func
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         merged = {}
@@ -1112,7 +1113,7 @@ class MqttConsumer:
                 'rssi': stmt.excluded.rssi,
                 'status_code': stmt.excluded.status_code,
                 'height_agl': stmt.excluded.height_agl,
-                'model': stmt.excluded.model,
+                'model': func.coalesce(func.nullif(stmt.excluded.model, ''), Drone.model),
                 'max_alt_agl': stmt.excluded.max_alt_agl,
                 'max_alt_asl': stmt.excluded.max_alt_asl,
                 'nearest_line': stmt.excluded.nearest_line,
