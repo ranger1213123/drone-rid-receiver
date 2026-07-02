@@ -349,10 +349,17 @@ def _migrate_schema(engine):
                         f"ALTER TABLE {table_name} ADD COLUMN "
                         f"{col.name} {col_type_sql}{default_clause}"
                     )
-                    conn.execute(sa.text(sql))
-                    logger.warning(
-                        "迁移: %s.%s (%s) 已添加", table_name, col.name, col_type_sql
-                    )
+                    try:
+                        conn.execute(sa.text(sql))
+                        logger.warning(
+                            "迁移: %s.%s (%s) 已添加", table_name, col.name, col_type_sql
+                        )
+                    except Exception as e:
+                        # 竞态条件: 多个进程同时启动时可能重复添加同一列
+                        err_msg = str(e).lower()
+                        if "duplicate" in err_msg or "already exists" in err_msg:
+                            continue
+                        raise
             conn.commit()
 
 
